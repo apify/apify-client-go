@@ -1,0 +1,740 @@
+/*
+Apify API
+
+ The Apify API (version 2) provides programmatic access to the [Apify platform](https://docs.apify.com). The API is organized around [RESTful](https://en.wikipedia.org/wiki/Representational_state_transfer) HTTP endpoints.  You can download the complete OpenAPI schema of Apify API in the [YAML](http://docs.apify.com/api/openapi.yaml) or [JSON](http://docs.apify.com/api/openapi.json) formats. The source code is also available on [GitHub](https://github.com/apify/apify-docs/tree/master/apify-api/openapi).  All requests and responses (including errors) are encoded in [JSON](http://www.json.org/) format with UTF-8 encoding, with a few exceptions that are explicitly described in the reference.  - To access the API using [Node.js](https://nodejs.org/en/), we recommend the [`apify-client`](https://docs.apify.com/api/client/js) [NPM package](https://www.npmjs.com/package/apify-client). - To access the API using [Python](https://www.python.org/), we recommend the [`apify-client`](https://docs.apify.com/api/client/python) [PyPI package](https://pypi.org/project/apify-client/).  The clients' functions correspond to the API endpoints and have the same parameters. This simplifies development of apps that depend on the Apify platform.  :::note Important Request Details  - `Content-Type` header: For requests with a JSON body, you must include the `Content-Type: application/json` header.  - Method override: You can override the HTTP method using the `method` query parameter. This is useful for clients that can only send `GET` requests. For example, to call a `POST` endpoint, append `?method=POST` to the URL of your `GET` request.  :::  ## Authentication <span id=\"/introduction/authentication\"></span>  **You can find your API token on the [Integrations](https://console.apify.com/settings/integrations) page in the Apify Console.**  To use your token in a request, either:  - Add the token to your request's `Authorization` header as `Bearer <token>`. E.g., `Authorization: Bearer xxxxxxx`. [More info](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization). (Recommended). - Add it as the `token` parameter to your request URL. (Less secure).  Using your token in the request header is more secure than using it as a URL parameter because URLs are often stored in browser history and server logs. This creates a chance for someone unauthorized to access your API token.  **Never share your API token or password with untrusted parties!**  For more information, see our [integrations](https://docs.apify.com/platform/integrations) documentation.  ### Agentic payments  AI agents can authenticate and pay for Actor runs without an Apify account using agentic payments. Instead of an API token, the request carries a payment credential that both authorizes and pays for the call. Apify supports the [x402 protocol](https://docs.apify.com/platform/integrations/x402) (`PAYMENT-SIGNATURE` header) and [Skyfire](https://docs.apify.com/platform/integrations/skyfire) (`skyfire-pay-id` header).  ## Basic usage <span id=\"/introduction/basic-usage\"></span>  To run an Actor, send a POST request to the [Run Actor](#/reference/actors/run-collection/run-actor) endpoint using either the Actor ID code (e.g. `vKg4IjxZbEYTYeW8T`) or its name (e.g. `janedoe~my-actor`):  `https://api.apify.com/v2/actors/[actor_id]/runs`  If the Actor is not runnable anonymously, you will receive a 401 or 403 [response code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status). This means you need to add your [secret API token](https://console.apify.com/account#/integrations) to the request's `Authorization` header ([recommended](#/introduction/authentication)) or as a URL query parameter `?token=[your_token]` (less secure).  Optionally, you can include the query parameters described in the [Run Actor](#/reference/actors/run-collection/run-actor) section to customize your run.  If you're using Node.js, the best way to run an Actor is using the `Apify.call()` method from the [Apify SDK](https://sdk.apify.com/docs/api/apify#apifycallactid-input-options). It runs the Actor using the account you are currently logged into (determined by the [secret API token](https://console.apify.com/account#/integrations)). The result is an [Actor run object](https://sdk.apify.com/docs/typedefs/actor-run) and its output (if any).  A typical workflow is as follows:  1. Run an Actor or task using the [Run Actor](#/reference/actors/run-collection/run-actor) or [Run task](#/reference/actor-tasks/run-collection/run-task) API endpoints. 2. Monitor the Actor run by periodically polling its progress using the [Get run](#/reference/actor-runs/run-object-and-its-storages/get-run) API endpoint. 3. Fetch the results from the [Get items](#/reference/datasets/item-collection/get-items) API endpoint using the `defaultDatasetId`, which you receive in the Run request response. Additional data may be stored in a key-value store. You can fetch them from the [Get record](#/reference/key-value-stores/record/get-record) API endpoint using the `defaultKeyValueStoreId` and the store's `key`.  **Note**: Instead of periodic polling, you can also run your [Actor](#/reference/actors/run-actor-synchronously) or [task](#/reference/actor-tasks/runs-collection/run-task-synchronously) synchronously. This will ensure that the request waits for 300 seconds (5 minutes) for the run to finish and returns its output. If the run takes longer, the request will time out and throw an error.  ## Legacy `/v2/acts/` URL prefix <span id=\"/introduction/legacy-acts-prefix\"></span>  The `/v2/acts/` prefix is deprecated but still fully functional, and  such endpoint routes to the same handler as its `/v2/actors/...` counterpart.  New integrations should use the canonical /v2/actors/ prefix,  but existing clients keep working without changes.  ## Response structure <span id=\"/introduction/response-structure\"></span>  Most API endpoints return a JSON object with the `data` property:  ``` {     \"data\": {         ...     } } ```  However, there are a few explicitly described exceptions, such as [Get dataset items](#/reference/datasets/item-collection/get-items) or Key-value store [Get record](#/reference/key-value-stores/record/get-record) API endpoints, which return data in other formats. In case of an error, the response has the HTTP status code in the range of 4xx or 5xx and the `data` property is replaced with `error`. For example:  ``` {     \"error\": {         \"type\": \"record-not-found\",         \"message\": \"Store was not found.\"     } } ```  See [Errors](#/introduction/errors) for more details.  ## Pagination <span id=\"/introduction/pagination\"></span>  All API endpoints that return a list of records (e.g. [Get list of Actors](#/reference/actors/actor-collection/get-list-of-actors)) enforce pagination in order to limit the size of their responses.  Most of these API endpoints are paginated using the `offset` and `limit` query parameters. The only exception is [Get list of keys](#/reference/key-value-stores/key-collection/get-list-of-keys), which is paginated using the `exclusiveStartKey` query parameter.  **IMPORTANT**: Each API endpoint that supports pagination enforces a certain maximum value for the `limit` parameter, in order to reduce the load on Apify servers. The maximum limit could change in future so you should never rely on a specific value and check the responses of these API endpoints.  ### Using offset <span id=\"/introduction/pagination/using-offset\"></span>  Most API endpoints that return a list of records enable pagination using the following query parameters:  <table>   <tr>     <td><code>limit</code></td>     <td>Limits the response to contain a specific maximum number of items, e.g. <code>limit=20</code>.</td>   </tr>   <tr>     <td><code>offset</code></td>     <td>Skips a number of items from the beginning of the list, e.g. <code>offset=100</code>.</td>   </tr>   <tr>     <td><code>desc</code></td>     <td>     By default, items are sorted in the order in which they were created or added to the list.     This feature is useful when fetching all the items, because it ensures that items     created after the client started the pagination will not be skipped.     If you specify the <code>desc=1</code> parameter, the items will be returned in the reverse order,     i.e. from the newest to the oldest items.     </td>   </tr> </table>  The response of these API endpoints is always a JSON object with the following structure:  ``` {     \"data\": {         \"total\": 2560,         \"offset\": 250,         \"limit\": 1000,         \"count\": 1000,         \"desc\": false,         \"items\": [             { 1st object },             { 2nd object },             ...             { 1000th object }         ]     } } ```  The following table describes the meaning of the response properties:  <table>   <tr>     <th>Property</th>     <th>Description</th>   </tr>   <tr>     <td><code>total</code></td>     <td>The total number of items available in the list.</td>   </tr>   <tr>     <td><code>offset</code></td>     <td>The number of items that were skipped at the start.     This is equal to the <code>offset</code> query parameter if it was provided, otherwise it is <code>0</code>.</td>   </tr>   <tr>     <td><code>limit</code></td>     <td>The maximum number of items that can be returned in the HTTP response.     It equals to the <code>limit</code> query parameter if it was provided or     the maximum limit enforced for the particular API endpoint, whichever is smaller.</td>   </tr>   <tr>     <td><code>count</code></td>     <td>The actual number of items returned in the HTTP response.</td>   </tr>   <tr>     <td><code>desc</code></td>     <td><code>true</code> if data were requested in descending order and <code>false</code> otherwise.</td>   </tr>   <tr>     <td><code>items</code></td>     <td>An array of requested items.</td>   </tr> </table>  ### Using key <span id=\"/introduction/pagination/using-key\"></span>  The records in the [key-value store](https://docs.apify.com/platform/storage/key-value-store) are not ordered based on numerical indexes, but rather by their keys in the UTF-8 binary order. Therefore the [Get list of keys](#/reference/key-value-stores/key-collection/get-list-of-keys) API endpoint only supports pagination using the following query parameters:  <table>   <tr>     <td><code>limit</code></td>     <td>Limits the response to contain a specific maximum number items, e.g. <code>limit=20</code>.</td>   </tr>   <tr>     <td><code>exclusiveStartKey</code></td>     <td>Skips all records with keys up to the given key including the given key,     in the UTF-8 binary order.</td>   </tr> </table>  The response of the API endpoint is always a JSON object with following structure:  ``` {     \"data\": {         \"limit\": 1000,         \"isTruncated\": true,         \"exclusiveStartKey\": \"my-key\",         \"nextExclusiveStartKey\": \"some-other-key\",         \"items\": [             { 1st object },             { 2nd object },             ...             { 1000th object }         ]     } } ```  The following table describes the meaning of the response properties:  <table>   <tr>     <th>Property</th>     <th>Description</th>   </tr>   <tr>     <td><code>limit</code></td>     <td>The maximum number of items that can be returned in the HTTP response.     It equals to the <code>limit</code> query parameter if it was provided or     the maximum limit enforced for the particular endpoint, whichever is smaller.</td>   </tr>   <tr>     <td><code>isTruncated</code></td>     <td><code>true</code> if there are more items left to be queried. Otherwise <code>false</code>.</td>   </tr>   <tr>     <td><code>exclusiveStartKey</code></td>     <td>The last key that was skipped at the start. Is `null` for the first page.</td>   </tr>   <tr>     <td><code>nextExclusiveStartKey</code></td>     <td>The value for the <code>exclusiveStartKey</code> parameter to query the next page of items.</td>   </tr> </table>  ## Errors <span id=\"/introduction/errors\"></span>  The Apify API uses common HTTP status codes: `2xx` range for success, `4xx` range for errors caused by the caller (invalid requests) and `5xx` range for server errors (these are rare). Each error response contains a JSON object defining the `error` property, which is an object with the `type` and `message` properties that contain the error code and a human-readable error description, respectively.  For example:  ``` {     \"error\": {         \"type\": \"record-not-found\",         \"message\": \"Store was not found.\"     } } ```  Here is the table of the most common errors that can occur for many API endpoints:  <table>   <tr>     <th>status</th>     <th>type</th>     <th>message</th>   </tr>   <tr>     <td><code>400</code></td>     <td><code>invalid-request</code></td>     <td>POST data must be a JSON object</td>   </tr>   <tr>     <td><code>400</code></td>     <td><code>invalid-value</code></td>     <td>Invalid value provided: Comments required</td>   </tr>   <tr>     <td><code>400</code></td>     <td><code>invalid-record-key</code></td>     <td>Record key contains invalid character</td>   </tr>   <tr>     <td><code>401</code></td>     <td><code>token-not-provided</code></td>     <td>Authentication token was not provided</td>   </tr>   <tr>     <td><code>404</code></td>     <td><code>record-not-found</code></td>     <td>Store was not found</td>   </tr>   <tr>     <td><code>429</code></td>     <td><code>rate-limit-exceeded</code></td>     <td>You have exceeded the rate limit of ... requests per second</td>   </tr>   <tr>     <td><code>405</code></td>     <td><code>method-not-allowed</code></td>     <td>This API endpoint can only be accessed using the following HTTP methods: OPTIONS, POST</td>   </tr> </table>  ## Rate limiting <span id=\"/introduction/rate-limiting\"></span>  All API endpoints limit the rate of requests in order to prevent overloading of Apify servers by misbehaving clients.  There are two kinds of rate limits - a global rate limit and a per-resource rate limit.  ### Global rate limit <span id=\"/introduction/rate-limiting/global-rate-limit\"></span>  The global rate limit is set to _250 000 requests per minute_. For [authenticated](#/introduction/authentication) requests, it is counted per user, and for unauthenticated requests, it is counted per IP address.  ### Per-resource rate limit <span id=\"/introduction/rate-limiting/per-resource-rate-limit\"></span>  The default per-resource rate limit is _60 requests per second per resource_, which in this context means a single Actor, a single Actor run, a single dataset, single key-value store etc. The default rate limit is applied to every API endpoint except a few select ones, which have higher rate limits. Each API endpoint returns its rate limit in `X-RateLimit-Limit` header.  These endpoints have a rate limit of _200 requests per second per resource_:  * CRUD ([get](#/reference/key-value-stores/record/get-record),   [put](#/reference/key-value-stores/record/put-record),   [delete](#/reference/key-value-stores/record/delete-record))   operations on key-value store records  These endpoints have a rate limit of _400 requests per second per resource_: * [Run Actor](#/reference/actors/run-collection/run-actor) * [Run Actor task asynchronously](#/reference/actor-tasks/runs-collection/run-task-asynchronously) * [Run Actor task synchronously](#/reference/actor-tasks/runs-collection/run-task-synchronously) * [Metamorph Actor run](#/reference/actors/metamorph-run/metamorph-run) * [Push items](#/reference/datasets/item-collection/put-items) to dataset * CRUD   ([add](#/reference/request-queues/request-collection/add-request),   [get](#/reference/request-queues/request-collection/get-request),   [update](#/reference/request-queues/request-collection/update-request),   [delete](#/reference/request-queues/request-collection/delete-request))   operations on requests in request queues  ### Rate limit exceeded errors <span id=\"/introduction/rate-limiting/rate-limit-exceeded-errors\"></span>  If the client is sending too many requests, the API endpoints respond with the HTTP status code `429 Too Many Requests` and the following body:  ``` {     \"error\": {         \"type\": \"rate-limit-exceeded\",         \"message\": \"You have exceeded the rate limit of ... requests per second\"     } } ```  ### Retrying rate-limited requests with exponential backoff <span id=\"/introduction/rate-limiting/retrying-rate-limited-requests-with-exponential-backoff\"></span>  If the client receives the rate limit error, it should wait a certain period of time and then retry the request. If the error happens again, the client should double the wait period and retry the request, and so on. This algorithm is known as _exponential backoff_ and it can be described using the following pseudo-code:  1. Define a variable `DELAY=500` 2. Send the HTTP request to the API endpoint 3. If the response has status code not equal to `429` then you are done. Otherwise:    * Wait for a period of time chosen randomly from the interval `DELAY` to `2*DELAY` milliseconds    * Double the future wait period by setting `DELAY = 2*DELAY`    * Continue with step 2  If all requests sent by the client implement the above steps, the client will automatically use the maximum available bandwidth for its requests.  Note that the Apify API clients [for JavaScript](https://docs.apify.com/api/client/js) and [for Python](https://docs.apify.com/api/client/python) use the exponential backoff algorithm transparently, so that you do not need to worry about it.  ## Referring to resources <span id=\"/introduction/referring-to-resources\"></span>  There are three main ways to refer to a resource you're accessing via API.  - the resource ID (e.g. `iKkPcIgVvwmztduf8`) - `username~resourcename` - when using this access method, you will need to use your API token, and access will only work if you have the correct permissions. - `~resourcename` - for this, you need to use an API token, and the `resourcename` refers to a resource in the API token owner's account. 
+
+API version: v2-2026-06-16T064758Z
+*/
+
+// Code generated by OpenAPI Generator (https://openapi-generator.tech); DO NOT EDIT.
+
+package apifyclient
+
+import (
+	"encoding/json"
+	"time"
+	"bytes"
+	"fmt"
+)
+
+// checks if the KeyValueStore type satisfies the MappedNullable interface at compile time
+var _ MappedNullable = &KeyValueStore{}
+
+// KeyValueStore struct for KeyValueStore
+type KeyValueStore struct {
+	Id string `json:"id"`
+	Name NullableString `json:"name,omitempty"`
+	UserId NullableString `json:"userId,omitempty"`
+	Username NullableString `json:"username,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+	AccessedAt time.Time `json:"accessedAt"`
+	ActId NullableString `json:"actId,omitempty"`
+	ActRunId NullableString `json:"actRunId,omitempty"`
+	ConsoleUrl *string `json:"consoleUrl,omitempty"`
+	// A public link to access keys of the key-value store directly.
+	KeysPublicUrl *string `json:"keysPublicUrl,omitempty"`
+	// A public link to access records of the key-value store directly.
+	RecordsPublicUrl *string `json:"recordsPublicUrl,omitempty"`
+	// Optional JSON schema describing the keys stored in the key-value store.
+	Schema map[string]interface{} `json:"schema,omitempty"`
+	// A secret key for generating signed public URLs. It is only provided to clients with WRITE permission for the key-value store.
+	UrlSigningSecretKey NullableString `json:"urlSigningSecretKey,omitempty"`
+	GeneralAccess *GeneralAccess `json:"generalAccess,omitempty"`
+	Stats *KeyValueStoreStats `json:"stats,omitempty"`
+}
+
+type _KeyValueStore KeyValueStore
+
+// NewKeyValueStore instantiates a new KeyValueStore object
+// This constructor will assign default values to properties that have it defined,
+// and makes sure properties required by API are set, but the set of arguments
+// will change when the set of required properties is changed
+func NewKeyValueStore(id string, createdAt time.Time, modifiedAt time.Time, accessedAt time.Time) *KeyValueStore {
+	this := KeyValueStore{}
+	this.Id = id
+	this.CreatedAt = createdAt
+	this.ModifiedAt = modifiedAt
+	this.AccessedAt = accessedAt
+	return &this
+}
+
+// NewKeyValueStoreWithDefaults instantiates a new KeyValueStore object
+// This constructor will only assign default values to properties that have it defined,
+// but it doesn't guarantee that properties required by API are set
+func NewKeyValueStoreWithDefaults() *KeyValueStore {
+	this := KeyValueStore{}
+	return &this
+}
+
+// GetId returns the Id field value
+func (o *KeyValueStore) GetId() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.Id
+}
+
+// GetIdOk returns a tuple with the Id field value
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetIdOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Id, true
+}
+
+// SetId sets field value
+func (o *KeyValueStore) SetId(v string) {
+	o.Id = v
+}
+
+// GetName returns the Name field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetName() string {
+	if o == nil || IsNil(o.Name.Get()) {
+		var ret string
+		return ret
+	}
+	return *o.Name.Get()
+}
+
+// GetNameOk returns a tuple with the Name field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetNameOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.Name.Get(), o.Name.IsSet()
+}
+
+// HasName returns a boolean if a field has been set.
+func (o *KeyValueStore) HasName() bool {
+	if o != nil && o.Name.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetName gets a reference to the given NullableString and assigns it to the Name field.
+func (o *KeyValueStore) SetName(v string) {
+	o.Name.Set(&v)
+}
+// SetNameNil sets the value for Name to be an explicit nil
+func (o *KeyValueStore) SetNameNil() {
+	o.Name.Set(nil)
+}
+
+// UnsetName ensures that no value is present for Name, not even an explicit nil
+func (o *KeyValueStore) UnsetName() {
+	o.Name.Unset()
+}
+
+// GetUserId returns the UserId field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetUserId() string {
+	if o == nil || IsNil(o.UserId.Get()) {
+		var ret string
+		return ret
+	}
+	return *o.UserId.Get()
+}
+
+// GetUserIdOk returns a tuple with the UserId field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetUserIdOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.UserId.Get(), o.UserId.IsSet()
+}
+
+// HasUserId returns a boolean if a field has been set.
+func (o *KeyValueStore) HasUserId() bool {
+	if o != nil && o.UserId.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetUserId gets a reference to the given NullableString and assigns it to the UserId field.
+func (o *KeyValueStore) SetUserId(v string) {
+	o.UserId.Set(&v)
+}
+// SetUserIdNil sets the value for UserId to be an explicit nil
+func (o *KeyValueStore) SetUserIdNil() {
+	o.UserId.Set(nil)
+}
+
+// UnsetUserId ensures that no value is present for UserId, not even an explicit nil
+func (o *KeyValueStore) UnsetUserId() {
+	o.UserId.Unset()
+}
+
+// GetUsername returns the Username field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetUsername() string {
+	if o == nil || IsNil(o.Username.Get()) {
+		var ret string
+		return ret
+	}
+	return *o.Username.Get()
+}
+
+// GetUsernameOk returns a tuple with the Username field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetUsernameOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.Username.Get(), o.Username.IsSet()
+}
+
+// HasUsername returns a boolean if a field has been set.
+func (o *KeyValueStore) HasUsername() bool {
+	if o != nil && o.Username.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetUsername gets a reference to the given NullableString and assigns it to the Username field.
+func (o *KeyValueStore) SetUsername(v string) {
+	o.Username.Set(&v)
+}
+// SetUsernameNil sets the value for Username to be an explicit nil
+func (o *KeyValueStore) SetUsernameNil() {
+	o.Username.Set(nil)
+}
+
+// UnsetUsername ensures that no value is present for Username, not even an explicit nil
+func (o *KeyValueStore) UnsetUsername() {
+	o.Username.Unset()
+}
+
+// GetCreatedAt returns the CreatedAt field value
+func (o *KeyValueStore) GetCreatedAt() time.Time {
+	if o == nil {
+		var ret time.Time
+		return ret
+	}
+
+	return o.CreatedAt
+}
+
+// GetCreatedAtOk returns a tuple with the CreatedAt field value
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetCreatedAtOk() (*time.Time, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.CreatedAt, true
+}
+
+// SetCreatedAt sets field value
+func (o *KeyValueStore) SetCreatedAt(v time.Time) {
+	o.CreatedAt = v
+}
+
+// GetModifiedAt returns the ModifiedAt field value
+func (o *KeyValueStore) GetModifiedAt() time.Time {
+	if o == nil {
+		var ret time.Time
+		return ret
+	}
+
+	return o.ModifiedAt
+}
+
+// GetModifiedAtOk returns a tuple with the ModifiedAt field value
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetModifiedAtOk() (*time.Time, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.ModifiedAt, true
+}
+
+// SetModifiedAt sets field value
+func (o *KeyValueStore) SetModifiedAt(v time.Time) {
+	o.ModifiedAt = v
+}
+
+// GetAccessedAt returns the AccessedAt field value
+func (o *KeyValueStore) GetAccessedAt() time.Time {
+	if o == nil {
+		var ret time.Time
+		return ret
+	}
+
+	return o.AccessedAt
+}
+
+// GetAccessedAtOk returns a tuple with the AccessedAt field value
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetAccessedAtOk() (*time.Time, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.AccessedAt, true
+}
+
+// SetAccessedAt sets field value
+func (o *KeyValueStore) SetAccessedAt(v time.Time) {
+	o.AccessedAt = v
+}
+
+// GetActId returns the ActId field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetActId() string {
+	if o == nil || IsNil(o.ActId.Get()) {
+		var ret string
+		return ret
+	}
+	return *o.ActId.Get()
+}
+
+// GetActIdOk returns a tuple with the ActId field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetActIdOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.ActId.Get(), o.ActId.IsSet()
+}
+
+// HasActId returns a boolean if a field has been set.
+func (o *KeyValueStore) HasActId() bool {
+	if o != nil && o.ActId.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetActId gets a reference to the given NullableString and assigns it to the ActId field.
+func (o *KeyValueStore) SetActId(v string) {
+	o.ActId.Set(&v)
+}
+// SetActIdNil sets the value for ActId to be an explicit nil
+func (o *KeyValueStore) SetActIdNil() {
+	o.ActId.Set(nil)
+}
+
+// UnsetActId ensures that no value is present for ActId, not even an explicit nil
+func (o *KeyValueStore) UnsetActId() {
+	o.ActId.Unset()
+}
+
+// GetActRunId returns the ActRunId field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetActRunId() string {
+	if o == nil || IsNil(o.ActRunId.Get()) {
+		var ret string
+		return ret
+	}
+	return *o.ActRunId.Get()
+}
+
+// GetActRunIdOk returns a tuple with the ActRunId field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetActRunIdOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.ActRunId.Get(), o.ActRunId.IsSet()
+}
+
+// HasActRunId returns a boolean if a field has been set.
+func (o *KeyValueStore) HasActRunId() bool {
+	if o != nil && o.ActRunId.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetActRunId gets a reference to the given NullableString and assigns it to the ActRunId field.
+func (o *KeyValueStore) SetActRunId(v string) {
+	o.ActRunId.Set(&v)
+}
+// SetActRunIdNil sets the value for ActRunId to be an explicit nil
+func (o *KeyValueStore) SetActRunIdNil() {
+	o.ActRunId.Set(nil)
+}
+
+// UnsetActRunId ensures that no value is present for ActRunId, not even an explicit nil
+func (o *KeyValueStore) UnsetActRunId() {
+	o.ActRunId.Unset()
+}
+
+// GetConsoleUrl returns the ConsoleUrl field value if set, zero value otherwise.
+func (o *KeyValueStore) GetConsoleUrl() string {
+	if o == nil || IsNil(o.ConsoleUrl) {
+		var ret string
+		return ret
+	}
+	return *o.ConsoleUrl
+}
+
+// GetConsoleUrlOk returns a tuple with the ConsoleUrl field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetConsoleUrlOk() (*string, bool) {
+	if o == nil || IsNil(o.ConsoleUrl) {
+		return nil, false
+	}
+	return o.ConsoleUrl, true
+}
+
+// HasConsoleUrl returns a boolean if a field has been set.
+func (o *KeyValueStore) HasConsoleUrl() bool {
+	if o != nil && !IsNil(o.ConsoleUrl) {
+		return true
+	}
+
+	return false
+}
+
+// SetConsoleUrl gets a reference to the given string and assigns it to the ConsoleUrl field.
+func (o *KeyValueStore) SetConsoleUrl(v string) {
+	o.ConsoleUrl = &v
+}
+
+// GetKeysPublicUrl returns the KeysPublicUrl field value if set, zero value otherwise.
+func (o *KeyValueStore) GetKeysPublicUrl() string {
+	if o == nil || IsNil(o.KeysPublicUrl) {
+		var ret string
+		return ret
+	}
+	return *o.KeysPublicUrl
+}
+
+// GetKeysPublicUrlOk returns a tuple with the KeysPublicUrl field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetKeysPublicUrlOk() (*string, bool) {
+	if o == nil || IsNil(o.KeysPublicUrl) {
+		return nil, false
+	}
+	return o.KeysPublicUrl, true
+}
+
+// HasKeysPublicUrl returns a boolean if a field has been set.
+func (o *KeyValueStore) HasKeysPublicUrl() bool {
+	if o != nil && !IsNil(o.KeysPublicUrl) {
+		return true
+	}
+
+	return false
+}
+
+// SetKeysPublicUrl gets a reference to the given string and assigns it to the KeysPublicUrl field.
+func (o *KeyValueStore) SetKeysPublicUrl(v string) {
+	o.KeysPublicUrl = &v
+}
+
+// GetRecordsPublicUrl returns the RecordsPublicUrl field value if set, zero value otherwise.
+func (o *KeyValueStore) GetRecordsPublicUrl() string {
+	if o == nil || IsNil(o.RecordsPublicUrl) {
+		var ret string
+		return ret
+	}
+	return *o.RecordsPublicUrl
+}
+
+// GetRecordsPublicUrlOk returns a tuple with the RecordsPublicUrl field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetRecordsPublicUrlOk() (*string, bool) {
+	if o == nil || IsNil(o.RecordsPublicUrl) {
+		return nil, false
+	}
+	return o.RecordsPublicUrl, true
+}
+
+// HasRecordsPublicUrl returns a boolean if a field has been set.
+func (o *KeyValueStore) HasRecordsPublicUrl() bool {
+	if o != nil && !IsNil(o.RecordsPublicUrl) {
+		return true
+	}
+
+	return false
+}
+
+// SetRecordsPublicUrl gets a reference to the given string and assigns it to the RecordsPublicUrl field.
+func (o *KeyValueStore) SetRecordsPublicUrl(v string) {
+	o.RecordsPublicUrl = &v
+}
+
+// GetSchema returns the Schema field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetSchema() map[string]interface{} {
+	if o == nil {
+		var ret map[string]interface{}
+		return ret
+	}
+	return o.Schema
+}
+
+// GetSchemaOk returns a tuple with the Schema field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetSchemaOk() (map[string]interface{}, bool) {
+	if o == nil || IsNil(o.Schema) {
+		return map[string]interface{}{}, false
+	}
+	return o.Schema, true
+}
+
+// HasSchema returns a boolean if a field has been set.
+func (o *KeyValueStore) HasSchema() bool {
+	if o != nil && !IsNil(o.Schema) {
+		return true
+	}
+
+	return false
+}
+
+// SetSchema gets a reference to the given map[string]interface{} and assigns it to the Schema field.
+func (o *KeyValueStore) SetSchema(v map[string]interface{}) {
+	o.Schema = v
+}
+
+// GetUrlSigningSecretKey returns the UrlSigningSecretKey field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *KeyValueStore) GetUrlSigningSecretKey() string {
+	if o == nil || IsNil(o.UrlSigningSecretKey.Get()) {
+		var ret string
+		return ret
+	}
+	return *o.UrlSigningSecretKey.Get()
+}
+
+// GetUrlSigningSecretKeyOk returns a tuple with the UrlSigningSecretKey field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *KeyValueStore) GetUrlSigningSecretKeyOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.UrlSigningSecretKey.Get(), o.UrlSigningSecretKey.IsSet()
+}
+
+// HasUrlSigningSecretKey returns a boolean if a field has been set.
+func (o *KeyValueStore) HasUrlSigningSecretKey() bool {
+	if o != nil && o.UrlSigningSecretKey.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetUrlSigningSecretKey gets a reference to the given NullableString and assigns it to the UrlSigningSecretKey field.
+func (o *KeyValueStore) SetUrlSigningSecretKey(v string) {
+	o.UrlSigningSecretKey.Set(&v)
+}
+// SetUrlSigningSecretKeyNil sets the value for UrlSigningSecretKey to be an explicit nil
+func (o *KeyValueStore) SetUrlSigningSecretKeyNil() {
+	o.UrlSigningSecretKey.Set(nil)
+}
+
+// UnsetUrlSigningSecretKey ensures that no value is present for UrlSigningSecretKey, not even an explicit nil
+func (o *KeyValueStore) UnsetUrlSigningSecretKey() {
+	o.UrlSigningSecretKey.Unset()
+}
+
+// GetGeneralAccess returns the GeneralAccess field value if set, zero value otherwise.
+func (o *KeyValueStore) GetGeneralAccess() GeneralAccess {
+	if o == nil || IsNil(o.GeneralAccess) {
+		var ret GeneralAccess
+		return ret
+	}
+	return *o.GeneralAccess
+}
+
+// GetGeneralAccessOk returns a tuple with the GeneralAccess field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetGeneralAccessOk() (*GeneralAccess, bool) {
+	if o == nil || IsNil(o.GeneralAccess) {
+		return nil, false
+	}
+	return o.GeneralAccess, true
+}
+
+// HasGeneralAccess returns a boolean if a field has been set.
+func (o *KeyValueStore) HasGeneralAccess() bool {
+	if o != nil && !IsNil(o.GeneralAccess) {
+		return true
+	}
+
+	return false
+}
+
+// SetGeneralAccess gets a reference to the given GeneralAccess and assigns it to the GeneralAccess field.
+func (o *KeyValueStore) SetGeneralAccess(v GeneralAccess) {
+	o.GeneralAccess = &v
+}
+
+// GetStats returns the Stats field value if set, zero value otherwise.
+func (o *KeyValueStore) GetStats() KeyValueStoreStats {
+	if o == nil || IsNil(o.Stats) {
+		var ret KeyValueStoreStats
+		return ret
+	}
+	return *o.Stats
+}
+
+// GetStatsOk returns a tuple with the Stats field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *KeyValueStore) GetStatsOk() (*KeyValueStoreStats, bool) {
+	if o == nil || IsNil(o.Stats) {
+		return nil, false
+	}
+	return o.Stats, true
+}
+
+// HasStats returns a boolean if a field has been set.
+func (o *KeyValueStore) HasStats() bool {
+	if o != nil && !IsNil(o.Stats) {
+		return true
+	}
+
+	return false
+}
+
+// SetStats gets a reference to the given KeyValueStoreStats and assigns it to the Stats field.
+func (o *KeyValueStore) SetStats(v KeyValueStoreStats) {
+	o.Stats = &v
+}
+
+func (o KeyValueStore) MarshalJSON() ([]byte, error) {
+	toSerialize,err := o.ToMap()
+	if err != nil {
+		return []byte{}, err
+	}
+	return json.Marshal(toSerialize)
+}
+
+func (o KeyValueStore) ToMap() (map[string]interface{}, error) {
+	toSerialize := map[string]interface{}{}
+	toSerialize["id"] = o.Id
+	if o.Name.IsSet() {
+		toSerialize["name"] = o.Name.Get()
+	}
+	if o.UserId.IsSet() {
+		toSerialize["userId"] = o.UserId.Get()
+	}
+	if o.Username.IsSet() {
+		toSerialize["username"] = o.Username.Get()
+	}
+	toSerialize["createdAt"] = o.CreatedAt
+	toSerialize["modifiedAt"] = o.ModifiedAt
+	toSerialize["accessedAt"] = o.AccessedAt
+	if o.ActId.IsSet() {
+		toSerialize["actId"] = o.ActId.Get()
+	}
+	if o.ActRunId.IsSet() {
+		toSerialize["actRunId"] = o.ActRunId.Get()
+	}
+	if !IsNil(o.ConsoleUrl) {
+		toSerialize["consoleUrl"] = o.ConsoleUrl
+	}
+	if !IsNil(o.KeysPublicUrl) {
+		toSerialize["keysPublicUrl"] = o.KeysPublicUrl
+	}
+	if !IsNil(o.RecordsPublicUrl) {
+		toSerialize["recordsPublicUrl"] = o.RecordsPublicUrl
+	}
+	if o.Schema != nil {
+		toSerialize["schema"] = o.Schema
+	}
+	if o.UrlSigningSecretKey.IsSet() {
+		toSerialize["urlSigningSecretKey"] = o.UrlSigningSecretKey.Get()
+	}
+	if !IsNil(o.GeneralAccess) {
+		toSerialize["generalAccess"] = o.GeneralAccess
+	}
+	if !IsNil(o.Stats) {
+		toSerialize["stats"] = o.Stats
+	}
+	return toSerialize, nil
+}
+
+func (o *KeyValueStore) UnmarshalJSON(data []byte) (err error) {
+	// This validates that all required properties are included in the JSON object
+	// by unmarshalling the object into a generic map with string keys and checking
+	// that every required field exists as a key in the generic map.
+	requiredProperties := []string{
+		"id",
+		"createdAt",
+		"modifiedAt",
+		"accessedAt",
+	}
+
+	allProperties := make(map[string]interface{})
+
+	err = json.Unmarshal(data, &allProperties)
+
+	if err != nil {
+		return err;
+	}
+
+	for _, requiredProperty := range(requiredProperties) {
+		if _, exists := allProperties[requiredProperty]; !exists {
+			return fmt.Errorf("no value given for required property %v", requiredProperty)
+		}
+	}
+
+	varKeyValueStore := _KeyValueStore{}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	err = decoder.Decode(&varKeyValueStore)
+
+	if err != nil {
+		return err
+	}
+
+	*o = KeyValueStore(varKeyValueStore)
+
+	return err
+}
+
+type NullableKeyValueStore struct {
+	value *KeyValueStore
+	isSet bool
+}
+
+func (v NullableKeyValueStore) Get() *KeyValueStore {
+	return v.value
+}
+
+func (v *NullableKeyValueStore) Set(val *KeyValueStore) {
+	v.value = val
+	v.isSet = true
+}
+
+func (v NullableKeyValueStore) IsSet() bool {
+	return v.isSet
+}
+
+func (v *NullableKeyValueStore) Unset() {
+	v.value = nil
+	v.isSet = false
+}
+
+func NewNullableKeyValueStore(val *KeyValueStore) *NullableKeyValueStore {
+	return &NullableKeyValueStore{value: val, isSet: true}
+}
+
+func (v NullableKeyValueStore) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.value)
+}
+
+func (v *NullableKeyValueStore) UnmarshalJSON(src []byte) error {
+	v.isSet = true
+	return json.Unmarshal(src, &v.value)
+}
+
+
