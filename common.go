@@ -201,8 +201,10 @@ type PaginationList[T any] struct {
 // BuildUserAgent builds the User-Agent header value mandated by the client requirements:
 // `ApifyClient/{version} ({os}; {language version}); isAtHome/{isAtHome}`.
 //
-// isAtHome is driven by the platform's APIFY_IS_AT_HOME environment variable, matching the
-// reference JS client (which reads it via @apify/consts).
+// isAtHome is driven by the platform's APIFY_IS_AT_HOME environment variable (matching the
+// reference JS client, which reads it via @apify/consts) or the bare isAtHome variable from
+// the requirements doc; either being set marks the client "at home". The flag is rendered
+// lowercase (true/false) to stay byte-consistent with the JS reference. See CHANGELOG.md.
 func BuildUserAgent(suffix string, isAtHomeFn func() bool) string {
 	atHome := "false"
 	if isAtHomeFn() {

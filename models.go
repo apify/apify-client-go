@@ -168,7 +168,7 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 type Dataset struct {
 	// ID is the unique dataset ID.
 	ID string `json:"id"`
-	// Name is the dataset name (nil for unnamed datasets).
+	// Name is the dataset name (empty for unnamed datasets).
 	Name string `json:"name"`
 	// UserID is the ID of the user who owns the dataset.
 	UserID string `json:"userId"`
@@ -192,7 +192,7 @@ func (d *Dataset) UnmarshalJSON(data []byte) error {
 type KeyValueStore struct {
 	// ID is the unique store ID.
 	ID string `json:"id"`
-	// Name is the store name (nil for unnamed stores).
+	// Name is the store name (empty for unnamed stores).
 	Name string `json:"name"`
 	// UserID is the ID of the user who owns the store.
 	UserID string `json:"userId"`
@@ -255,7 +255,7 @@ type KeyValueStoreRecord struct {
 type RequestQueue struct {
 	// ID is the unique queue ID.
 	ID string `json:"id"`
-	// Name is the queue name (nil for unnamed queues).
+	// Name is the queue name (empty for unnamed queues).
 	Name string `json:"name"`
 	// UserID is the ID of the user who owns the queue.
 	UserID string `json:"userId"`

@@ -178,7 +178,7 @@ func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []b
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {

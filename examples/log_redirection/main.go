@@ -30,7 +30,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open log stream: %v", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	if _, err := io.Copy(os.Stdout, stream); err != nil {
 		log.Fatalf("copy log: %v", err)

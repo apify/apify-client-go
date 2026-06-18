@@ -87,6 +87,11 @@ client := apify.NewClientWithOptions(
 | `WithUserAgentSuffix` | — | Suffix appended to the `User-Agent` header. |
 | `WithHTTPBackend` | `DefaultHTTPBackend` | Replaceable HTTP transport. |
 
+The `User-Agent` header reports an `isAtHome` flag indicating whether the client runs on the
+Apify platform. It is driven by an environment variable: the client reads **both**
+`APIFY_IS_AT_HOME` (used by the JavaScript reference client) and the bare `isAtHome` name; if
+either is set to a non-empty value, the flag is `true`.
+
 ## Resource clients
 
 | Accessor | Returns | Purpose |
@@ -176,9 +181,21 @@ Per-resource guides are in [`docs/`](docs):
 
 ## Scope
 
-The client implements only documented API endpoints. Matching the JavaScript reference, the
-synchronous run endpoints (`run-sync`, `run-sync-get-dataset-items`) and the keyed-POST
-record aliases are intentionally not implemented.
+The client implements only documented API endpoints. Matching the JavaScript reference (and
+the Rust sibling) for cross-client consistency, the following documented endpoints are
+**intentionally not implemented**:
+
+- Synchronous run endpoints (`run-sync`, `run-sync-get-dataset-items`).
+- The keyed-`POST` record aliases.
+- Cryptographic tools: `POST /v2/tools/encode-and-sign` and `POST /v2/tools/decode-and-verify`.
+  These are server-side conveniences for the same HMAC signing this client already performs
+  locally in `signature.go`; the reference clients do not expose them, so the Go client omits
+  them too for parity. (Should a future requirement need them, they can be added alongside
+  `signature.go`.)
+- `/v2/browser-info`. Not exposed by the reference clients; omitted for parity.
+
+This is a deliberate, parity-driven decision, not an accidental gap. See the CHANGELOG for the
+same note.
 
 ## License
 

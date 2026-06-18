@@ -119,8 +119,9 @@ func (c *KeyValueStoreClient) RecordExists(ctx context.Context, key string) (boo
 // GetRecord fetches a record by key, or (nil, false, nil) if it does not exist. The value
 // holds the raw bytes; the content type is reported in the record.
 //
-// Like the reference client, it sends attachment=true so the API returns the record's raw
-// bytes directly (rather than redirecting). Use [GetRecordWithOptions] to override this.
+// Like the reference client, it requests the record as an attachment (sent on the wire as
+// attachment=1, the truthy form this client's bool serializer uses) so the API returns the
+// record's raw bytes directly rather than redirecting. Use [GetRecordWithOptions] to override.
 func (c *KeyValueStoreClient) GetRecord(ctx context.Context, key string) (*KeyValueStoreRecord, bool, error) {
 	return c.GetRecordWithOptions(ctx, key, GetRecordOptions{Attachment: ptrBool(true)})
 }

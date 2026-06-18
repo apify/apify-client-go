@@ -88,7 +88,7 @@ func (c *LogClient) StreamWithOptions(ctx context.Context, options LogOptions) (
 	if resp.StatusCode >= maxSuccessStatusCode {
 		// Consume and classify the error body, then close.
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, buildAPIError(resp.StatusCode, body, 1, http.MethodGet, extractPath(url))
 	}
 	return resp.Body, nil

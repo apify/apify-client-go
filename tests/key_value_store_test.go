@@ -177,7 +177,7 @@ func TestRecordPublicURLIsFetchable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch public url: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode >= 300 {
 		t.Fatalf("expected success fetching public url, got %d", resp.StatusCode)

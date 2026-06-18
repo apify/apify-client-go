@@ -42,6 +42,14 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # The idiomatic Go linter. `go vet` only catches a narrow set of correctness issues;
+      # golangci-lint bundles staticcheck and other analyzers, satisfying the coding-rules
+      # mandate that linting/type-checking run in CI. Config lives in .golangci.yml.
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
       - name: Build
         run: go build ./...
 

@@ -3,21 +3,16 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// Per-endpoint base timeouts. These mirror the reference clients' SMALL/MEDIUM/DEFAULT
-// timeouts and are the single source of truth (no magic durations sprinkled in callers).
-const (
-	// defaultRequestTimeout is used when an endpoint does not specify its own (6 minutes).
-	defaultRequestTimeout = 360 * time.Second
-	// smallRequestTimeout is for fast, idempotent metadata operations (mirrors JS SMALL_TIMEOUT).
-	smallRequestTimeout = 5 * time.Second
-	// mediumRequestTimeout is for operations that may take a little longer (JS MEDIUM_TIMEOUT).
-	mediumRequestTimeout = 30 * time.Second
-)
+// defaultRequestTimeout is the per-request timeout applied to all API calls (6 minutes),
+// matching the reference client's DEFAULT_TIMEOUT_MILLIS. It is the single source of truth
+// for the request timeout (no magic durations sprinkled in callers).
+const defaultRequestTimeout = 360 * time.Second
 
 // JSON content types used by the client.
 const (
@@ -30,6 +25,13 @@ const (
 const (
 	waitForFinishPollInterval = 250 * time.Millisecond
 	waitForFinishRequestSecs  = int64(60)
+	// maxWaitForFinishSecs is the finite upper bound used when the caller asks to wait
+	// "indefinitely" (waitSecs == nil). The API will not accept "Infinity", and an
+	// unbounded client loop can spin forever if the resource keeps returning 404 (e.g. a
+	// just-started run whose database replica lags). 999999 seconds is more than 11 days,
+	// effectively indefinite while still guaranteeing termination. Mirrors the reference
+	// client's MAX_WAIT_FOR_FINISH.
+	maxWaitForFinishSecs = int64(999999)
 )
 
 // resourceContext is the resolved context for a resource client: its base URL and the
@@ -269,54 +271,75 @@ func putRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 type terminalChecker[T any] func(*T) bool
 
 // waitForFinish polls a GET endpoint with waitForFinish until the resource reaches a
-// terminal state or waitSecs elapses. waitSecs nil waits indefinitely. Returns the latest
-// resource (finished, or still running if the wait budget was exhausted).
-func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int64, isTerminal terminalChecker[T]) (T, error) {
+// terminal state or the wait budget elapses. waitSecs nil means "wait indefinitely", which
+// is implemented as a finite but very large bound (maxWaitForFinishSecs) so the loop always
+// terminates.
+//
+// The budget is a pure time bound, evaluated independently of whether the resource is
+// currently present. A just-started run/build can transiently return 404 (database-replica
+// lag); like the reference client, we treat that as "not yet available", keep polling on the
+// time bound, and only after the budget is exhausted do we decide the outcome. If the
+// resource never became available within the budget, a descriptive error is returned naming
+// the resource (resourceName, e.g. "run" or "build").
+func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int64, resourceName string, isTerminal terminalChecker[T]) (T, error) {
 	var zero T
-	start := time.Now()
-	var budget *time.Duration
-	if waitSecs != nil {
-		d := time.Duration(maxInt64(*waitSecs, 0)) * time.Second
-		budget = &d
-	}
 
+	effectiveWaitSecs := maxWaitForFinishSecs
+	if waitSecs != nil {
+		effectiveWaitSecs = maxInt64(*waitSecs, 0)
+	}
+	budget := time.Duration(effectiveWaitSecs) * time.Second
+
+	start := time.Now()
+	var (
+		resource T
+		present  bool
+	)
+
+	// do-while: always perform at least one fetch (matching the reference client), then
+	// repeat only while the pure time bound has not been reached.
 	for {
-		var requestSecs int64
-		if budget != nil {
-			elapsed := time.Since(start)
-			if elapsed >= *budget {
-				// Budget exhausted: one final immediate fetch.
-				params := NewQueryParams()
-				zeroSecs := int64(0)
-				params.AddInt("waitForFinish", &zeroSecs)
-				return getResourceRequired[T](ctx, c, "", params)
-			}
-			remaining := int64((*budget - elapsed).Seconds())
-			requestSecs = minInt64(remaining, waitForFinishRequestSecs)
-		} else {
-			requestSecs = waitForFinishRequestSecs
-		}
+		elapsed := time.Since(start)
+		remaining := int64((budget - elapsed).Seconds())
+		requestSecs := minInt64(maxInt64(remaining, 0), waitForFinishRequestSecs)
 
 		params := NewQueryParams()
 		params.AddInt("waitForFinish", &requestSecs)
 
-		resource, present, err := getResource[T](ctx, c, "", params)
+		res, ok, err := getResource[T](ctx, c, "", params)
 		if err != nil {
 			return zero, err
 		}
-		if present {
+		// A transient 404 (ok == false) is not fatal: keep the last known state and poll
+		// again until the time budget runs out.
+		if ok {
+			resource, present = res, true
 			if isTerminal(&resource) {
 				return resource, nil
 			}
-			if budget != nil && time.Since(start) >= *budget {
-				return resource, nil
-			}
+		}
+
+		// Pure time bound: stop once the budget is exhausted, regardless of presence.
+		if time.Since(start) >= budget {
+			break
 		}
 
 		if !sleepWithContext(ctx, waitForFinishPollInterval) {
 			return zero, ctx.Err()
 		}
 	}
+
+	if present {
+		// Budget exhausted but the resource was seen at least once: return its latest state
+		// (e.g. still running). Mirrors the reference client returning the last fetched job.
+		return resource, nil
+	}
+
+	// The resource never became available within the wait budget.
+	return zero, fmt.Errorf(
+		"waiting for %s to finish failed: cannot fetch %s details from the server",
+		resourceName, resourceName,
+	)
 }
 
 func maxInt64(a, b int64) int64 {

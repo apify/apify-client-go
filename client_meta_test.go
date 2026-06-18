@@ -6,7 +6,7 @@ import (
 )
 
 func TestVersionConstants(t *testing.T) {
-	if CLIENT_VERSION == "" || !(CLIENT_VERSION[0] >= '0' && CLIENT_VERSION[0] <= '9') {
+	if CLIENT_VERSION == "" || CLIENT_VERSION[0] < '0' || CLIENT_VERSION[0] > '9' {
 		t.Fatalf("CLIENT_VERSION should start with a digit, got %q", CLIENT_VERSION)
 	}
 	if !strings.HasPrefix(API_SPEC_VERSION, "v2-") || !strings.HasSuffix(API_SPEC_VERSION, "Z") {
@@ -28,7 +28,7 @@ func TestUserAgentFormat(t *testing.T) {
 	}
 	// The Go/ token must be followed by a real version digit, not empty.
 	after := strings.SplitN(ua, "Go/", 2)[1]
-	if len(after) == 0 || !(after[0] >= '0' && after[0] <= '9') {
+	if len(after) == 0 || after[0] < '0' || after[0] > '9' {
 		t.Fatalf("Go version must be a real version, got %q", ua)
 	}
 }
@@ -42,6 +42,27 @@ func TestUserAgentIsAtHomeFlag(t *testing.T) {
 	onClient := NewClientWithOptions(WithToken("t"), withIsAtHomeFn(func() bool { return true }))
 	if !strings.Contains(onClient.UserAgent(), "isAtHome/true") {
 		t.Fatalf("expected isAtHome/true, got %q", onClient.UserAgent())
+	}
+}
+
+// defaultIsAtHome must honour BOTH the JS-consistent APIFY_IS_AT_HOME env var and the bare
+// isAtHome name mandated by the requirements doc, resolving the two conflicting requirements.
+func TestDefaultIsAtHomeReadsBothEnvVars(t *testing.T) {
+	t.Setenv(envIsAtHomePrimary, "")
+	t.Setenv(envIsAtHomeLegacy, "")
+	if defaultIsAtHome() {
+		t.Fatal("expected isAtHome=false when neither env var is set")
+	}
+
+	t.Setenv(envIsAtHomePrimary, "1")
+	if !defaultIsAtHome() {
+		t.Fatalf("expected isAtHome=true when %s is set", envIsAtHomePrimary)
+	}
+
+	t.Setenv(envIsAtHomePrimary, "")
+	t.Setenv(envIsAtHomeLegacy, "1")
+	if !defaultIsAtHome() {
+		t.Fatalf("expected isAtHome=true when %s is set", envIsAtHomeLegacy)
 	}
 }
 

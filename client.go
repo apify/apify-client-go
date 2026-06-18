@@ -126,11 +126,21 @@ func withIsAtHomeFn(fn func() bool) Option {
 	return func(c *clientConfig) { c.isAtHomeFn = fn }
 }
 
+// Environment variable names that signal the client is running on the Apify platform.
+//
+// The canonical reference (JS) reads APIFY_IS_AT_HOME, but the client_requirements.md
+// worked example uses the bare name isAtHome. These two same-priority requirements conflict,
+// so the client honours BOTH: APIFY_IS_AT_HOME (JS-consistent, primary) and isAtHome (the
+// literal requirement). Either being set marks the client as "at home". See CHANGELOG.md.
+const (
+	envIsAtHomePrimary = "APIFY_IS_AT_HOME"
+	envIsAtHomeLegacy  = "isAtHome"
+)
+
 // defaultIsAtHome reports whether the client is running on the Apify platform, by reading
-// the APIFY_IS_AT_HOME environment variable (matching the reference JS client).
+// either supported environment variable (see envIsAtHomePrimary / envIsAtHomeLegacy).
 func defaultIsAtHome() bool {
-	v := os.Getenv("APIFY_IS_AT_HOME")
-	return v != ""
+	return os.Getenv(envIsAtHomePrimary) != "" || os.Getenv(envIsAtHomeLegacy) != ""
 }
 
 // NewClient creates a client authenticated with the given API token and default settings.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // okData is a constant 200 response with an empty data envelope, reused by the offline
@@ -99,12 +100,71 @@ func TestGetStreamedLogParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get streamed log: %v", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	if !strings.Contains(backend.lastURL, "stream=1") {
 		t.Fatalf("expected stream=1 in URL, got %q", backend.lastURL)
 	}
 	if !strings.Contains(backend.lastURL, "raw=1") {
 		t.Fatalf("expected raw=1 in URL, got %q", backend.lastURL)
+	}
+}
+
+// notFound is a constant 404 response, used to simulate a resource that never becomes
+// available (e.g. database-replica lag on a just-started run that never resolves).
+func notFound() []mockResponse {
+	return constant(404, `{"error":{"type":"record-not-found","message":"missing"}}`)
+}
+
+// A bounded WaitForFinish against a resource that stays 404 must terminate when the budget
+// is exhausted and return a descriptive error (not the raw 404), matching the reference
+// client's "Waiting for run to finish failed" behaviour.
+func TestWaitForFinishBoundedReturnsDescriptiveErrorOn404(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	zeroSecs := int64(0)
+	_, err := client.Run("r1").WaitForFinish(context.Background(), &zeroSecs)
+	if err == nil {
+		t.Fatal("expected a descriptive error when the run never becomes available")
+	}
+	if !strings.Contains(err.Error(), "waiting for run to finish failed") {
+		t.Fatalf("expected descriptive wait error, got %q", err.Error())
+	}
+	// 404 must not be retried by the transport, and the budget=0 path does exactly one fetch.
+	if backend.calls != 1 {
+		t.Fatalf("expected exactly 1 fetch for a zero-budget wait, got %d", backend.calls)
+	}
+}
+
+// An INDEFINITE WaitForFinish (nil waitSecs) against a permanent 404 must NOT hang forever:
+// it polls through 404s on a pure time bound, so a cancelled context unblocks it promptly.
+// This is the regression test for the waitForFinish hang bug.
+func TestWaitForFinishIndefiniteDoesNotHangOn404(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Run("r1").WaitForFinish(ctx, nil)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		// It must return because the context was cancelled (or, in principle, the budget),
+		// never spin indefinitely.
+		if err == nil {
+			t.Fatal("expected a non-nil error (context cancelled), got nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WaitForFinish hung on a permanent 404 during an indefinite wait")
+	}
+	// Must have polled at least once through the 404 (proving 404 is not treated as fatal).
+	if backend.calls < 1 {
+		t.Fatalf("expected at least one poll through the 404, got %d", backend.calls)
 	}
 }
 

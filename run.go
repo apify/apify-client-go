@@ -92,11 +92,13 @@ func (c *RunClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// Abort aborts the run. If gracefully is true, the run is sent a signal so it can finish
-// the current request before terminating.
-func (c *RunClient) Abort(ctx context.Context, gracefully bool) (ActorRun, error) {
+// Abort aborts the run. If gracefully points to true, the run is sent a signal so it can
+// finish the current request before terminating; if false it is aborted immediately. Pass
+// nil to omit the parameter entirely and let the server apply its default (immediate abort),
+// matching the reference client's optional `gracefully` option.
+func (c *RunClient) Abort(ctx context.Context, gracefully *bool) (ActorRun, error) {
 	params := NewQueryParams()
-	params.AddBool("gracefully", &gracefully)
+	params.AddBool("gracefully", gracefully)
 	return postWithBody[ActorRun](ctx, c.ctx, "abort", params, nil, "")
 }
 
@@ -176,7 +178,7 @@ func (c *RunClient) generateIdempotencyKey(eventName string) string {
 // WaitForFinish polls until the run reaches a terminal state or waitSecs elapses (nil waits
 // indefinitely). It returns the latest run.
 func (c *RunClient) WaitForFinish(ctx context.Context, waitSecs *int64) (ActorRun, error) {
-	return waitForFinish[ActorRun](ctx, c.ctx, waitSecs, func(r *ActorRun) bool { return r.IsTerminal() })
+	return waitForFinish[ActorRun](ctx, c.ctx, waitSecs, "run", func(r *ActorRun) bool { return r.IsTerminal() })
 }
 
 // Dataset returns a client for this run's default dataset.

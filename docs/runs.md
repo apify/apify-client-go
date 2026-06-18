@@ -21,7 +21,7 @@ Actor- and task-scoped collections).
 | `GetWithWait(ctx, waitForFinishSecs *int64) (ActorRun, bool, error)` | Fetch, optionally waiting server-side. |
 | `Update(ctx, newFields any) (ActorRun, error)` | Update the run (e.g. status message). |
 | `Delete(ctx) error` | Delete the run. |
-| `Abort(ctx, gracefully bool) (ActorRun, error)` | Abort the run. |
+| `Abort(ctx, gracefully *bool) (ActorRun, error)` | Abort the run. Pass `nil` to use the server default (immediate), or a pointer to `true`/`false` to abort gracefully/immediately. |
 | `Metamorph(ctx, targetActorID string, input any, MetamorphOptions) (ActorRun, error)` | Metamorph into another Actor. |
 | `Reboot(ctx) (ActorRun, error)` | Reboot the run. |
 | `Resurrect(ctx, RunResurrectOptions) (ActorRun, error)` | Resurrect a finished run. |

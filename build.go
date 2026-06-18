@@ -70,7 +70,7 @@ func (c *BuildClient) Delete(ctx context.Context) error {
 // WaitForFinish polls until the build reaches a terminal state or waitSecs elapses (nil
 // waits indefinitely). It returns the latest build.
 func (c *BuildClient) WaitForFinish(ctx context.Context, waitSecs *int64) (Build, error) {
-	return waitForFinish[Build](ctx, c.ctx, waitSecs, func(b *Build) bool { return b.IsTerminal() })
+	return waitForFinish[Build](ctx, c.ctx, waitSecs, "build", func(b *Build) bool { return b.IsTerminal() })
 }
 
 // GetOpenAPIDefinition returns the OpenAPI definition generated for the build, or
