@@ -46,9 +46,12 @@ jobs:
       # golangci-lint bundles staticcheck and other analyzers, satisfying the coding-rules
       # mandate that linting/type-checking run in CI. Config lives in .golangci.yml.
       - name: Lint (golangci-lint)
-        uses: golangci/golangci-lint-action@v6
+        # Use the v7 action and pin a golangci-lint v2 release: .golangci.yml uses the
+        # v2 config schema, which the v6 action's v1.x binary rejects ("additional
+        # properties 'version'/'default' not allowed").
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.5.0
 
       - name: Build
         run: go build ./...
