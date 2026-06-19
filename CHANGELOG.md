@@ -5,6 +5,28 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-19
+
+Verified against OpenAPI specification version `v2-2026-06-18T095846Z` (bumped from
+`v2-2026-06-16T064758Z`). The spec delta is purely additive — two optional query
+parameters — so there are no breaking changes.
+
+### Added
+
+- `ActorClient.ValidateInputForBuild(ctx, input, build)` exposes the new optional `build`
+  query parameter on `POST /v2/actors/{actorId}/validate-input`, validating input against the
+  input schema of a specific Actor build (tag or number). `ValidateInput` is unchanged and
+  now delegates with an empty build (omitting the parameter, so the API validates against the
+  build tagged `latest`, per the OpenAPI specification).
+- `UserClient.MonthlyUsageForDate(ctx, date)` exposes the new optional `date` query parameter
+  (YYYY-MM-DD) on `GET /v2/users/me/usage/monthly`, selecting the month to report usage for.
+  `MonthlyUsage` is unchanged and now delegates with an empty date (omitting the parameter, so
+  the current month is reported).
+
+### Changed
+
+- `API_SPEC_VERSION` bumped to `v2-2026-06-18T095846Z`.
+
 ## [0.1.0] - 2026-06-18
 
 Initial release of the official Go client for the Apify API, verified against OpenAPI

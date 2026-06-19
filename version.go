@@ -4,11 +4,10 @@ package apify
 //
 // It follows Semantic Versioning (https://semver.org/). Changes to the public
 // interface (other than additive ones) are considered breaking changes.
-const CLIENT_VERSION = "0.1.0"
+const CLIENT_VERSION = "0.2.0"
 
 // API_SPEC_VERSION is the version of the Apify OpenAPI specification that this
 // client was generated and verified against.
 //
-// It corresponds to the `info.version` field of the Apify OpenAPI document, e.g.
-// `v2-2026-06-16T064758Z`.
-const API_SPEC_VERSION = "v2-2026-06-16T064758Z"
+// It corresponds to the `info.version` field of the Apify OpenAPI document.
+const API_SPEC_VERSION = "v2-2026-06-18T095846Z"

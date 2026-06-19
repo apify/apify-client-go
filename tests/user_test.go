@@ -30,6 +30,20 @@ func TestGetMonthlyUsage(t *testing.T) {
 	}
 }
 
+func TestGetMonthlyUsageForDate(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	usage, err := client.Me().MonthlyUsageForDate(ctx, "2026-06-01")
+	if err != nil {
+		t.Fatalf("MonthlyUsageForDate: %v", err)
+	}
+	if len(usage) == 0 {
+		t.Fatal("expected a non-empty monthly usage object")
+	}
+}
+
 func TestGetLimits(t *testing.T) {
 	client := requireClient(t)
 	ctx, cancel := testContext(t)
