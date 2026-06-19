@@ -29,15 +29,31 @@ for {
 | Method | Description |
 | --- | --- |
 | `Get(ctx) (User, bool, error)` | Account details (private for `Me()`, public otherwise). |
-| `MonthlyUsage(ctx) (json.RawMessage, error)` | Current account's monthly usage (`Me()` only). |
+| `MonthlyUsage(ctx) (json.RawMessage, error)` | Current month's usage (`Me()` only). |
+| `MonthlyUsageForDate(ctx, date string) (json.RawMessage, error)` | Usage for the month containing `date` (YYYY-MM-DD, `Me()` only). |
 | `Limits(ctx) (json.RawMessage, error)` | Current account's limits (`Me()` only). |
 | `UpdateLimits(ctx, newLimits any) error` | Update the account's limits (`Me()` only). |
 
 The usage/limits methods return an error if called on a non-`Me()` client.
 
+`MonthlyUsage` is equivalent to `MonthlyUsageForDate(ctx, "")`: an empty `date` omits the
+parameter, so the API reports usage for the current month. Pass a `YYYY-MM-DD` date to select
+the month containing that date. Both return the raw JSON usage report from the API — a JSON
+object with the account's usage breakdown and totals for the period.
+
 ```go
 user, ok, err := client.Me().Get(ctx)
+if err != nil { log.Fatal(err) }
+fmt.Println(user.Username, ok)
+
 usage, err := client.Me().MonthlyUsage(ctx)
+if err != nil { log.Fatal(err) }
+fmt.Println(string(usage)) // raw JSON usage report for the current month
+
+// Usage for the month containing a specific date.
+mayUsage, err := client.Me().MonthlyUsageForDate(ctx, "2026-05-15")
+if err != nil { log.Fatal(err) }
+fmt.Println(string(mayUsage)) // raw JSON usage report
 ```
 
 ## Logs

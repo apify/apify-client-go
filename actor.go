@@ -176,12 +176,33 @@ func (c *ActorClient) DefaultBuild(ctx context.Context, waitForFinish *int64) (*
 }
 
 // ValidateInput validates the given input against the Actor's input schema.
+//
+// It omits the build parameter, so the API validates against the input schema of the build
+// tagged "latest". To validate against a specific build, use [ActorClient.ValidateInputForBuild].
+//
+// On success it returns the raw JSON validation result from the API (a JSON object reporting
+// whether the input is valid and, if not, the schema violations).
 func (c *ActorClient) ValidateInput(ctx context.Context, input any) (json.RawMessage, error) {
+	return c.ValidateInputForBuild(ctx, input, "")
+}
+
+// ValidateInputForBuild validates the given input against the input schema of a specific
+// Actor build, identified by its tag or number (e.g. "latest", "0.1.2"). An empty build
+// omits the parameter, so the API validates against the build tagged "latest" (per the
+// OpenAPI specification), equivalent to [ActorClient.ValidateInput].
+//
+// On success it returns the raw JSON validation result from the API (a JSON object reporting
+// whether the input is valid and, if not, the schema violations).
+func (c *ActorClient) ValidateInputForBuild(ctx context.Context, input any, build string) (json.RawMessage, error) {
 	body, err := json.Marshal(input)
 	if err != nil {
 		return nil, err
 	}
-	url := c.ctx.subURL("validate-input")
+	params := NewQueryParams()
+	if build != "" {
+		params.AddString("build", &build)
+	}
+	url := params.applyToURL(c.ctx.subURL("validate-input"))
 	resp, err := c.ctx.http.call(ctx, http.MethodPost, url, body, contentTypeJSON, defaultRequestTimeout)
 	if err != nil {
 		return nil, err

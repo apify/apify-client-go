@@ -28,12 +28,28 @@ page, err := client.Actors().List(ctx, apify.ActorListOptions{My: apify.Ptr(true
 | `Call(ctx, input any, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait for the run to finish. |
 | `Build(ctx, versionNumber string, ActorBuildOptions) (Build, error)` | Build a version. |
 | `DefaultBuild(ctx, waitForFinish *int64) (*BuildClient, error)` | Resolve the default build. |
-| `ValidateInput(ctx, input any) (json.RawMessage, error)` | Validate input against the schema. |
+| `ValidateInput(ctx, input any) (json.RawMessage, error)` | Validate input against the `latest` build's schema. |
+| `ValidateInputForBuild(ctx, input any, build string) (json.RawMessage, error)` | Validate input against a specific build's schema (tag or number). |
 | `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |
 | `Builds() *BuildCollectionClient` | This Actor's builds. |
 | `Runs() *RunCollectionClient` | This Actor's runs. |
 | `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Versions. |
 | `Webhooks() *WebhookCollectionClient` | This Actor's webhooks. |
+
+`ValidateInput` is equivalent to `ValidateInputForBuild(ctx, input, "")`: an empty `build`
+omits the parameter, so the API validates against the build tagged `latest` (per the API
+specification). Both return the raw JSON validation result from the API — a JSON object
+reporting whether the input is valid and, if not, the schema violations.
+
+```go
+// Validate input against a specific build's input schema.
+result, err := client.Actor("apify/hello-world").ValidateInputForBuild(ctx,
+	map[string]any{"message": "hi"},
+	"latest",
+)
+if err != nil { log.Fatal(err) }
+fmt.Println(string(result)) // raw JSON validation result
+```
 
 `ActorStartOptions`: `Build`, `MemoryMbytes`, `TimeoutSecs`, `WaitForFinish`, `MaxItems`,
 `MaxTotalChargeUsd`, `ContentType`, `RestartOnError`, `ForcePermissionLevel`, `Webhooks`.

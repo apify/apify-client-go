@@ -57,4 +57,13 @@ func TestBuildActorFlow(t *testing.T) {
 	if _, _, err := client.Build(build.ID).GetOpenAPIDefinition(ctx); err != nil {
 		t.Fatalf("openapi definition: %v", err)
 	}
+
+	// Validate input against the freshly-built "latest" build's input schema.
+	validation, err := client.Actor(created.ID).ValidateInputForBuild(ctx, map[string]any{}, "latest")
+	if err != nil {
+		t.Fatalf("validate input for build: %v", err)
+	}
+	if len(validation) == 0 {
+		t.Fatal("expected a non-empty input validation response")
+	}
 }

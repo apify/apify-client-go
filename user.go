@@ -31,12 +31,30 @@ func (c *UserClient) Get(ctx context.Context) (User, bool, error) {
 	return getResource[User](ctx, c.ctx, "", NewQueryParams())
 }
 
-// MonthlyUsage fetches the current account's monthly usage. Only available for "me".
+// MonthlyUsage fetches the current account's monthly usage for the current month. Only
+// available for "me". To select a different month, use [UserClient.MonthlyUsageForDate].
+//
+// It returns the raw JSON usage report from the API (a JSON object with the account's usage
+// breakdown and totals for the period).
 func (c *UserClient) MonthlyUsage(ctx context.Context) (json.RawMessage, error) {
+	return c.MonthlyUsageForDate(ctx, "")
+}
+
+// MonthlyUsageForDate fetches the current account's monthly usage for the month containing
+// the given date (formatted as YYYY-MM-DD). An empty date omits the parameter and returns
+// usage for the current month. Only available for "me".
+//
+// It returns the raw JSON usage report from the API (a JSON object with the account's usage
+// breakdown and totals for the period).
+func (c *UserClient) MonthlyUsageForDate(ctx context.Context, date string) (json.RawMessage, error) {
 	if !c.isMe {
 		return nil, errNotMe
 	}
-	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", NewQueryParams())
+	params := NewQueryParams()
+	if date != "" {
+		params.AddString("date", &date)
+	}
+	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", params)
 }
 
 // Limits fetches the current account's resource limits. Only available for "me".
