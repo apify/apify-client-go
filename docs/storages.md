@@ -22,13 +22,25 @@ Single dataset: `client.Dataset(id)`:
 
 For typed item decoding use the generic helper `apify.ListDatasetItems[T](ctx, dataset, opts)`.
 
+`DownloadItems` takes a `DownloadItemsFormat`. The exported constants are:
+
+| Constant | Value |
+| --- | --- |
+| `apify.FormatJSON` | `json` |
+| `apify.FormatJSONL` | `jsonl` |
+| `apify.FormatCSV` | `csv` |
+| `apify.FormatXLSX` | `xlsx` |
+| `apify.FormatXML` | `xml` |
+| `apify.FormatRSS` | `rss` |
+| `apify.FormatHTML` | `html` |
+
 ```go
 ds, _ := client.Datasets().GetOrCreate(ctx, "")
 defer client.Dataset(ds.ID).Delete(ctx)
 
 _ = client.Dataset(ds.ID).PushItems(ctx, []map[string]any{{"x": 1}, {"x": 2}})
-page, _ := client.Dataset(ds.ID).ListItems(ctx, apify.DatasetListItemsOptions{Limit: ptr(int64(100))})
-csv, _ := client.Dataset(ds.ID).DownloadItems(ctx, apify.FormatCSV, apify.DatasetDownloadOptions{Bom: ptr(true)})
+page, _ := client.Dataset(ds.ID).ListItems(ctx, apify.DatasetListItemsOptions{Limit: apify.Ptr(int64(100))})
+csv, _ := client.Dataset(ds.ID).DownloadItems(ctx, apify.FormatCSV, apify.DatasetDownloadOptions{Bom: apify.Ptr(true)})
 ```
 
 ## Key-value stores
@@ -90,7 +102,7 @@ defer client.RequestQueue(rq.ID).Delete(ctx)
 queue := client.RequestQueue(rq.ID)
 _, _ = queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, false)
 
-it := queue.PaginateRequests(ptr(int64(100)))
+it := queue.PaginateRequests(apify.Ptr(int64(100)))
 for {
 	req, err := it.Next(ctx)
 	if err != nil { log.Fatal(err) }

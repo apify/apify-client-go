@@ -52,13 +52,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("start build: %v", err)
 	}
-	if _, err := client.Build(build.ID).WaitForFinish(ctx, ptr(int64(300))); err != nil {
+	if _, err := client.Build(build.ID).WaitForFinish(ctx, apify.Ptr(int64(300))); err != nil {
 		log.Fatalf("wait for build: %v", err)
 	}
 	fmt.Printf("Built actor (build %s)\n", build.ID)
 
 	// Run the actor and wait for it to finish.
-	run, err := actor.Call(ctx, nil, apify.ActorStartOptions{}, ptr(int64(120)))
+	run, err := actor.Call(ctx, nil, apify.ActorStartOptions{}, apify.Ptr(int64(120)))
 	if err != nil {
 		log.Fatalf("run actor: %v", err)
 	}
@@ -74,5 +74,3 @@ func main() {
 		fmt.Println(logText)
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

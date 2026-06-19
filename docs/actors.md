@@ -14,7 +14,7 @@ Actors are the programs that run on the Apify platform. Access the Actor collect
 `ActorListOptions`: `Offset`, `Limit`, `Desc`, `My`, `SortBy` (all optional pointers).
 
 ```go
-page, err := client.Actors().List(ctx, apify.ActorListOptions{My: ptr(true), Limit: ptr(int64(10))})
+page, err := client.Actors().List(ctx, apify.ActorListOptions{My: apify.Ptr(true), Limit: apify.Ptr(int64(10))})
 ```
 
 ## Single Actor
@@ -45,7 +45,7 @@ page, err := client.Actors().List(ctx, apify.ActorListOptions{My: ptr(true), Lim
 waitSecs := int64(120)
 run, err := client.Actor("apify/hello-world").Call(ctx,
 	map[string]any{"message": "hi"},
-	apify.ActorStartOptions{MemoryMbytes: ptr(int64(512))},
+	apify.ActorStartOptions{MemoryMbytes: apify.Ptr(int64(512))},
 	&waitSecs,
 )
 ```
@@ -63,7 +63,8 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 
 ```go
 v := client.Actor(actorID).Version("0.0")
-_, err := v.EnvVars().Create(ctx, apify.ActorEnvVar{Name: "API_KEY", Value: "secret", IsSecret: ptr(true)})
+_, err := v.EnvVars().Create(ctx, apify.ActorEnvVar{Name: "API_KEY", Value: "secret", IsSecret: apify.Ptr(true)})
 ```
 
-> `ptr` is a helper returning a pointer to its argument: `func ptr[T any](v T) *T { return &v }`.
+> `apify.Ptr` is an exported helper returning a pointer to its argument
+> (`func Ptr[T any](v T) *T`). Use it to set the optional, pointer-typed option fields inline.

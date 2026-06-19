@@ -25,7 +25,7 @@ build, err := client.Actor(actorID).Build(ctx, "0.0", apify.ActorBuildOptions{})
 if err != nil {
 	log.Fatal(err)
 }
-finished, err := client.Build(build.ID).WaitForFinish(ctx, ptr(int64(300)))
+finished, err := client.Build(build.ID).WaitForFinish(ctx, apify.Ptr(int64(300)))
 if err != nil {
 	log.Fatal(err)
 }

@@ -182,7 +182,18 @@ func (o StorageListOptions) apply(q *QueryParams) {
 		AddString("ownership", o.Ownership)
 }
 
+// Ptr returns a pointer to v. It is a convenience for setting the optional, pointer-typed
+// fields on the option structs (e.g. Limit, Desc, My) without needing a named local variable:
+//
+//	client.Actors().List(ctx, apify.ActorListOptions{My: apify.Ptr(true), Limit: apify.Ptr(int64(10))})
+func Ptr[T any](v T) *T { return &v }
+
 // PaginationList is a single page of an offset/limit-paginated list.
+//
+// The pagination metadata (Total, Offset, Limit, Count, Desc) accompanies the Items slice.
+// Note: Total reflects the API's reported total, which can briefly lag immediately after a
+// write (e.g. right after PushItems) because the count is computed asynchronously — re-read
+// after a short delay if you need an exact post-write total.
 type PaginationList[T any] struct {
 	// Total is the total number of items available across all pages.
 	Total int64 `json:"total"`

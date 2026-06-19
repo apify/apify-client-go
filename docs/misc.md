@@ -13,7 +13,7 @@ Browse public Actors with `client.Store()`:
 `PricingModel`, `IncludeUnrunnableActors`, `AllowsAgenticUsers`, `ResponseFormat`.
 
 ```go
-it := client.Store().Iterate(apify.StoreListOptions{Limit: ptr(int64(20)), Search: ptr("scraper")})
+it := client.Store().Iterate(apify.StoreListOptions{Limit: apify.Ptr(int64(20)), Search: apify.Ptr("scraper")})
 for {
 	actor, err := it.Next(ctx)
 	if err != nil { log.Fatal(err) }

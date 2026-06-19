@@ -35,7 +35,7 @@ task, err := client.Tasks().Create(ctx, map[string]any{
 if err != nil {
 	log.Fatal(err)
 }
-run, err := client.Task(task.ID).Call(ctx, nil, apify.TaskStartOptions{}, ptr(int64(120)))
+run, err := client.Task(task.ID).Call(ctx, nil, apify.TaskStartOptions{}, apify.Ptr(int64(120)))
 ```
 
 `TaskStartOptions` mirrors `ActorStartOptions` (see [actors.md](actors.md)) but omits the
