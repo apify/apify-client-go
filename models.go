@@ -76,7 +76,8 @@ type ActorRun struct {
 	ActorTaskID string `json:"actorTaskId"`
 	// UserID is the ID of the user who owns the run.
 	UserID string `json:"userId"`
-	// Status is the current run status (READY, RUNNING, SUCCEEDED, FAILED, ABORTED, TIMED-OUT).
+	// Status is the current run status. One of the eight ActorJobStatus values: READY, RUNNING,
+	// SUCCEEDED, FAILED, TIMING-OUT, TIMED-OUT, ABORTING, ABORTED.
 	Status string `json:"status"`
 	// StatusMessage is an optional human-readable status message.
 	StatusMessage string `json:"statusMessage"`

@@ -5,6 +5,85 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-19
+
+Documentation and CI compliance with the updated client requirements. No changes to the
+public API or to the OpenAPI spec version (`v2-2026-06-18T095846Z`), so there are no breaking
+changes.
+
+### Added
+
+- CI: a standalone `Test examples` step in the Go integration workflow that actually runs the
+  documentation example code end-to-end. It executes the example programs in `examples/` against
+  the live API (the `TestExample*` smoke tests, each running `go run ./examples/<name>`) and
+  validates that every in-documentation `go` snippet is valid, runnable, and gofmt-formatted
+  (the new `TestDocSnippets*` tests, which extract every ```go block from the README and `docs/`
+  and compile each one). The `Integration tests` step now skips these so the two concerns stay
+  separate, mirroring the Rust sibling client.
+- Tests: `tests/docs_snippets_test.go`, an offline doc-snippet harness (Go has no Markdown
+  doctest equivalent) that enforces the requirement that each in-documentation code snippet is
+  valid, runnable, and properly formatted.
+
+### Changed
+
+- Workflow now also triggers on `docs/**` and `README.md` changes, so documentation edits
+  re-run the snippet validation.
+
+### Fixed
+
+- Reformatted all `docs/` and README code snippets to canonical gofmt output (one-line
+  `if err != nil { ... }` blocks expanded, tab indentation, aligned trailing comments) and made
+  the custom-HTTP-transport snippet a complete, compilable program.
+- Corrected the README versioning note, which referenced the older spec version
+  `v2-2026-06-16T064758Z` instead of the current `v2-2026-06-18T095846Z`.
+
+### Documentation
+
+- Documented the shared `ListOptions` type (fields + example) in `docs/README.md`, which several
+  resource pages reference as a method argument but which was previously undefined in the docs.
+- Documented the `apify.ListDatasetItems[T]` generic helper's argument types and added a runnable
+  typed-decoding example in `docs/storages.md`.
+- Added explicit field listings for the `ActorRun`, `Build`, `User`, and `ActorStoreListItem`
+  response models to `docs/runs.md`, `docs/builds.md`, and `docs/misc.md`.
+- Added full field listings in `docs/storages.md` for the storage option/parameter structs that
+  were previously named in method tables but not enumerated: `DatasetListItemsOptions`,
+  `DatasetDownloadOptions`, `ListKeysOptions`, `GetRecordOptions`, `GetRecordsOptions`,
+  `ListRequestsOptions`, and the `RequestQueueRequest` payload.
+- Documented the storage *return* types that examples dereference: `KeyValueStoreRecord`,
+  `KeyValueStoreKeysPage` (and `KeyValueStoreKey`), `RequestQueueHead`,
+  `RequestQueueOperationInfo`, and `BatchAddResult` in `docs/storages.md`.
+- Added field tables for the remaining response models (`Actor`, `Task`, `Schedule`, `Webhook`,
+  `WebhookDispatch`) to their resource pages, matching the treatment of `ActorRun`/`Build`.
+- Documented the accepted values / details of the enum-like parameters `RunListOptions.Status`,
+  `ListRequestsOptions.Filter` (`"locked"`/`"pending"`), `DatasetListItemsOptions.View`, and the
+  full `StorageListOptions` field table; and clarified in `docs/README.md` that the
+  within-storage listers (`ListKeys`, `ListHead`) return their own page/head containers rather
+  than `PaginationList[T]`.
+- Expanded the run/Actor/store *input* option structs from bare name lists into full
+  field/type/meaning tables: `ActorStartOptions` (including the nested ad-hoc `Webhooks` element
+  shape and `ForcePermissionLevel`), `ActorBuildOptions`, `ActorListOptions`, `StoreListOptions`
+  (with enum values for `SortBy`/`PricingModel`), `RunResurrectOptions`, `MetamorphOptions`, and
+  `LogOptions`; and made `StorageListOptions.Ownership` state its accepted values definitively.
+- Documented the schedule `actions` payload shape with a runnable `RUN_ACTOR` action example in
+  `docs/schedules.md`, replacing the empty `[]any{}` placeholder.
+- Stated the closed enum sets definitively (verified against the OpenAPI spec) instead of hedging
+  with "e.g.": `StoreListOptions.PricingModel` (`FREE`, `FLAT_PRICE_PER_MONTH`,
+  `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT` — previously omitted `PAY_PER_EVENT`),
+  `StoreListOptions.ResponseFormat` (`full`, `agent` — previously unspecified),
+  `ActorStartOptions.ForcePermissionLevel` (`LIMITED_PERMISSIONS`, `FULL_PERMISSIONS`), and
+  `ActorListOptions.SortBy` (`createdAt`, `stats.lastRunStartedAt`).
+- Corrected and completed the run/build status enum documentation: the canonical `ActorJobStatus`
+  enum has eight values, but the docs (and the `ActorRun.Status` in-code comment) listed only six
+  for runs and four for builds. Now `ActorRun.Status`, `RunListOptions.Status`, and `Build.Status`
+  all document the full set `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`,
+  `ABORTING`, `ABORTED`. (Behavior unchanged: `IsTerminal` still treats only the four terminal
+  states as finished, which is correct.)
+- Documented the closed enums in the actor/version `Create` definition (`sourceType` =
+  `VersionSourceType`: `SOURCE_FILES`/`GIT_REPO`/`TARBALL`/`GITHUB_GIST`/`SOURCE_CODE`; source-file
+  `format` = `TEXT`/`BASE64`) with a runnable `SOURCE_FILES` example in `docs/actors.md`.
+- Enumerated the closed 12-value `WebhookEventType` set in `docs/webhooks.md` and cross-referenced
+  it from the `ActorStartOptions.Webhooks` note.
+
 ## [0.2.0] - 2026-06-19
 
 Verified against OpenAPI specification version `v2-2026-06-18T095846Z` (bumped from

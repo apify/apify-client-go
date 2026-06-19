@@ -14,6 +14,42 @@ Webhooks notify external services when events occur. Access the webhook collecti
 An Actor's or task's webhooks are also listable via `client.Actor(id).Webhooks()` /
 `client.Task(id).Webhooks()`.
 
+### Event types
+
+A webhook's `eventTypes` is a list drawn from the closed `WebhookEventType` enum (12 values):
+
+| Build events | Run events | Other |
+|---|---|---|
+| `ACTOR.BUILD.CREATED` | `ACTOR.RUN.CREATED` | `TEST` |
+| `ACTOR.BUILD.SUCCEEDED` | `ACTOR.RUN.SUCCEEDED` | |
+| `ACTOR.BUILD.FAILED` | `ACTOR.RUN.FAILED` | |
+| `ACTOR.BUILD.ABORTED` | `ACTOR.RUN.ABORTED` | |
+| `ACTOR.BUILD.TIMED_OUT` | `ACTOR.RUN.TIMED_OUT` | |
+| | `ACTOR.RUN.RESURRECTED` | |
+
+The same values apply to the ad-hoc `ActorStartOptions.Webhooks` element (see
+[actors.md](actors.md)).
+
+### `Webhook` and `WebhookDispatch` fields
+
+`Webhook`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique webhook ID. |
+| `UserID` | `string` | ID of the user who owns the webhook. |
+| `RequestURL` | `string` | URL the webhook posts to. |
+| `EventTypes` | `[]string` | Events that trigger the webhook. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
+
+`WebhookDispatch`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique dispatch ID. |
+| `WebhookID` | `string` | ID of the webhook that produced this dispatch. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
+
 ## Single webhook
 
 | Method | Description |

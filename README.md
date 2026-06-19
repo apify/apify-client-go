@@ -67,10 +67,10 @@ options for full control:
 ```go
 client := apify.NewClientWithOptions(
 	apify.WithToken("my-api-token"),
-	apify.WithBaseURL("https://api.apify.com"),   // /v2 is appended automatically
-	apify.WithMaxRetries(8),                       // default 8
+	apify.WithBaseURL("https://api.apify.com"), // /v2 is appended automatically
+	apify.WithMaxRetries(8),                    // default 8
 	apify.WithMinDelayBetweenRetries(500*time.Millisecond),
-	apify.WithTimeout(360*time.Second),            // default 6 minutes
+	apify.WithTimeout(360*time.Second), // default 6 minutes
 	apify.WithUserAgentSuffix("MyTool/1.0"),
 	apify.WithHTTPBackend(apify.NewDefaultHTTPBackend()),
 )
@@ -135,23 +135,35 @@ The transport is replaceable. Implement `HTTPBackend` (a single `Do` method) to 
 custom client, proxy, or test double, and pass it with `WithHTTPBackend`:
 
 ```go
+package main
+
+import (
+	"net/http"
+
+	apify "github.com/apify/apify-client-go"
+)
+
+// myBackend is a custom HTTPBackend wrapping a standard *http.Client.
 type myBackend struct{ inner *http.Client }
 
 func (b *myBackend) Do(req *http.Request) (*http.Response, error) {
 	return b.inner.Do(req)
 }
 
-client := apify.NewClientWithOptions(
-	apify.WithToken("my-api-token"),
-	apify.WithHTTPBackend(&myBackend{inner: http.DefaultClient}),
-)
+func main() {
+	client := apify.NewClientWithOptions(
+		apify.WithToken("my-api-token"),
+		apify.WithHTTPBackend(&myBackend{inner: http.DefaultClient}),
+	)
+	_ = client
+}
 ```
 
 ## Versioning
 
 - `apify.CLIENT_VERSION` — the semantic version of this library.
 - `apify.API_SPEC_VERSION` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-06-16T064758Z`).
+  (`v2-2026-06-18T095846Z`).
 
 ## Examples
 

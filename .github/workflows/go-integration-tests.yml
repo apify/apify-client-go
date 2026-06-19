@@ -9,6 +9,10 @@ on:
       - '**/*.go'
       - 'go.mod'
       - 'go.sum'
+      # The "Test examples" step validates the in-documentation snippets, so doc changes must
+      # re-run the workflow even though Markdown is not Go code.
+      - 'docs/**'
+      - 'README.md'
       - '.github/workflows/go-integration-tests.yml'
   workflow_dispatch:
 
@@ -77,5 +81,23 @@ jobs:
         env:
           # The integration-test token is stored as a repository secret.
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-        # Limit parallelism to be gentle on the shared test account.
-        run: go test ./tests/ -v -timeout 900s -p 1 -parallel 4
+        # Limit parallelism to be gentle on the shared test account. The documentation example
+        # programs (TestExample*) and the in-documentation snippet checks (TestDocSnippets*) are
+        # exercised by the standalone "Test examples" step below, so they are skipped here to
+        # keep the two concerns separate.
+        run: go test ./tests/ -v -timeout 900s -p 1 -parallel 4 -skip '^(TestExample|TestDocSnippets)'
+
+      # Standalone CI step that verifies the documentation examples actually work. It runs the
+      # example programs in examples/ end-to-end against the live API (via the TestExample*
+      # smoke tests in tests/examples_test.go, each of which executes `go run ./examples/<name>`)
+      # and checks that every in-documentation code snippet is valid, runnable, and gofmt-
+      # formatted (the TestDocSnippets* tests, which extract every ```go block from the README
+      # and docs/ and compile each one). Both are required by the documentation requirements:
+      # each documentation example has a CI test that actually runs the code, and each snippet
+      # must be valid, runnable and properly formatted.
+      - name: Test examples
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        # Match the integration-test thread cap so the example programs (which hit the live
+        # account) stay gentle on the shared test account.
+        run: go test ./tests/ -v -timeout 900s -p 1 -parallel 4 -run '^(TestExample|TestDocSnippets)'
