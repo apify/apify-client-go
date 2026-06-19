@@ -1,0 +1,79 @@
+// Command storages demonstrates creating, writing to, and reading from all three Apify
+// storage types: datasets, key-value stores, and request queues.
+//
+// Run with:
+//
+//	APIFY_TOKEN=<your-token> go run ./examples/storages
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	apify "github.com/apify/apify-client-go"
+)
+
+func main() {
+	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	ctx := context.Background()
+
+	datasetExample(ctx, client)
+	keyValueStoreExample(ctx, client)
+	requestQueueExample(ctx, client)
+}
+
+func datasetExample(ctx context.Context, client *apify.ApifyClient) {
+	ds, err := client.Datasets().GetOrCreate(ctx, "")
+	if err != nil {
+		log.Fatalf("create dataset: %v", err)
+	}
+	defer func() { _ = client.Dataset(ds.ID).Delete(ctx) }()
+
+	dataset := client.Dataset(ds.ID)
+	if err := dataset.PushItems(ctx, []map[string]any{{"name": "Alice"}, {"name": "Bob"}}); err != nil {
+		log.Fatalf("push items: %v", err)
+	}
+	page, err := dataset.ListItems(ctx, apify.DatasetListItemsOptions{})
+	if err != nil {
+		log.Fatalf("list items: %v", err)
+	}
+	fmt.Printf("Dataset %s has %d items\n", ds.ID, page.Count)
+}
+
+func keyValueStoreExample(ctx context.Context, client *apify.ApifyClient) {
+	store, err := client.KeyValueStores().GetOrCreate(ctx, "")
+	if err != nil {
+		log.Fatalf("create store: %v", err)
+	}
+	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
+
+	kvs := client.KeyValueStore(store.ID)
+	if err := kvs.SetRecordJSON(ctx, "OUTPUT", map[string]any{"answer": 42}); err != nil {
+		log.Fatalf("set record: %v", err)
+	}
+	rec, ok, err := kvs.GetRecord(ctx, "OUTPUT")
+	if err != nil || !ok {
+		log.Fatalf("get record: ok=%v err=%v", ok, err)
+	}
+	fmt.Printf("Key-value store %s OUTPUT = %s\n", store.ID, string(rec.Value))
+}
+
+func requestQueueExample(ctx context.Context, client *apify.ApifyClient) {
+	rq, err := client.RequestQueues().GetOrCreate(ctx, "")
+	if err != nil {
+		log.Fatalf("create queue: %v", err)
+	}
+	defer func() { _ = client.RequestQueue(rq.ID).Delete(ctx) }()
+
+	queue := client.RequestQueue(rq.ID)
+	if _, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, false); err != nil {
+		log.Fatalf("add request: %v", err)
+	}
+	head, err := queue.ListHead(ctx, nil)
+	if err != nil {
+		log.Fatalf("list head: %v", err)
+	}
+	fmt.Printf("Request queue %s head has %d requests\n", rq.ID, len(head.Items))
+}

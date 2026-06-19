@@ -1,0 +1,81 @@
+name: Go integration tests
+
+# Language-specific workflow: only runs for the Go client. Triggers on PRs to master that
+# touch Go client, test, or example code, and can be dispatched manually from any branch.
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/go-integration-tests.yml'
+  workflow_dispatch:
+
+# Avoid concurrent runs of the same ref racing on the shared test account.
+concurrency:
+  group: go-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # The idiomatic Go linter. `go vet` only catches a narrow set of correctness issues;
+      # golangci-lint bundles staticcheck and other analyzers, satisfying the coding-rules
+      # mandate that linting/type-checking run in CI. Config lives in .golangci.yml.
+      - name: Lint (golangci-lint)
+        # Use the v7 action and pin a golangci-lint v2 release: .golangci.yml uses the
+        # v2 config schema, which the v6 action's v1.x binary rejects ("additional
+        # properties 'version'/'default' not allowed").
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.5.0
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        # The unit tests are offline (mock HTTP backend) and prove the retry/error/signature
+        # logic without hitting the API.
+        run: go test . -v
+
+      # Fail fast if the integration-test secret is missing or empty. Without this guard the
+      # integration tests silently "pass" (they skip when APIFY_TOKEN is unset), so a green
+      # run would not prove the API logic actually executed.
+      - name: Require APIFY_TOKEN secret
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: |
+          if [ -z "${APIFY_TOKEN}" ]; then
+            echo "::error::APIFY_TOKEN secret is empty or missing; integration tests would not run against the API."
+            exit 1
+          fi
+
+      - name: Integration tests
+        env:
+          # The integration-test token is stored as a repository secret.
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        # Limit parallelism to be gentle on the shared test account.
+        run: go test ./tests/ -v -timeout 900s -p 1 -parallel 4

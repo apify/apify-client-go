@@ -1,0 +1,22 @@
+# golangci-lint configuration for the Apify Go client (golangci-lint v2 schema).
+#
+# The coding rules require linting/type-checking to run in CI. We enable the standard,
+# high-signal linters (the v2 defaults plus a few extras) rather than every available
+# analyzer, to keep the signal-to-noise ratio high.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # The "standard" set bundles the high-signal analyzers: errcheck, govet, ineffassign,
+  # staticcheck (the idiomatic comprehensive Go linter), and unused.
+  default: standard
+  enable:
+    - misspell    # common misspellings in comments/strings
+
+issues:
+  # Show all issues (don't cap per-linter/per-file like the defaults do).
+  max-issues-per-linter: 0
+  max-same-issues: 0
