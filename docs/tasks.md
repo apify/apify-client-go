@@ -10,6 +10,19 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `List(ctx, ListOptions) (PaginationList[Task], error)` | List the account's tasks. |
 | `Create(ctx, definition any) (Task, error)` | Create a new task. |
 
+### `Task` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique task ID. |
+| `ActID` | `string` | ID of the Actor this task runs. |
+| `UserID` | `string` | ID of the user who owns the task. |
+| `Name` | `string` | Technical name of the task. |
+| `Title` | `string` | Human-readable title shown in the UI. |
+| `CreatedAt` | `*time.Time` | When the task was created. |
+| `ModifiedAt` | `*time.Time` | When the task was last modified. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
+
 ## Single task
 
 | Method | Description |

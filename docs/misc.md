@@ -9,15 +9,41 @@ Browse public Actors with `client.Store()`:
 | `List(ctx, StoreListOptions) (PaginationList[ActorStoreListItem], error)` | One page of Store Actors. |
 | `Iterate(StoreListOptions) *StoreActorIterator` | Lazy iterator over all matching Actors. |
 
-`StoreListOptions`: `Offset`, `Limit`, `Search`, `SortBy`, `Category`, `Username`,
-`PricingModel`, `IncludeUnrunnableActors`, `AllowsAgenticUsers`, `ResponseFormat`.
+`StoreListOptions` (all fields optional):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Offset` | `*int64` | Number of Actors to skip. |
+| `Limit` | `*int64` | Maximum number of Actors to return. |
+| `Search` | `*string` | Full-text search query. |
+| `SortBy` | `*string` | Sort field (e.g. `"popularity"`, `"newest"`). |
+| `Category` | `*string` | Filter Actors by category. |
+| `Username` | `*string` | Filter Actors by owner username. |
+| `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `FLAT_PRICE_PER_MONTH`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
+| `IncludeUnrunnableActors` | `*bool` | Include Actors the current user cannot run. |
+| `AllowsAgenticUsers` | `*bool` | Filter to Actors that allow agentic users. |
+| `ResponseFormat` | `*string` | Select the response format. Accepted values: `full`, `agent`. |
+
+Each item is an `ActorStoreListItem`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique Actor ID. |
+| `Name` | `string` | Technical name of the Actor. |
+| `Username` | `string` | Username of the Actor's owner. |
+| `Title` | `string` | Human-readable title (may be empty; fall back to `Name`). |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 ```go
 it := client.Store().Iterate(apify.StoreListOptions{Limit: apify.Ptr(int64(20)), Search: apify.Ptr("scraper")})
 for {
 	actor, err := it.Next(ctx)
-	if err != nil { log.Fatal(err) }
-	if actor == nil { break }
+	if err != nil {
+		log.Fatal(err)
+	}
+	if actor == nil {
+		break
+	}
 	fmt.Println(actor.Title, actor.ID)
 }
 ```
@@ -34,6 +60,15 @@ for {
 | `Limits(ctx) (json.RawMessage, error)` | Current account's limits (`Me()` only). |
 | `UpdateLimits(ctx, newLimits any) error` | Update the account's limits (`Me()` only). |
 
+The `User` value returned by `Get` carries the account's public fields; for `Me()` the API
+also returns private account details, which are preserved in `Extra`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique user ID. |
+| `Username` | `string` | The user's username. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (private details for `Me()`). |
+
 The usage/limits methods return an error if called on a non-`Me()` client.
 
 `MonthlyUsage` is equivalent to `MonthlyUsageForDate(ctx, "")`: an empty `date` omits the
@@ -43,16 +78,22 @@ object with the account's usage breakdown and totals for the period.
 
 ```go
 user, ok, err := client.Me().Get(ctx)
-if err != nil { log.Fatal(err) }
+if err != nil {
+	log.Fatal(err)
+}
 fmt.Println(user.Username, ok)
 
 usage, err := client.Me().MonthlyUsage(ctx)
-if err != nil { log.Fatal(err) }
+if err != nil {
+	log.Fatal(err)
+}
 fmt.Println(string(usage)) // raw JSON usage report for the current month
 
 // Usage for the month containing a specific date.
 mayUsage, err := client.Me().MonthlyUsageForDate(ctx, "2026-05-15")
-if err != nil { log.Fatal(err) }
+if err != nil {
+	log.Fatal(err)
+}
 fmt.Println(string(mayUsage)) // raw JSON usage report
 ```
 
@@ -68,6 +109,13 @@ fmt.Println(string(mayUsage)) // raw JSON usage report
 | `Stream(ctx) (io.ReadCloser, error)` | A live stream of the log; close when done. |
 | `StreamWithOptions(ctx, LogOptions) (io.ReadCloser, error)` | Stream with options (`Raw`, `Download`). |
 
+`LogOptions` (all fields optional):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Raw` | `*bool` | Return the unprocessed log content (no platform post-processing). |
+| `Download` | `*bool` | Set `Content-Disposition` so the log is served as a download. |
+
 For convenient live redirection of a run's log, `client.Run(id).GetStreamedLog(ctx)` returns
 a raw live stream directly.
 
@@ -77,7 +125,9 @@ logText, ok, err := client.Run(runID).Log().Get(ctx)
 
 // Or stream it live (log redirection).
 stream, err := client.Run(runID).Log().Stream(ctx)
-if err != nil { log.Fatal(err) }
+if err != nil {
+	log.Fatal(err)
+}
 defer stream.Close()
 _, _ = io.Copy(os.Stdout, stream)
 ```

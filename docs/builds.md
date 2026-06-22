@@ -34,4 +34,18 @@ fmt.Println("build status:", finished.Status)
 logText, ok, err := client.Build(build.ID).Log().Get(ctx)
 ```
 
+### `Build` fields
+
+The `Build` value returned by the build methods carries the build's metadata:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique build ID. |
+| `ActID` | `string` | ID of the Actor this build belongs to. |
+| `Status` | `string` | Build status. One of the eight `ActorJobStatus` values (shared with runs): `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`, `ABORTING`, `ABORTED`. |
+| `StartedAt` | `*time.Time` | When the build started. |
+| `FinishedAt` | `*time.Time` | When the build finished (`nil` while still building). |
+| `BuildNumber` | `string` | Human-readable build number (e.g. `"0.1.2"`). |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
+
 `Build.IsTerminal()` reports whether a build has finished.

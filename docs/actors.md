@@ -11,11 +11,66 @@ Actors are the programs that run on the Apify platform. Access the Actor collect
 | `List(ctx, ActorListOptions) (PaginationList[Actor], error)` | List the account's Actors. |
 | `Create(ctx, definition any) (Actor, error)` | Create a new Actor. |
 
-`ActorListOptions`: `Offset`, `Limit`, `Desc`, `My`, `SortBy` (all optional pointers).
+`Create` takes a free-form definition (`any`) serialized to JSON, so the Actor's fields are
+passed as a map (`name`, `title`, `versions`, etc.). A version's `sourceType` selects how its
+source is supplied, and is one of the closed `VersionSourceType` values: `SOURCE_FILES`,
+`GIT_REPO`, `TARBALL`, `GITHUB_GIST`, `SOURCE_CODE`. For `SOURCE_FILES`, each entry in
+`sourceFiles` has a `format` of `TEXT` or `BASE64`. A minimal `SOURCE_FILES` Actor:
+
+```go
+actor, err := client.Actors().Create(ctx, map[string]any{
+	"name":  "my-actor",
+	"title": "My Actor",
+	"versions": []any{
+		map[string]any{
+			"versionNumber": "0.0",
+			"sourceType":    "SOURCE_FILES", // VersionSourceType: SOURCE_FILES|GIT_REPO|TARBALL|GITHUB_GIST|SOURCE_CODE
+			"sourceFiles": []any{
+				map[string]any{
+					"name":    "Dockerfile",
+					"format":  "TEXT", // SourceCodeFileFormat: TEXT|BASE64
+					"content": "FROM apify/actor-node:20\n",
+				},
+			},
+		},
+	},
+})
+if err != nil {
+	log.Fatal(err)
+}
+_ = actor
+```
+
+`ActorListOptions` (all fields optional pointers):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Offset` | `*int64` | Number of Actors to skip. |
+| `Limit` | `*int64` | Maximum number of Actors to return. |
+| `Desc` | `*bool` | Return Actors newest-first. |
+| `My` | `*bool` | Return only Actors owned by the current user. |
+| `SortBy` | `*string` | Sort field. Accepted values: `createdAt`, `stats.lastRunStartedAt`. |
 
 ```go
 page, err := client.Actors().List(ctx, apify.ActorListOptions{My: apify.Ptr(true), Limit: apify.Ptr(int64(10))})
 ```
+
+### `Actor` fields
+
+The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique Actor ID. |
+| `UserID` | `string` | ID of the user who owns the Actor. |
+| `Name` | `string` | Technical name of the Actor (used in API paths). |
+| `Username` | `string` | Username of the Actor's owner. |
+| `Title` | `string` | Human-readable title shown in the UI. |
+| `Description` | `string` | What the Actor does. |
+| `IsPublic` | `bool` | Whether the Actor is public in Apify Store. |
+| `CreatedAt` | `*time.Time` | When the Actor was created. |
+| `ModifiedAt` | `*time.Time` | When the Actor was last modified. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 ## Single Actor
 
@@ -47,14 +102,35 @@ result, err := client.Actor("apify/hello-world").ValidateInputForBuild(ctx,
 	map[string]any{"message": "hi"},
 	"latest",
 )
-if err != nil { log.Fatal(err) }
+if err != nil {
+	log.Fatal(err)
+}
 fmt.Println(string(result)) // raw JSON validation result
 ```
 
-`ActorStartOptions`: `Build`, `MemoryMbytes`, `TimeoutSecs`, `WaitForFinish`, `MaxItems`,
-`MaxTotalChargeUsd`, `ContentType`, `RestartOnError`, `ForcePermissionLevel`, `Webhooks`.
+`ActorStartOptions` (all fields optional):
 
-`ActorBuildOptions`: `BetaPackages`, `Tag`, `UseCache`, `WaitForFinish`.
+| Field | Type | Meaning |
+|---|---|---|
+| `Build` | `*string` | Tag or number of the build to run (e.g. `"latest"`, `"0.1.2"`). |
+| `MemoryMbytes` | `*int64` | Memory in megabytes allocated for the run. |
+| `TimeoutSecs` | `*int64` | Run timeout in seconds (`0` means no timeout). |
+| `WaitForFinish` | `*int64` | Max seconds to wait server-side for the run to finish (max 60). |
+| `MaxItems` | `*int64` | Maximum dataset items to charge (pay-per-result Actors). |
+| `MaxTotalChargeUsd` | `*float64` | Maximum total charge in USD (pay-per-event Actors). |
+| `ContentType` | `*string` | Content type of the input body (default `application/json`). |
+| `RestartOnError` | `*bool` | Restart the run if it fails. |
+| `ForcePermissionLevel` | `*string` | Override the Actor's permission level for this run. Accepted values: `LIMITED_PERMISSIONS`, `FULL_PERMISSIONS`. |
+| `Webhooks` | `[]any` | Ad-hoc webhooks to attach to this run. Each element is a map describing one webhook: `{"eventTypes": []string, "requestUrl": string, "payloadTemplate": string}` (same shape as a webhook definition; `eventTypes` are the `WebhookEventType` values listed in [webhooks.md](webhooks.md)). |
+
+`ActorBuildOptions` (all fields optional):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `BetaPackages` | `*bool` | Use beta versions of Apify packages. |
+| `Tag` | `*string` | Tag to apply to the build (e.g. `"latest"`). |
+| `UseCache` | `*bool` | Whether to use the Docker build cache (default `true`). |
+| `WaitForFinish` | `*int64` | Max seconds to wait server-side for the build (max 60). |
 
 ```go
 // Start an Actor with input and wait for it to finish.

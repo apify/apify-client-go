@@ -29,10 +29,35 @@ local:
 
 ```go
 page, err := client.Actors().List(ctx, apify.ActorListOptions{
-    My:    apify.Ptr(true),
-    Limit: apify.Ptr(int64(10)),
+	My:    apify.Ptr(true),
+	Limit: apify.Ptr(int64(10)),
 })
 ```
+
+## Common list options — `apify.ListOptions`
+
+Most `List` methods (builds, runs, tasks, schedules, webhooks, Actor versions) take the shared
+`apify.ListOptions`, which carries the standard pagination/ordering controls. All fields are
+optional pointers; leave a field `nil` to use the API default. Use `apify.Ptr` to set them
+inline.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Offset` | `*int64` | Number of items to skip from the start of the list. |
+| `Limit` | `*int64` | Maximum number of items to return. |
+| `Desc` | `*bool` | If `true`, return items newest-first. |
+
+```go
+page, err := client.Builds().List(ctx, apify.ListOptions{
+	Limit: apify.Ptr(int64(50)),
+	Desc:  apify.Ptr(true),
+})
+```
+
+Collections with extra filters use a dedicated options type instead of (or in addition to)
+`ListOptions`: `ActorListOptions` (Actors), `StorageListOptions` (datasets/key-value
+stores/request queues), `StoreListOptions` (the Store), and `RunListOptions` (runs, passed
+alongside `ListOptions`). Each is documented on its resource page.
 
 ## Pagination
 
@@ -51,6 +76,13 @@ metadata:
 > **`Total` can lag right after a write.** The API computes the count asynchronously, so
 > immediately after a `PushItems` (or other write) `Total` may not yet include the new items.
 > Re-read after a short delay if you need an exact post-write total.
+
+The *collection* `List` methods (Actors, builds, runs, tasks, schedules, webhooks, datasets,
+key-value stores, request queues) return `PaginationList[T]`. The *within-storage* listers use
+their own page/head containers instead, because the underlying API endpoints paginate
+differently: `KeyValueStoreClient.ListKeys` returns `KeyValueStoreKeysPage` (key-based
+pagination) and `RequestQueueClient.ListHead` returns `RequestQueueHead`. Both are documented on
+the [storages](storages.md) page.
 
 ## Pages
 
