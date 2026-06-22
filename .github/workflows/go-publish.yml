@@ -1,0 +1,148 @@
+name: Publish Go client
+
+# Language-specific publish workflow for the Go client. Go has no central package registry to
+# upload an archive to: a module is "published" by pushing a semver git tag (vX.Y.Z), after which
+# the Go module proxy (proxy.golang.org) and pkg.go.dev pick it up on first request. This workflow
+# is therefore the language-specific distribution standard for Go.
+#
+# It is triggered manually only (workflow_dispatch) so a maintainer deliberately decides when a
+# release is cut. The version is taken from the single source of truth (the CLIENT_VERSION constant
+# in version.go) so the published tag can never disagree with the in-code client version.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run all checks but do not create/push the tag or trigger indexing.'
+        type: boolean
+        default: false
+
+# Never allow two publish runs to race; pushing two release tags concurrently is hard to undo.
+concurrency:
+  group: go-publish
+  cancel-in-progress: false
+
+# The default GITHUB_TOKEN needs write access to push the tag and create the release. No other
+# credentials are required: the Go module proxy reads the public repo directly, so there is no
+# registry token to configure.
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so the tag points at the real commit and `git describe`-style tooling works.
+          fetch-depth: 0
+
+      # A release tag is immutable once the Go module proxy has fetched it, so a release must only
+      # ever be cut from master. Refuse to run from any other ref, even when dispatched manually,
+      # so a maintainer cannot accidentally publish an unmerged feature-branch commit as a version.
+      - name: Require master branch
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/master" ]; then
+            echo "::error::Publishing is only allowed from master, but this run is on '${GITHUB_REF}'."
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      # Gate the release on the same quality bar as CI so a broken build can never be tagged.
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.5.0
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        # Offline (mock HTTP backend) tests; prove the retry/error/signature logic without the API.
+        run: go test . -v
+
+      # Derive the release tag from the single source of truth (version.go). Keeping the tag in lock
+      # step with the in-code CLIENT_VERSION means consumers who read the constant and consumers who
+      # `go get` a tag always see the same version.
+      - name: Resolve version from version.go
+        id: version
+        run: |
+          version=$(sed -n 's/^const CLIENT_VERSION = "\(.*\)"$/\1/p' version.go)
+          if [ -z "${version}" ]; then
+            echo "::error::Could not read CLIENT_VERSION from version.go."
+            exit 1
+          fi
+          if ! echo "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::CLIENT_VERSION '${version}' is not a bare semver (X.Y.Z)."
+            exit 1
+          fi
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag: v${version}"
+
+      # Fail early (before creating any tag) if this version was already released, so a publish run
+      # can never silently no-op or clobber an existing release.
+      - name: Ensure tag does not already exist
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} already exists locally."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists on origin; bump CLIENT_VERSION in version.go first."
+            exit 1
+          fi
+
+      - name: Create and push release tag
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "${TAG}"
+
+      # Create a GitHub release for the tag. Uses the default GITHUB_TOKEN from repository secrets;
+      # no personal access token or registry credential is needed.
+      - name: Create GitHub release
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes "Apify Go client ${TAG}. See CHANGELOG.md for details."
+
+      # Prompt the public Go module proxy to fetch the new version. This is what makes the release
+      # discoverable on pkg.go.dev; it requires no authentication because the repository is public.
+      - name: Trigger Go module proxy indexing
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          module=$(go list -m)
+          echo "Requesting ${module}@${TAG} from the Go module proxy to trigger indexing."
+          # Best-effort: the proxy may take a moment to see the freshly pushed tag, so a failure here
+          # is not fatal — the module is still published via the tag and will be indexed on first use.
+          curl -fsSL "https://proxy.golang.org/${module}/@v/${TAG}.info" || \
+            echo "::warning::Proxy did not return the version yet; pkg.go.dev will index it on first request."

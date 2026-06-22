@@ -5,6 +5,33 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-06-22
+
+Publishing compliance for the updated client requirements (apify-client-orchestration PR #7).
+No changes to the public interface or to the OpenAPI spec version (`v2-2026-06-18T095846Z`);
+packaging metadata, a release workflow, and documentation only.
+
+### Added
+
+- CI: a manually triggered (`workflow_dispatch`) `Publish Go client` workflow
+  (`.github/workflows/go-publish.yml`) that releases the module. Go is distributed by pushing a
+  semver git tag (there is no upload registry), so the workflow runs the same gofmt/vet/lint/build/
+  unit-test quality gate as CI, derives the tag from the `CLIENT_VERSION` constant in `version.go`
+  (the single source of truth), refuses to proceed if that tag already exists, then creates and
+  pushes the `vX.Y.Z` tag, opens a GitHub release, and pings the public Go module proxy to trigger
+  pkg.go.dev indexing. It uses only the built-in `GITHUB_TOKEN` repository secret — no registry
+  credential is needed for Go — and supports a `dry_run` input that runs every check without
+  creating the release. Mirrors the Rust sibling's `Publish Rust client to crates.io` workflow.
+
+### Changed
+
+- Bumped `CLIENT_VERSION` to `0.2.2`.
+- Documentation: added a "Releasing" subsection to the README "Versioning" section describing the
+  tag-based Go distribution mechanism and the publish workflow.
+- Documentation: added the required "experimental, AI-generated and AI-maintained" disclaimer to
+  the top of `README.md` and `docs/README.md`, and softened the "official" wording accordingly, to
+  satisfy the documentation requirement and match the Rust sibling.
+
 ## [0.2.1] - 2026-06-19
 
 Documentation and CI compliance with the updated client requirements. No changes to the
