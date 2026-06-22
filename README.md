@@ -1,6 +1,10 @@
 # Apify API client for Go
 
-The official, idiomatic Go client for the [Apify API](https://docs.apify.com/api/v2).
+> **Experimental — AI-generated and AI-maintained.** This client is experimental. It is
+> generated and maintained by AI, and is not (yet) an officially supported Apify product. Review
+> the code before relying on it in production and report issues on the repository.
+
+An idiomatic Go client for the [Apify API](https://docs.apify.com/api/v2).
 
 It provides a resource-oriented interface that mirrors the official
 [JavaScript](https://github.com/apify/apify-client-js) and Rust clients: start from an
@@ -164,6 +168,17 @@ func main() {
 - `apify.CLIENT_VERSION` — the semantic version of this library.
 - `apify.API_SPEC_VERSION` — the Apify OpenAPI spec version this client was built against
   (`v2-2026-06-18T095846Z`).
+
+### Releasing
+
+Go modules are distributed by pushing a semver git tag — there is no separate package registry to
+upload to. The [`Publish Go client`](.github/workflows/go-publish.yml) workflow is the release
+mechanism: a maintainer triggers it manually (`workflow_dispatch`), it runs the same quality gate
+as CI, then creates and pushes the `v<CLIENT_VERSION>` tag, opens a GitHub release, and asks the Go
+module proxy to index the new version so it appears on
+[pkg.go.dev](https://pkg.go.dev/github.com/apify/apify-client-go). The tag is derived from
+`CLIENT_VERSION` in [`version.go`](version.go), so bump that constant before releasing. The workflow
+uses only the built-in `GITHUB_TOKEN`; no extra credentials are required.
 
 ## Examples
 
