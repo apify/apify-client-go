@@ -5,6 +5,19 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-06-23
+
+Updated to Apify OpenAPI specification `v2-2026-06-23T113219Z` (previously
+`v2-2026-06-18T095846Z`). The spec delta over the in-scope API surface is fully additive — no
+new in-scope endpoints and no removed or renamed parameters — so there are no breaking changes
+to the public interface. Response models already capture unmodelled API fields in their `Extra`
+maps, so additive schema fields decode cleanly.
+
+### Changed
+
+- Bumped `API_SPEC_VERSION` to `v2-2026-06-23T113219Z`.
+- Bumped `CLIENT_VERSION` to `0.2.3`.
+
 ## [0.2.2] - 2026-06-22
 
 Publishing compliance for the updated client requirements (apify-client-orchestration PR #7).
