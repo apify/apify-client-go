@@ -182,12 +182,12 @@ Single queue: `client.RequestQueue(id)`:
 | `ListHead(ctx, limit *int64) (RequestQueueHead, error)` | Requests at the front. |
 | `AddRequest(ctx, RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error)` | Add a request. |
 | `GetRequest(ctx, id) (*RequestQueueRequest, bool, error)` | Read a request. |
-| `UpdateRequest(ctx, RequestQueueRequest, forefront bool)` | Update a request (by its `ID`). |
+| `UpdateRequest(ctx, RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error)` | Update a request (by its `ID`). |
 | `DeleteRequest(ctx, id) error` | Delete a request. |
-| `ListRequests(ctx, ListRequestsOptions)` | Paginated list. |
-| `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests. |
+| `ListRequests(ctx, ListRequestsOptions) (json.RawMessage, error)` | Paginated list. Returns the raw API response (`{ "items": [...], "nextCursor": ... }`); unmarshal into your own type, or use `PaginateRequests` for typed iteration. |
+| `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
 | `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests (auto-chunked at 25/call). |
-| `BatchDeleteRequests(ctx, requests any)` | Delete many requests. |
+| `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
 | `ListAndLockHead / ProlongRequestLock / DeleteRequestLock / UnlockRequests(ctx, ...)` | Locking. |
 | `WithClientKey(key string) *RequestQueueClient` | Pin a stable client key (required to unlock own locks). |
 
@@ -208,9 +208,9 @@ API (omit it on create):
 | Field | Type | Meaning |
 |---|---|---|
 | `Limit` | `*int64` | Maximum number of requests to return. |
-| `ExclusiveStartID` | `*string` | List requests after this ID. |
-| `Cursor` | `*string` | Opaque pagination cursor (alternative to `ExclusiveStartID`). |
-| `Filter` | `*string` | Restrict the listing. The API accepts only `"locked"` or `"pending"`. |
+| `ExclusiveStartID` | `*string` | List requests after this ID (deprecated; prefer `Cursor`). |
+| `Cursor` | `*string` | Opaque pagination cursor: the `string` returned as `nextCursor` in the previous `ListRequests` response. Pass it back to fetch the next page. Mutually exclusive with the deprecated `ExclusiveStartID` (setting both returns an error). |
+| `Filter` | `[]string` | Restrict the listing to requests in the given states; sent as a comma-separated list whose semantics are the union of the states (requests matching any are returned). Each value must be `"locked"` or `"pending"` — use the exported `apify.RequestFilterLocked` / `apify.RequestFilterPending` constants. |
 
 Return types:
 
@@ -244,6 +244,11 @@ defer client.RequestQueue(rq.ID).Delete(ctx)
 
 queue := client.RequestQueue(rq.ID)
 _, _ = queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, false)
+
+// List only pending or locked requests (the Filter values are sent comma-joined, union semantics).
+_, _ = queue.ListRequests(ctx, apify.ListRequestsOptions{
+	Filter: []string{apify.RequestFilterPending, apify.RequestFilterLocked},
+})
 
 it := queue.PaginateRequests(apify.Ptr(int64(100)))
 for {

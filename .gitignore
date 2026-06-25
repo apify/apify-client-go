@@ -22,3 +22,13 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# Example binaries: `go build ./examples/<name>/` drops an extension-less ELF named after the
+# example directory into the working directory (repo root). These are local build artifacts.
+/create_build_run_actor
+/get_account
+/iterate_store
+/log_redirection
+/run_and_last_run_storages
+/run_store_actor
+/storages

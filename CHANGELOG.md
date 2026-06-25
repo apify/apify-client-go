@@ -5,6 +5,33 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-25
+
+Updated to Apify OpenAPI specification `v2-2026-06-24T105326Z` (previously
+`v2-2026-06-23T113219Z`). A full operation- and parameter-level audit of every in-scope endpoint
+against the new specification found no changes to the in-scope API surface (same 131 paths and
+231 operations, identical parameters and request/response schemas); the spec update itself is a
+version bump only. The new `/v2/browser-info` and `/v2/tools/*` operations in the spec are
+out-of-scope (absent from the `apify-client-js` reference) and are intentionally not implemented.
+This release also includes a spec-compliance fix surfaced by the review pass. The minor-version
+bump (rather than patch) reflects the breaking change to `ListRequestsOptions.Filter` below.
+
+### Fixed
+
+- `ListRequestsOptions.Filter` (for `GET /v2/request-queues/{queueId}/requests`) is now
+  `[]string` and serialized comma-joined, matching the spec (an array of the enum values
+  `locked`/`pending`, `style=form` `explode=false`) and the JS reference (`filter.join(',')`).
+  Previously it was a single `*string`, which could not express the multi-value union. This is a
+  spec-compliance bugfix to a type that did not match the specification; it is a breaking change to
+  that field's type. The allowed values are now exported as the `RequestFilterLocked` /
+  `RequestFilterPending` constants.
+
+### Changed
+
+- Bumped `API_SPEC_VERSION` to `v2-2026-06-24T105326Z`.
+- Bumped `CLIENT_VERSION` to `0.3.0` (minor bump per SemVer because of the breaking `Filter`
+  type change above).
+
 ## [0.2.3] - 2026-06-23
 
 Updated to Apify OpenAPI specification `v2-2026-06-23T113219Z` (previously
