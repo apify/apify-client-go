@@ -70,4 +70,15 @@ func TestLastRunAccess(t *testing.T) {
 	if lastRun.Status != "SUCCEEDED" {
 		t.Fatalf("expected last succeeded run, got %q", lastRun.Status)
 	}
+
+	// The run was started via the API, so filtering the last run by both status and origin
+	// must still resolve it. This exercises the origin filter on LastRunWithOptions.
+	lastRunByOrigin, ok, err := client.Actor("apify/hello-world").
+		LastRunWithOptions(apify.LastRunOptions{Status: "SUCCEEDED", Origin: "API"}).Get(ctx)
+	if err != nil || !ok {
+		t.Fatalf("last run by origin: ok=%v err=%v", ok, err)
+	}
+	if lastRunByOrigin.Status != "SUCCEEDED" {
+		t.Fatalf("expected last succeeded run filtered by origin, got %q", lastRunByOrigin.Status)
+	}
 }

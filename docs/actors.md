@@ -86,6 +86,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `ValidateInput(ctx, input any) (json.RawMessage, error)` | Validate input against the `latest` build's schema. |
 | `ValidateInputForBuild(ctx, input any, build string) (json.RawMessage, error)` | Validate input against a specific build's schema (tag or number). |
 | `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |
+| `LastRunWithOptions(options LastRunOptions) *RunClient` | Client for the last run, filtered by status and/or origin. |
 | `Builds() *BuildCollectionClient` | This Actor's builds. |
 | `Runs() *RunCollectionClient` | This Actor's runs. |
 | `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Versions. |
@@ -95,6 +96,30 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 omits the parameter, so the API validates against the build tagged `latest` (per the API
 specification). Both return the raw JSON validation result from the API — a JSON object
 reporting whether the input is valid and, if not, the schema violations.
+
+`LastRun(status)` returns the Actor's most recent run, optionally narrowed to a status. Use
+`LastRunWithOptions` to also narrow by origin (how the run was started). Both return a
+`RunClient` for the resolved run, so you can chain `.Get(ctx)`, `.Dataset()`, etc.
+
+`LastRunOptions` (all fields optional; an empty field leaves that filter unset):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Status` | `string` | Filter by run status (e.g. `SUCCEEDED`, `FAILED`, `RUNNING`). |
+| `Origin` | `string` | Filter by how the run was started: `DEVELOPMENT`, `WEB`, `API`, `SCHEDULER`, `TEST`, `WEBHOOK`, `ACTOR`, `CLI`, `CI`, `STANDBY`, `MCP`. |
+
+```go
+// Most recent run that both SUCCEEDED and was started via the API.
+lastRun, ok, err := client.Actor("apify/hello-world").
+	LastRunWithOptions(apify.LastRunOptions{Status: "SUCCEEDED", Origin: "API"}).
+	Get(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+if ok {
+	fmt.Printf("last API run: %s (%s)\n", lastRun.ID, lastRun.Status)
+}
+```
 
 ```go
 // Validate input against a specific build's input schema.
@@ -152,6 +177,14 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 | `Version(n).Get/Update/Delete(ctx)` | Manage a single version. |
 | `Version(n).EnvVars().List(ctx)` / `.Create(ctx, ActorEnvVar)` | List/create env vars. |
 | `Version(n).EnvVar(name).Get/Update/Delete(ctx)` | Manage a single env var. |
+
+`ActorEnvVar` fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Name` | `string` | The environment variable name (required). |
+| `Value` | `string` | The environment variable value. |
+| `IsSecret` | `*bool` | Whether the value is stored as a secret (encrypted at rest). |
 
 ```go
 v := client.Actor(actorID).Version("0.0")
