@@ -15,15 +15,18 @@ type ListRequestsOptions struct {
 	ExclusiveStartID *string
 	// Cursor is an opaque pagination cursor (alternative to ExclusiveStartID).
 	Cursor *string
-	// Filter restricts the listing (e.g. to handled/unhandled requests).
-	Filter *string
+	// Filter restricts the listing to requests in the given states. Each value must be
+	// "locked" or "pending" (see RequestFilterLocked / RequestFilterPending). Multiple
+	// values are sent as a comma-separated list and mean the union of those states
+	// (requests matching any of them are returned), matching the API.
+	Filter []string
 }
 
 func (o ListRequestsOptions) apply(q *QueryParams) {
 	q.AddInt("limit", o.Limit).
 		AddString("exclusiveStartId", o.ExclusiveStartID).
 		AddString("cursor", o.Cursor).
-		AddString("filter", o.Filter)
+		AddCSV("filter", o.Filter)
 }
 
 // RequestQueueClient is a client for a specific request queue (and run-nested variants).
@@ -197,20 +200,24 @@ func (c *RequestQueueClient) BatchDeleteRequests(ctx context.Context, requests a
 	return deleteWithBody[json.RawMessage](ctx, c.ctx, "requests/batch", params, requests)
 }
 
-// Allowed values for ListRequestsOptions.Filter, as constrained by the API.
+// Allowed values for entries in ListRequestsOptions.Filter, as constrained by the API.
 const (
-	requestFilterLocked  = "locked"
-	requestFilterPending = "pending"
+	// RequestFilterLocked filters the listing to currently locked requests.
+	RequestFilterLocked = "locked"
+	// RequestFilterPending filters the listing to pending (not-yet-handled) requests.
+	RequestFilterPending = "pending"
 )
 
 // validate checks the listing options for API-level constraints: ExclusiveStartID and Cursor
-// are mutually exclusive, and Filter (if set) must be "locked" or "pending".
+// are mutually exclusive, and every Filter entry (if any) must be "locked" or "pending".
 func (o ListRequestsOptions) validate() error {
 	if o.ExclusiveStartID != nil && o.Cursor != nil {
 		return errors.New("ListRequestsOptions: ExclusiveStartID and Cursor are mutually exclusive")
 	}
-	if o.Filter != nil && *o.Filter != requestFilterLocked && *o.Filter != requestFilterPending {
-		return fmt.Errorf("ListRequestsOptions: Filter must be %q or %q, got %q", requestFilterLocked, requestFilterPending, *o.Filter)
+	for _, f := range o.Filter {
+		if f != RequestFilterLocked && f != RequestFilterPending {
+			return fmt.Errorf("ListRequestsOptions: Filter entries must be %q or %q, got %q", RequestFilterLocked, RequestFilterPending, f)
+		}
 	}
 	return nil
 }

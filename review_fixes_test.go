@@ -178,11 +178,31 @@ func TestListRequestsValidation(t *testing.T) {
 	if _, err := queue.ListRequests(context.Background(), ListRequestsOptions{ExclusiveStartID: &start, Cursor: &cursor}); err == nil {
 		t.Fatal("expected error for mutually-exclusive ExclusiveStartID and Cursor")
 	}
-	bad := "bogus"
-	if _, err := queue.ListRequests(context.Background(), ListRequestsOptions{Filter: &bad}); err == nil {
+	if _, err := queue.ListRequests(context.Background(), ListRequestsOptions{Filter: []string{"bogus"}}); err == nil {
 		t.Fatal("expected error for invalid Filter value")
 	}
 	if backend.calls != 0 {
 		t.Fatalf("validation must short-circuit before any API call, got %d calls", backend.calls)
+	}
+}
+
+// ListRequests must serialize a multi-value Filter as a single comma-joined query parameter,
+// matching the spec (array of enum locked|pending, style=form explode=false) and the JS reference.
+func TestListRequestsFilterCommaJoined(t *testing.T) {
+	backend := &mockBackend{responses: okData()}
+	client := testClient(backend, 0)
+	queue := client.RequestQueue("q1")
+
+	if _, err := queue.ListRequests(context.Background(), ListRequestsOptions{
+		Filter: []string{RequestFilterLocked, RequestFilterPending},
+	}); err != nil {
+		t.Fatalf("ListRequests with multi-value Filter: %v", err)
+	}
+	if backend.calls != 1 {
+		t.Fatalf("expected exactly one API call, got %d", backend.calls)
+	}
+	gotURL := backend.lastURL
+	if !strings.Contains(gotURL, "filter=locked%2Cpending") && !strings.Contains(gotURL, "filter=locked,pending") {
+		t.Fatalf("expected filter sent comma-joined as a single param, got URL: %s", gotURL)
 	}
 }

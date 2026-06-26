@@ -92,9 +92,9 @@ client := apify.NewClientWithOptions(
 | `WithHTTPBackend` | `DefaultHTTPBackend` | Replaceable HTTP transport. |
 
 The `User-Agent` header reports an `isAtHome` flag indicating whether the client runs on the
-Apify platform. It is driven by an environment variable: the client reads **both**
-`APIFY_IS_AT_HOME` (used by the JavaScript reference client) and the bare `isAtHome` name; if
-either is set to a non-empty value, the flag is `true`.
+Apify platform. It is driven solely by the `APIFY_IS_AT_HOME` environment variable (the same
+variable the JavaScript reference client reads); if it is set to a non-empty value, the flag is
+`true`, otherwise `false`.
 
 ## Resource clients
 
@@ -167,7 +167,7 @@ func main() {
 
 - `apify.CLIENT_VERSION` — the semantic version of this library.
 - `apify.API_SPEC_VERSION` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-06-23T113219Z`).
+  (`v2-2026-06-24T105326Z`).
 
 ### Releasing
 

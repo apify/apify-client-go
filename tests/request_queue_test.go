@@ -183,6 +183,13 @@ func TestRequestQueueLockLifecycle(t *testing.T) {
 	if _, err := queue.ListRequests(ctx, apify.ListRequestsOptions{}); err != nil {
 		t.Fatalf("list requests: %v", err)
 	}
+	// Exercise the multi-value `filter` query param (array of enum locked|pending, sent
+	// comma-joined) end-to-end so the spec-faithful serialization is covered against the API.
+	if _, err := queue.ListRequests(ctx, apify.ListRequestsOptions{
+		Filter: []string{apify.RequestFilterLocked, apify.RequestFilterPending},
+	}); err != nil {
+		t.Fatalf("list requests with filter: %v", err)
+	}
 	if _, err := queue.ListAndLockHead(ctx, 60, ptr(int64(10))); err != nil {
 		t.Fatalf("list and lock head: %v", err)
 	}

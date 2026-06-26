@@ -212,9 +212,9 @@ type PaginationList[T any] struct {
 // BuildUserAgent builds the User-Agent header value mandated by the client requirements:
 // `ApifyClient/{version} ({os}; {language version}); isAtHome/{isAtHome}`.
 //
-// isAtHome is driven by the platform's APIFY_IS_AT_HOME environment variable (matching the
-// reference JS client, which reads it via @apify/consts) or the bare isAtHome variable from
-// the requirements doc; either being set marks the client "at home".
+// isAtHome is driven solely by the platform's APIFY_IS_AT_HOME environment variable (matching
+// the requirements and the reference JS client, which reads it via @apify/consts); it is set to
+// any non-empty value when the client runs on the Apify platform.
 //
 // Casing note (deliberate): the flag is rendered lowercase (true/false). The requirements'
 // worked example shows the capitalized form (isAtHome/True | isAtHome/False), but that example

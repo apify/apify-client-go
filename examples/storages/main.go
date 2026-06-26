@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -76,4 +77,34 @@ func requestQueueExample(ctx context.Context, client *apify.ApifyClient) {
 		log.Fatalf("list head: %v", err)
 	}
 	fmt.Printf("Request queue %s head has %d requests\n", rq.ID, len(head.Items))
+
+	// ListRequests accepts a multi-value Filter (an array of the enum values "locked"/"pending",
+	// sent comma-joined, with union semantics). Use the exported constants for type-safety. It
+	// returns the raw API response, which you unmarshal into your own type.
+	raw, err := queue.ListRequests(ctx, apify.ListRequestsOptions{
+		Filter: []string{apify.RequestFilterPending, apify.RequestFilterLocked},
+	})
+	if err != nil {
+		log.Fatalf("list requests: %v", err)
+	}
+	var listed struct {
+		Items []apify.RequestQueueRequest `json:"items"`
+		// NextCursor is the opaque pagination cursor; feed it back via
+		// ListRequestsOptions.Cursor to fetch the next page manually. It is empty on the last
+		// page. (For most use cases prefer the typed PaginateRequests iterator, which handles
+		// this loop for you.)
+		NextCursor string `json:"nextCursor"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		log.Fatalf("decode listed requests: %v", err)
+	}
+	fmt.Printf("Request queue %s listed %d pending/locked requests\n", rq.ID, len(listed.Items))
+
+	// Manual pagination: feed nextCursor back through ListRequestsOptions.Cursor to get the
+	// next page. (Cursor and ExclusiveStartID are mutually exclusive.)
+	if listed.NextCursor != "" {
+		if _, err := queue.ListRequests(ctx, apify.ListRequestsOptions{Cursor: &listed.NextCursor}); err != nil {
+			log.Fatalf("list requests next page: %v", err)
+		}
+	}
 }
