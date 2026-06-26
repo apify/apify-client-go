@@ -25,6 +25,10 @@ bump (rather than patch) reflects the breaking change to `ListRequestsOptions.Fi
   spec-compliance bugfix to a type that did not match the specification; it is a breaking change to
   that field's type. The allowed values are now exported as the `RequestFilterLocked` /
   `RequestFilterPending` constants.
+- The `User-Agent` `isAtHome` flag is now based **solely** on the `APIFY_IS_AT_HOME` environment
+  variable, as mandated by the requirements and matching the JS reference (which reads only that
+  variable). A previously-honored bare `isAtHome` environment variable is no longer consulted; it
+  was a non-standard accommodation not present in the requirements or the reference.
 
 ### Changed
 
@@ -265,6 +269,8 @@ specification version `v2-2026-06-16T064758Z`.
   variable names (either being set marks the client "at home"). The flag is rendered
   lowercase (`true`/`false`) to stay byte-consistent with the JS reference; the requirements'
   `True`/`False` capitalisation is treated as a cosmetic example, with JS consistency winning.
+  _(Superseded in [0.3.0]: the flag is now based solely on `APIFY_IS_AT_HOME`; the bare `isAtHome`
+  variable is no longer consulted.)_
 - `Dataset`/`KeyValueStore` `GetOrCreate` take only a name: this spec version's create
   endpoints declare no request body or `schema` parameter, so a schema argument would be an
   undocumented extension. The `runs/last` endpoints accept only `status` (no `origin`) in

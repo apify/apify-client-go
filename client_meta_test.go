@@ -45,24 +45,26 @@ func TestUserAgentIsAtHomeFlag(t *testing.T) {
 	}
 }
 
-// defaultIsAtHome must honour BOTH the JS-consistent APIFY_IS_AT_HOME env var and the bare
-// isAtHome name mandated by the requirements doc, resolving the two conflicting requirements.
-func TestDefaultIsAtHomeReadsBothEnvVars(t *testing.T) {
-	t.Setenv(envIsAtHomePrimary, "")
-	t.Setenv(envIsAtHomeLegacy, "")
+// defaultIsAtHome must be driven solely by APIFY_IS_AT_HOME (per the requirements and the JS
+// reference); a bare isAtHome env var must NOT affect it.
+func TestDefaultIsAtHomeReadsOnlyApifyIsAtHome(t *testing.T) {
+	t.Setenv(envIsAtHome, "")
+	t.Setenv("isAtHome", "")
 	if defaultIsAtHome() {
-		t.Fatal("expected isAtHome=false when neither env var is set")
+		t.Fatal("expected isAtHome=false when APIFY_IS_AT_HOME is not set")
 	}
 
-	t.Setenv(envIsAtHomePrimary, "1")
-	if !defaultIsAtHome() {
-		t.Fatalf("expected isAtHome=true when %s is set", envIsAtHomePrimary)
+	// A bare isAtHome env var must NOT flip the flag (it is not the mandated variable).
+	t.Setenv("isAtHome", "1")
+	if defaultIsAtHome() {
+		t.Fatal("expected isAtHome=false: a bare isAtHome env var must not affect the flag")
 	}
 
-	t.Setenv(envIsAtHomePrimary, "")
-	t.Setenv(envIsAtHomeLegacy, "1")
+	// Only APIFY_IS_AT_HOME drives the flag.
+	t.Setenv("isAtHome", "")
+	t.Setenv(envIsAtHome, "1")
 	if !defaultIsAtHome() {
-		t.Fatalf("expected isAtHome=true when %s is set", envIsAtHomeLegacy)
+		t.Fatalf("expected isAtHome=true when %s is set", envIsAtHome)
 	}
 }
 
