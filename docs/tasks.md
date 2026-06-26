@@ -35,6 +35,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `GetInput(ctx) (json.RawMessage, bool, error)` | Fetch the stored input. |
 | `UpdateInput(ctx, input any) (json.RawMessage, error)` | Replace the stored input. |
 | `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |
+| `LastRunWithOptions(options LastRunOptions) *RunClient` | Client for the last run, filtered by status and/or origin. |
 | `Runs() *RunCollectionClient` | This task's runs. |
 | `Webhooks() *WebhookCollectionClient` | This task's webhooks. |
 
@@ -54,3 +55,20 @@ run, err := client.Task(task.ID).Call(ctx, nil, apify.TaskStartOptions{}, apify.
 `TaskStartOptions` mirrors `ActorStartOptions` (see [actors.md](actors.md)) but omits the
 Actor-only `ContentType` and `ForcePermissionLevel`, which the task run endpoint does not
 accept.
+
+`LastRun(status)` / `LastRunWithOptions(LastRunOptions{Status, Origin})` resolve the task's most
+recent run, optionally narrowed by status and/or origin. `LastRunOptions` is the same type used
+by the Actor client — see [actors.md](actors.md#single-actor) for its field reference.
+
+```go
+// Most recent task run that SUCCEEDED.
+lastRun, ok, err := client.Task("my-task-id").
+	LastRunWithOptions(apify.LastRunOptions{Status: "SUCCEEDED"}).
+	Get(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+if ok {
+	fmt.Printf("last run: %s (%s)\n", lastRun.ID, lastRun.Status)
+}
+```

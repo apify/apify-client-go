@@ -129,7 +129,7 @@ func withIsAtHomeFn(fn func() bool) Option {
 // Environment variable that signals the client is running on the Apify platform.
 //
 // Per client_requirements.md the flag is based solely on APIFY_IS_AT_HOME ("based on the
-// environment variable `APIFY_IS_AT_HOME`, `False` if env variable is missing"), which also
+// environment variable `APIFY_IS_AT_HOME`, `false` if env variable is missing"), which also
 // matches the JS reference (it reads only APIFY_IS_AT_HOME via @apify/consts).
 const envIsAtHome = "APIFY_IS_AT_HOME"
 

@@ -5,6 +5,36 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-26
+
+Updated to Apify OpenAPI specification `v2-2026-06-25T142310Z` (previously
+`v2-2026-06-24T105326Z`). An operation- and parameter-level audit against the new specification
+found no changes to the in-scope API surface; the spec update itself is a version bump only. This
+release adds an `origin` filter to the last-run convenience accessors (additively, with no
+breaking change) for parity with the `apify-client-js` reference, and cleans up stale in-code
+comments.
+
+### Added
+
+- `ActorClient.LastRunWithOptions` and `TaskClient.LastRunWithOptions` accept a `LastRunOptions`
+  with `Status` and `Origin` filters, matching the reference client's `lastRun({ status, origin })`.
+  The existing `LastRun(status string)` accessors are unchanged (they delegate to the new methods
+  with only `Status` set), so this is a purely additive, non-breaking change. `Origin` is a
+  reference-client convenience threaded to the same `runs/last` endpoint; the OpenAPI spec does not
+  document it as a query parameter.
+
+### Changed
+
+- Bumped `API_SPEC_VERSION` to `v2-2026-06-25T142310Z`.
+- Bumped `CLIENT_VERSION` to `0.4.0` (minor bump per SemVer for the additive `LastRunWithOptions`
+  API).
+
+### Fixed
+
+- Cleaned up stale in-code comments around the `isAtHome` User-Agent flag that quoted the older,
+  capitalized requirement wording; the comments now match the current lowercase requirement text.
+  No behavior change — the flag already rendered lowercase (`true`/`false`).
+
 ## [0.3.0] - 2026-06-25
 
 Updated to Apify OpenAPI specification `v2-2026-06-24T105326Z` (previously

@@ -62,10 +62,28 @@ func newRunClient(root *ApifyClient, hc *httpClient, baseURL, resourcePath, id s
 	}
 }
 
-// setStatusParam pins a `status` query parameter inherited by all calls on this client.
-// Used by ActorClient.LastRun / TaskClient.LastRun to filter the "last" run by status.
-func (c *RunClient) setStatusParam(status string) {
-	c.ctx.baseParams.addRaw("status", status)
+// LastRunOptions filters which "last" run the ActorClient.LastRunWithOptions /
+// TaskClient.LastRunWithOptions accessors resolve to. An empty field leaves that filter unset.
+//
+// Origin is an Apify-platform convenience exposed by the reference client (lastRun({ origin }))
+// but not documented as a query parameter in the OpenAPI spec; it is included for parity with the
+// reference, which threads it to the same runs/last endpoint.
+type LastRunOptions struct {
+	// Status filters by run status (e.g. "SUCCEEDED", "FAILED", "RUNNING").
+	Status string
+	// Origin filters by how the run was started (e.g. "DEVELOPMENT", "WEB", "API", "SCHEDULER").
+	Origin string
+}
+
+// setLastRunParams pins the `status` and/or `origin` query parameters inherited by all calls on
+// this client. Empty values are skipped so they leave the corresponding filter unset.
+func (c *RunClient) setLastRunParams(options LastRunOptions) {
+	if options.Status != "" {
+		c.ctx.baseParams.addRaw("status", options.Status)
+	}
+	if options.Origin != "" {
+		c.ctx.baseParams.addRaw("origin", options.Origin)
+	}
 }
 
 // Get fetches the run object. The bool reports whether it exists.

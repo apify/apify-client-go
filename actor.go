@@ -212,11 +212,18 @@ func (c *ActorClient) ValidateInputForBuild(ctx context.Context, input any, buil
 
 // LastRun returns a client for the last run of this Actor, optionally filtered by status
 // (e.g. "SUCCEEDED"). Pass an empty status for no filter.
+//
+// To also filter by run origin, use LastRunWithOptions.
 func (c *ActorClient) LastRun(status string) *RunClient {
+	return c.LastRunWithOptions(LastRunOptions{Status: status})
+}
+
+// LastRunWithOptions returns a client for the last run of this Actor, optionally filtered by
+// status and/or origin. See LastRunOptions. Mirrors the reference client's
+// lastRun({ status, origin }).
+func (c *ActorClient) LastRunWithOptions(options LastRunOptions) *RunClient {
 	client := newRunClient(c.root, c.ctx.http, c.ctx.subURL(""), "runs", "last")
-	if status != "" {
-		client.setStatusParam(status)
-	}
+	client.setLastRunParams(options)
 	return client
 }
 

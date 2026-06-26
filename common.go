@@ -213,16 +213,8 @@ type PaginationList[T any] struct {
 // `ApifyClient/{version} ({os}; {language version}); isAtHome/{isAtHome}`.
 //
 // isAtHome is driven solely by the platform's APIFY_IS_AT_HOME environment variable (matching
-// the requirements and the reference JS client, which reads it via @apify/consts); it is set to
-// any non-empty value when the client runs on the Apify platform.
-//
-// Casing note (deliberate): the flag is rendered lowercase (true/false). The requirements'
-// worked example shows the capitalized form (isAtHome/True | isAtHome/False), but that example
-// is Python-specific (Python's str(bool) is "True"/"False"). The "consistent with the JS
-// reference" requirement is same-priority, and the JS client interpolates a JS boolean, which
-// stringifies lowercase; the Rust sibling client emits lowercase too. Lowercase is therefore the
-// cross-client-consistent choice, and the literal capitalized example is treated as illustrative
-// rather than normative. See CHANGELOG.md.
+// the requirements and the reference JS client, which reads it via @apify/consts) and is
+// rendered lowercase (true/false), consistent with the JS and Rust sibling clients.
 func BuildUserAgent(suffix string, isAtHomeFn func() bool) string {
 	atHome := "false"
 	if isAtHomeFn() {
