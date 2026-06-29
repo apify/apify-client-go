@@ -16,7 +16,7 @@ Single dataset: `client.Dataset(id)`:
 | `Get / Update / Delete(ctx)` | CRUD. |
 | `ListItems(ctx, DatasetListItemsOptions) (PaginationList[json.RawMessage], error)` | Read items. |
 | `PushItems(ctx, items any) error` | Append one item or a slice of items. |
-| `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, CSV, XLSX, XML, RSS, HTML). |
+| `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
 | `GetStatistics(ctx) (json.RawMessage, bool, error)` | Dataset statistics. |
 | `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL. |
 
@@ -188,7 +188,10 @@ Single queue: `client.RequestQueue(id)`:
 | `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
 | `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests (auto-chunked at 25/call). |
 | `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
-| `ListAndLockHead / ProlongRequestLock / DeleteRequestLock / UnlockRequests(ctx, ...)` | Locking. |
+| `ListAndLockHead(ctx, lockSecs int64, limit *int64) (json.RawMessage, error)` | Fetch the head of the queue and lock the returned requests for `lockSecs` seconds. Returns the raw API response. |
+| `ProlongRequestLock(ctx, id string, lockSecs int64, forefront bool) (json.RawMessage, error)` | Extend the lock on a request by `lockSecs` seconds; `forefront` controls re-queue position when the lock expires. |
+| `DeleteRequestLock(ctx, id string, forefront bool) error` | Release the lock on a request without modifying it. |
+| `UnlockRequests(ctx) (json.RawMessage, error)` | Release all locks held by this client (see `WithClientKey`). |
 | `WithClientKey(key string) *RequestQueueClient` | Pin a stable client key (required to unlock own locks). |
 
 `RequestQueueRequest` is the request payload/record. `URL` is required; `ID` is assigned by the

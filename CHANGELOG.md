@@ -5,6 +5,37 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-29
+
+Documentation-only compliance pass against the current orchestration requirements (no spec bump;
+the client remains on `v2-2026-06-25T142310Z`). No change to the public API surface, so this is a
+SemVer patch.
+
+### Changed
+
+- Documentation now states the client is **official, but experimental** and **AI-generated and
+  AI-maintained**, replacing the previous "not (yet) an officially supported Apify product"
+  wording that contradicted the requirement. Updated consistently in `README.md`, `docs/README.md`,
+  and the package-level doc comment in `client.go`.
+- `README.md` "Releasing" section now explicitly documents that Go's publishing process has no
+  central registry and therefore no "Trusted Publisher" mechanism — releases are cut purely by
+  pushing a git tag read by the public Go module proxy, authenticated only by the built-in
+  `GITHUB_TOKEN`. The `go-publish.yml` workflow already reflected this; the README now matches.
+- Documentation completeness pass (no API change): added a field table for `*APIError` and
+  documented `AsAPIError` in `README.md`; added a `RunChargeOptions` field table and a note that
+  `MetamorphOptions`/`RunChargeOptions` use plain (non-pointer) values in `docs/runs.md`;
+  enumerated the webhook `Create` input keys in `docs/webhooks.md`; documented the request-queue
+  locking method signatures (`ListAndLockHead`, `ProlongRequestLock`, `DeleteRequestLock`,
+  `UnlockRequests`) in `docs/storages.md`.
+
+### Fixed
+
+- Corrected a stale `API_SPEC_VERSION` reference in the `README.md` "Versioning" section
+  (`v2-2026-06-24T105326Z` → `v2-2026-06-25T142310Z`) so it matches `version.go`.
+- `docs/storages.md`: `DownloadItems` now lists `JSONL` in its format list, matching the format
+  constants table (previously the prose omitted it).
+- Bumped `CLIENT_VERSION` to `0.4.1` (patch; documentation-only, no public API change).
+
 ## [0.4.0] - 2026-06-26
 
 Updated to Apify OpenAPI specification `v2-2026-06-25T142310Z` (previously

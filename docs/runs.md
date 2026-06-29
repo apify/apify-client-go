@@ -58,8 +58,18 @@ The time filters apply only to Actor- and task-scoped collections.
 | `Build` | `string` | Pin the target Actor's build (empty for default). |
 | `ContentType` | `string` | Content type of the input body (default `application/json`). |
 
-`RunChargeOptions`: `EventName` (required), `Count`, `IdempotencyKey` (auto-generated if
-empty, so a retried charge is applied at most once).
+`RunChargeOptions`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `EventName` | `string` | Name of the event to charge for. **Required.** |
+| `Count` | `*int64` | Number of times to charge the event (defaults to 1 when nil). |
+| `IdempotencyKey` | `string` | Deduplicates the charge across retries; auto-generated when empty, so a retried charge is applied at most once. |
+
+> Note: unlike most option structs (whose optional fields are pointer-typed — see
+> [docs/README.md](README.md)), `MetamorphOptions` and the string fields of `RunChargeOptions`
+> use plain values. `Build`/`ContentType` and `EventName`/`IdempotencyKey` treat the zero value
+> (empty string) as "unset"; only `RunChargeOptions.Count` is a pointer.
 
 ```go
 run, err := client.Run(runID).WaitForFinish(ctx, nil) // nil waits indefinitely
