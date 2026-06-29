@@ -14,6 +14,18 @@ Webhooks notify external services when events occur. Access the webhook collecti
 An Actor's or task's webhooks are also listable via `client.Actor(id).Webhooks()` /
 `client.Task(id).Webhooks()`.
 
+`Create` (and `Update`) take a free-form JSON object (`any`) that mirrors the webhook shape in
+the Apify API, so it can carry any field the API accepts. The commonly used input keys are:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `eventTypes` | `[]string` | Events that trigger the webhook (see [Event types](#event-types)). Required. |
+| `requestUrl` | `string` | URL the webhook posts to. Required. |
+| `condition` | `object` | Scope the webhook, e.g. `{"actorId": "..."}`, `{"actorTaskId": "..."}`, or `{"actorRunId": "..."}`. |
+| `isAdHoc` | `bool` | `true` for a one-off webhook bound to a single run/build via `condition`. |
+| `payloadTemplate` | `string` | Optional template string for the dispatched payload. |
+| `description` | `string` | Optional human-readable description. |
+
 ### Event types
 
 A webhook's `eventTypes` is a list drawn from the closed `WebhookEventType` enum (12 values):

@@ -1,8 +1,8 @@
 # Apify API client for Go
 
-> **Experimental — AI-generated and AI-maintained.** This client is experimental. It is
-> generated and maintained by AI, and is not (yet) an officially supported Apify product. Review
-> the code before relying on it in production and report issues on the repository.
+> **Official, but experimental — AI-generated and AI-maintained.** This is an official Apify
+> client, but it is experimental: it is generated and maintained by AI. Review the code before
+> relying on it in production and report issues on the repository.
 
 An idiomatic Go client for the [Apify API](https://docs.apify.com/api/v2).
 
@@ -116,9 +116,21 @@ variable the JavaScript reference client reads); if it is set to a non-empty val
 
 ## Error handling
 
-API errors are returned as `*APIError`, with the HTTP status, error type, message, attempt
-count, and request method/path. `get`/`delete` on a missing resource is *not* an error: the
-methods report absence via a boolean (`ok`) instead.
+API errors are returned as `*APIError`. Recover it from any returned `error` with
+`apify.AsAPIError(err) (*APIError, bool)` — the boolean is `false` when the error is not an API
+error (e.g. a network or context error). `get`/`delete` on a missing resource is *not* an error:
+the methods report absence via a boolean (`ok`) instead.
+
+`*APIError` exposes:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `StatusCode` | `int` | HTTP status code of the error response. |
+| `Type` | `string` | Machine-readable error type returned by the API (e.g. `"record-not-found"`). |
+| `Message` | `string` | Human-readable error description returned by the API. |
+| `Attempt` | `int` | 1-based number of the API call attempt that produced this error. |
+| `HTTPMethod` | `string` | HTTP method of the failing call (e.g. `"GET"`, `"POST"`). |
+| `Path` | `string` | Request path of the endpoint (URL excluding origin). |
 
 ```go
 user, ok, err := client.Me().Get(ctx)
@@ -167,7 +179,7 @@ func main() {
 
 - `apify.CLIENT_VERSION` — the semantic version of this library.
 - `apify.API_SPEC_VERSION` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-06-24T105326Z`).
+  (`v2-2026-06-25T142310Z`).
 
 ### Releasing
 
@@ -179,6 +191,12 @@ module proxy to index the new version so it appears on
 [pkg.go.dev](https://pkg.go.dev/github.com/apify/apify-client-go). The tag is derived from
 `CLIENT_VERSION` in [`version.go`](version.go), so bump that constant before releasing. The workflow
 uses only the built-in `GITHUB_TOKEN`; no extra credentials are required.
+
+There is no "Trusted Publisher" step: that mechanism applies to registries that authenticate
+uploads (e.g. PyPI, npm, crates.io). Go has no central registry and no upload step — a module is
+published purely by pushing a git tag that the public module proxy reads — so there is no token or
+trusted-publisher relationship to configure. The workflow therefore relies only on the repository's
+built-in `GITHUB_TOKEN` to push the tag and open the release.
 
 ## Examples
 
