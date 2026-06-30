@@ -80,7 +80,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `Update(ctx, newFields any) (Actor, error)` | Update the Actor. |
 | `Delete(ctx) error` | Delete the Actor. |
 | `Start(ctx, input any, ActorStartOptions) (ActorRun, error)` | Start a run, return immediately. |
-| `Call(ctx, input any, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait for the run to finish. |
+| `Call(ctx, input any, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait for the run to finish. `waitSecs` bounds the client-side wait; pass `nil` to wait indefinitely (until the run reaches a terminal state). |
 | `Build(ctx, versionNumber string, ActorBuildOptions) (Build, error)` | Build a version. |
 | `DefaultBuild(ctx, waitForFinish *int64) (*BuildClient, error)` | Resolve the default build. |
 | `ValidateInput(ctx, input any) (json.RawMessage, error)` | Validate input against the `latest` build's schema. |
