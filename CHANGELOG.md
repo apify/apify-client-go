@@ -5,6 +5,32 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-06-29
+
+Synchronized with Apify OpenAPI specification `v2-2026-06-29T142258Z` (previously
+`v2-2026-06-25T142310Z`). An independent operation- and parameter-level audit against the new
+specification (all 131 paths / 231 operations — 229 GET/POST/PUT/DELETE plus 2 out-of-scope HEAD)
+plus a re-derivation of the in-scope surface from the `apify-client-js` reference found **no change
+to the in-scope API surface**: same paths, operations, query/header parameters, request bodies, and
+response schemas. The sole underlying spec change between the two versions was `apify-docs` commit
+`b03fbc9` ("Clarify OUTPUT record vs output object in sync endpoints"), which relocates the
+`outputRecordKey` query parameter (wire contract byte-for-byte identical) and edits prose on the
+out-of-scope `run-sync` endpoints — no in-scope effect. The endpoints not
+covered by the client (`run-sync` / `run-sync-get-dataset-items`, `/v2/tools/decode-and-verify`
+& `encode-and-sign`, `/v2/browser-info`, and the keyed `POST` create variants that duplicate the
+covered `PUT` writes) remain confirmed out of scope — the JS reference exposes none of them. The
+pay-per-event `Charge` operation (`POST /v2/actor-runs/{runId}/charge`) is already covered and
+matches the spec (`eventName` + `count` body with the `idempotency-key` header). The spec update
+is therefore a version bump only; there is no change to the public interface, so this is a SemVer
+patch.
+
+### Changed
+
+- Bumped `API_SPEC_VERSION` to `v2-2026-06-29T142258Z`.
+- Bumped `CLIENT_VERSION` to `0.4.2` (patch; spec-sync only, no public API change).
+- Updated the `v2-2026-06-25T142310Z` reference in the `README.md` "Versioning" section to
+  `v2-2026-06-29T142258Z` so it matches `version.go`.
+
 ## [0.4.1] - 2026-06-29
 
 Documentation-only compliance pass against the current orchestration requirements (no spec bump;
