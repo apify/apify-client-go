@@ -5,6 +5,16 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-06-30
+
+### Changed
+- Bumped `API_SPEC_VERSION` to `v2-2026-06-30T091455Z`.
+- Bumped `CLIENT_VERSION` to `0.4.3`.
+- Synced the `API_SPEC_VERSION` reference in the `README.md` "Versioning" section to match `version.go`.
+
+### Documentation
+- `docs/actors.md`: document the nil-`waitSecs` behaviour of `Call`.
+
 ## [0.4.2] - 2026-06-29
 
 Synchronized with Apify OpenAPI specification `v2-2026-06-29T142258Z` (previously
