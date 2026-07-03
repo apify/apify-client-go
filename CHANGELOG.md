@@ -5,6 +5,13 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-07-03
+
+### Changed
+- Bumped `API_SPEC_VERSION` to `v2-2026-07-02T131926Z`.
+- Bumped `CLIENT_VERSION` to `0.4.5`.
+- Synced the `API_SPEC_VERSION` reference in the `README.md` "Versioning" section to match `version.go`.
+
 ## [0.4.4] - 2026-07-01
 
 ### Changed
