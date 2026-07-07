@@ -65,9 +65,8 @@ func newRunClient(root *ApifyClient, hc *httpClient, baseURL, resourcePath, id s
 // LastRunOptions filters which "last" run the ActorClient.LastRunWithOptions /
 // TaskClient.LastRunWithOptions accessors resolve to. An empty field leaves that filter unset.
 //
-// Origin is an Apify-platform convenience exposed by the reference client (lastRun({ origin }))
-// but not documented as a query parameter in the OpenAPI spec; it is included for parity with the
-// reference, which threads it to the same runs/last endpoint.
+// Origin is threaded to the runs/last endpoint as a documented query parameter of that endpoint in
+// the OpenAPI spec, mirroring the reference client (lastRun({ origin })).
 type LastRunOptions struct {
 	// Status filters by run status (e.g. "SUCCEEDED", "FAILED", "RUNNING").
 	Status string

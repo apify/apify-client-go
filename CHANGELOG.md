@@ -5,6 +5,19 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-07-07
+
+### Changed
+
+- Bumped `API_SPEC_VERSION` to `v2-2026-07-07T132551Z`.
+- Bumped `CLIENT_VERSION` to `0.4.7`.
+- Synced the `API_SPEC_VERSION` reference in the `README.md` "Versioning" section to match `version.go`.
+
+### Documentation
+
+- Corrected the `LastRunOptions.Origin` doc comment: `origin` is now a documented query parameter of the
+  `runs/last` endpoints in the OpenAPI spec (behavior unchanged; the client already sent it).
+
 ## [0.4.6] - 2026-07-07
 
 ### Changed
