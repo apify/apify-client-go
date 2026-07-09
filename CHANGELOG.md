@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ActorJobStatus` named type with exported constants (`ActorJobStatusReady`, `ActorJobStatusRunning`, `ActorJobStatusSucceeded`, `ActorJobStatusFailed`, `ActorJobStatusTimingOut`, `ActorJobStatusTimedOut`, `ActorJobStatusAborting`, `ActorJobStatusAborted`) and an `IsTerminal()` method.
 
+### Documentation
+
+- Documented the `Dataset`, `KeyValueStore`, and `RequestQueue` storage metadata models with field tables in `docs/storages.md`.
+- Added the full return-type signatures to the storage collection `List`/`GetOrCreate` methods in `docs/storages.md`.
+
 ## [0.4.7] - 2026-07-07
 
 ### Changed

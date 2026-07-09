@@ -6,8 +6,20 @@ Each is reachable both as a top-level resource and as a run's default storage
 
 ## Datasets
 
-Collection: `client.Datasets()` — `List(ctx, StorageListOptions)`,
-`GetOrCreate(ctx, name string)` (empty name → unnamed dataset).
+Collection: `client.Datasets()` — `List(ctx, StorageListOptions) (PaginationList[Dataset], error)`,
+`GetOrCreate(ctx, name string) (Dataset, error)` (empty name → unnamed dataset).
+
+The `Dataset` value returned by `GetOrCreate`/`Get`/`Update` and listed by `List`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique dataset ID. |
+| `Name` | `string` | Dataset name (empty for unnamed datasets). |
+| `UserID` | `string` | ID of the user who owns the dataset. |
+| `CreatedAt` | `*time.Time` | When the dataset was created. |
+| `ModifiedAt` | `*time.Time` | When the dataset was last modified. |
+| `ItemCount` | `int64` | Number of items currently stored. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 Single dataset: `client.Dataset(id)`:
 
@@ -103,7 +115,19 @@ csv, _ := client.Dataset(ds.ID).DownloadItems(ctx, apify.FormatCSV, apify.Datase
 
 ## Key-value stores
 
-Collection: `client.KeyValueStores()` — `List`, `GetOrCreate`.
+Collection: `client.KeyValueStores()` — `List(ctx, StorageListOptions) (PaginationList[KeyValueStore], error)`,
+`GetOrCreate(ctx, name string) (KeyValueStore, error)`.
+
+The `KeyValueStore` value returned by `GetOrCreate`/`Get`/`Update` and listed by `List`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique store ID. |
+| `Name` | `string` | Store name (empty for unnamed stores). |
+| `UserID` | `string` | ID of the user who owns the store. |
+| `CreatedAt` | `*time.Time` | When the store was created. |
+| `ModifiedAt` | `*time.Time` | When the store was last modified. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 Single store: `client.KeyValueStore(id)`:
 
@@ -172,7 +196,21 @@ if ok {
 
 ## Request queues
 
-Collection: `client.RequestQueues()` — `List`, `GetOrCreate`.
+Collection: `client.RequestQueues()` — `List(ctx, StorageListOptions) (PaginationList[RequestQueue], error)`,
+`GetOrCreate(ctx, name string) (RequestQueue, error)`.
+
+The `RequestQueue` value returned by `GetOrCreate`/`Get`/`Update` and listed by `List` (this is the
+queue metadata object, distinct from the `RequestQueueRequest` records documented below):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique queue ID. |
+| `Name` | `string` | Queue name (empty for unnamed queues). |
+| `UserID` | `string` | ID of the user who owns the queue. |
+| `CreatedAt` | `*time.Time` | When the queue was created. |
+| `ModifiedAt` | `*time.Time` | When the queue was last modified. |
+| `TotalRequestCount` | `int64` | Total number of requests ever added to the queue. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 Single queue: `client.RequestQueue(id)`:
 
