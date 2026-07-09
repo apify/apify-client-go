@@ -56,16 +56,16 @@ const (
 
 // ApifyClient is the entry point for interacting with the Apify API.
 //
-// Construct it with [NewClient] (token-only) or [NewClientWithOptions], then obtain
-// resource clients via the accessor methods, e.g. [ApifyClient.Actor], [ApifyClient.Dataset],
-// [ApifyClient.Run]. It is safe for concurrent use.
+// Construct it with [NewClient], passing the API token plus any optional [Option] values,
+// then obtain resource clients via the accessor methods, e.g. [ApifyClient.Actor],
+// [ApifyClient.Dataset], [ApifyClient.Run]. It is safe for concurrent use.
 type ApifyClient struct {
 	http          *httpClient
 	baseURL       string
 	publicBaseURL string
 }
 
-// clientConfig accumulates the options passed to NewClientWithOptions.
+// clientConfig accumulates the token and options passed to NewClient.
 type clientConfig struct {
 	token                  string
 	baseURL                string
@@ -78,13 +78,8 @@ type clientConfig struct {
 	isAtHomeFn             func() bool
 }
 
-// Option configures an [ApifyClient]. Pass options to [NewClientWithOptions].
+// Option configures an [ApifyClient]. Pass options to [NewClient].
 type Option func(*clientConfig)
-
-// WithToken sets the API token used for authentication (sent as a Bearer token).
-func WithToken(token string) Option {
-	return func(c *clientConfig) { c.token = token }
-}
 
 // WithBaseURL overrides the base URL of the API. The /v2 suffix is appended automatically.
 // Defaults to https://api.apify.com.
@@ -143,14 +138,20 @@ func defaultIsAtHome() bool {
 	return os.Getenv(envIsAtHome) != ""
 }
 
-// NewClient creates a client authenticated with the given API token and default settings.
-func NewClient(token string) *ApifyClient {
-	return NewClientWithOptions(WithToken(token))
-}
-
-// NewClientWithOptions creates a client configured by the given options.
-func NewClientWithOptions(opts ...Option) *ApifyClient {
+// NewClient creates a client authenticated with the given API token.
+//
+// The token is passed explicitly; the client does not read it from the environment. Pass an
+// empty token ("") for an unauthenticated client, which is enough for public endpoints (no
+// Authorization header is sent). Optional settings — base URL, retries, timeout, User-Agent
+// suffix, a custom HTTP backend — are supplied as functional [Option] values, e.g.:
+//
+//	client := apify.NewClient(token,
+//		apify.WithBaseURL("https://api.apify.com"),
+//		apify.WithMaxRetries(5),
+//	)
+func NewClient(token string, opts ...Option) *ApifyClient {
 	cfg := &clientConfig{
+		token:                  token,
 		baseURL:                defaultBaseURL,
 		maxRetries:             defaultMaxRetries,
 		minDelayBetweenRetries: defaultMinDelayBetweenRetries,

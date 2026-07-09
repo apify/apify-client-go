@@ -65,12 +65,12 @@ func main() {
 
 ## Configuration
 
-Use `NewClient(token)` for a token-only setup, or `NewClientWithOptions` with functional
+`NewClient` takes the API token as its first argument, followed by any number of functional
 options for full control:
 
 ```go
-client := apify.NewClientWithOptions(
-	apify.WithToken("my-api-token"),
+client := apify.NewClient(
+	"my-api-token",
 	apify.WithBaseURL("https://api.apify.com"), // /v2 is appended automatically
 	apify.WithMaxRetries(8),                    // default 8
 	apify.WithMinDelayBetweenRetries(500*time.Millisecond),
@@ -80,9 +80,10 @@ client := apify.NewClientWithOptions(
 )
 ```
 
+With no options, `apify.NewClient("my-api-token")` uses the defaults below.
+
 | Option | Default | Description |
 | --- | --- | --- |
-| `WithToken` | — | API token, sent as a `Bearer` token. |
 | `WithBaseURL` | `https://api.apify.com` | API base URL; `/v2` is appended automatically. |
 | `WithPublicBaseURL` | API base URL | Base URL used for building public, shareable URLs. |
 | `WithMaxRetries` | `8` | Maximum retries for failed requests. |
@@ -167,8 +168,8 @@ func (b *myBackend) Do(req *http.Request) (*http.Response, error) {
 }
 
 func main() {
-	client := apify.NewClientWithOptions(
-		apify.WithToken("my-api-token"),
+	client := apify.NewClient(
+		"my-api-token",
 		apify.WithHTTPBackend(&myBackend{inner: http.DefaultClient}),
 	)
 	_ = client

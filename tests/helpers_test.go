@@ -44,8 +44,8 @@ func requireClient(t *testing.T) *apify.ApifyClient {
 	if token == "" {
 		t.Skip("skipping: APIFY_TOKEN is not set")
 	}
-	return apify.NewClientWithOptions(
-		apify.WithToken(token),
+	return apify.NewClient(
+		token,
 		apify.WithBaseURL(resolveBaseURL(os.Getenv("APIFY_API_URL"))),
 	)
 }

@@ -35,11 +35,11 @@ func TestUserAgentFormat(t *testing.T) {
 
 func TestUserAgentIsAtHomeFlag(t *testing.T) {
 	// isAtHome flag must be driven by the platform env var, not flipped arbitrarily.
-	offClient := NewClientWithOptions(WithToken("t"), withIsAtHomeFn(func() bool { return false }))
+	offClient := NewClient("t", withIsAtHomeFn(func() bool { return false }))
 	if !strings.Contains(offClient.UserAgent(), "isAtHome/false") {
 		t.Fatalf("expected isAtHome/false, got %q", offClient.UserAgent())
 	}
-	onClient := NewClientWithOptions(WithToken("t"), withIsAtHomeFn(func() bool { return true }))
+	onClient := NewClient("t", withIsAtHomeFn(func() bool { return true }))
 	if !strings.Contains(onClient.UserAgent(), "isAtHome/true") {
 		t.Fatalf("expected isAtHome/true, got %q", onClient.UserAgent())
 	}
@@ -69,7 +69,7 @@ func TestDefaultIsAtHomeReadsOnlyApifyIsAtHome(t *testing.T) {
 }
 
 func TestUserAgentSuffix(t *testing.T) {
-	client := NewClientWithOptions(WithToken("t"), WithUserAgentSuffix("MyTool/1.0"))
+	client := NewClient("t", WithUserAgentSuffix("MyTool/1.0"))
 	if !strings.HasSuffix(client.UserAgent(), "; MyTool/1.0") {
 		t.Fatalf("expected user-agent suffix, got %q", client.UserAgent())
 	}
@@ -83,7 +83,7 @@ func TestBaseURLDefaultAndV2Suffix(t *testing.T) {
 }
 
 func TestBaseURLOverrideAppendsV2(t *testing.T) {
-	client := NewClientWithOptions(WithToken("t"), WithBaseURL("https://api.example.com/"))
+	client := NewClient("t", WithBaseURL("https://api.example.com/"))
 	if client.APIBaseURL() != "https://api.example.com/v2" {
 		t.Fatalf("unexpected base URL: %q", client.APIBaseURL())
 	}

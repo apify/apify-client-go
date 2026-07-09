@@ -16,10 +16,13 @@ client := apify.NewClient("my-api-token")
 ctx := context.Background()
 ```
 
-`NewClient` takes the token as an explicit argument — it does **not** read `APIFY_TOKEN` (or
-any other environment variable) automatically. Read it yourself if you want that, e.g.
-`apify.NewClient(os.Getenv("APIFY_TOKEN"))`. Use `apify.NewClientWithOptions(...)` for
-non-default settings (base URL, retries, timeout, user-agent suffix, custom HTTP backend).
+`NewClient` takes the token as an explicit first argument — it does **not** read `APIFY_TOKEN`
+(or any other environment variable) automatically. Read it yourself if you want that, e.g.
+`apify.NewClient(os.Getenv("APIFY_TOKEN"))`. Passing an empty token (`apify.NewClient("")`)
+yields an unauthenticated client, which is enough for public endpoints. Pass functional
+options after the token for non-default settings (base URL, retries, timeout, user-agent
+suffix, custom HTTP backend), e.g.
+`apify.NewClient(token, apify.WithBaseURL(...), apify.WithMaxRetries(...))`.
 
 Methods that fetch a single resource return a `(value, ok, error)` triple: a missing
 resource is reported by `ok == false` rather than an error. API failures are returned as

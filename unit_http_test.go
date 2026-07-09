@@ -63,8 +63,8 @@ func constant(status int, body string) []mockResponse {
 // testClient builds a client wired to the given backend with a tiny retry delay so tests
 // are fast.
 func testClient(backend HTTPBackend, maxRetries int) *ApifyClient {
-	return NewClientWithOptions(
-		WithToken("test-token"),
+	return NewClient(
+		"test-token",
 		WithHTTPBackend(backend),
 		WithMaxRetries(maxRetries),
 		WithMinDelayBetweenRetries(time.Millisecond),
@@ -85,6 +85,34 @@ func TestSuccessSingleCall(t *testing.T) {
 	if backend.calls != 1 {
 		t.Fatalf("expected exactly 1 call, got %d", backend.calls)
 	}
+}
+
+// TestBearerTokenHeaderPresentAndAbsentOnEmptyToken locks in the constructor's token
+// handling: a non-empty token is sent as a Bearer Authorization header, and NewClient("")
+// yields an unauthenticated client that sends no Authorization header (valid for public
+// endpoints, matching the JS reference and the former token-less constructor).
+func TestBearerTokenHeaderPresentAndAbsentOnEmptyToken(t *testing.T) {
+	t.Run("token set", func(t *testing.T) {
+		backend := &mockBackend{responses: constant(200, `{"data":{"id":"u1"}}`)}
+		client := NewClient("secret-token", WithHTTPBackend(backend), WithMinDelayBetweenRetries(time.Millisecond))
+		if _, _, err := client.Me().Get(context.Background()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := backend.lastHeaders.Get("Authorization"); got != "Bearer secret-token" {
+			t.Fatalf("expected Authorization header %q, got %q", "Bearer secret-token", got)
+		}
+	})
+
+	t.Run("empty token", func(t *testing.T) {
+		backend := &mockBackend{responses: constant(200, `{"data":{"id":"u1"}}`)}
+		client := NewClient("", WithHTTPBackend(backend), WithMinDelayBetweenRetries(time.Millisecond))
+		if _, _, err := client.Me().Get(context.Background()); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := backend.lastHeaders.Get("Authorization"); got != "" {
+			t.Fatalf("expected no Authorization header for empty token, got %q", got)
+		}
+	})
 }
 
 func TestRateLimitIsRetried(t *testing.T) {
