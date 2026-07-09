@@ -90,7 +90,7 @@ func TestSuccessSingleCall(t *testing.T) {
 // TestBearerTokenHeaderPresentAndAbsentOnEmptyToken locks in the constructor's token
 // handling: a non-empty token is sent as a Bearer Authorization header, and NewClient("")
 // yields an unauthenticated client that sends no Authorization header (valid for public
-// endpoints, matching the JS reference and the former token-less constructor).
+// endpoints, matching the JS reference).
 func TestBearerTokenHeaderPresentAndAbsentOnEmptyToken(t *testing.T) {
 	t.Run("token set", func(t *testing.T) {
 		backend := &mockBackend{responses: constant(200, `{"data":{"id":"u1"}}`)}
