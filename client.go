@@ -336,20 +336,26 @@ func (c *ApifyClient) User(id string) *UserClient {
 	return newUserClient(c.http, c.baseURL, id)
 }
 
+// SetStatusMessageOptions configures [ApifyClient.SetStatusMessage].
+type SetStatusMessageOptions struct {
+	// Terminal, if true, makes the status message final so it won't be overwritten by
+	// subsequent platform updates.
+	Terminal bool
+}
+
 // SetStatusMessage sets the status message of the current Actor run.
 //
 // This convenience method updates the run identified by the ACTOR_RUN_ID environment
-// variable, so it only works when called from inside an Actor run. If isTerminal is true,
-// the message becomes final and won't be overwritten. It returns an error if ACTOR_RUN_ID
-// is not set.
-func (c *ApifyClient) SetStatusMessage(ctx context.Context, message string, isTerminal bool) (ActorRun, error) {
+// variable, so it only works when called from inside an Actor run. It returns an error if
+// ACTOR_RUN_ID is not set.
+func (c *ApifyClient) SetStatusMessage(ctx context.Context, message string, options SetStatusMessageOptions) (ActorRun, error) {
 	runID := os.Getenv("ACTOR_RUN_ID")
 	if runID == "" {
 		return ActorRun{}, errors.New("ACTOR_RUN_ID environment variable is not set")
 	}
 	body := map[string]any{
 		"statusMessage":           message,
-		"isStatusMessageTerminal": isTerminal,
+		"isStatusMessageTerminal": options.Terminal,
 	}
 	return c.Run(runID).Update(ctx, body)
 }

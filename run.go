@@ -68,8 +68,8 @@ func newRunClient(root *ApifyClient, hc *httpClient, baseURL, resourcePath, id s
 // Origin is threaded to the runs/last endpoint as a documented query parameter of that endpoint in
 // the OpenAPI spec, mirroring the reference client (lastRun({ origin })).
 type LastRunOptions struct {
-	// Status filters by run status (e.g. "SUCCEEDED", "FAILED", "RUNNING").
-	Status string
+	// Status filters by run status (one of the ActorJobStatus constants). Empty means no filter.
+	Status ActorJobStatus
 	// Origin filters by how the run was started (e.g. "DEVELOPMENT", "WEB", "API", "SCHEDULER").
 	Origin string
 }
@@ -78,7 +78,7 @@ type LastRunOptions struct {
 // this client. Empty values are skipped so they leave the corresponding filter unset.
 func (c *RunClient) setLastRunParams(options LastRunOptions) {
 	if options.Status != "" {
-		c.ctx.baseParams.addRaw("status", options.Status)
+		c.ctx.baseParams.addRaw("status", string(options.Status))
 	}
 	if options.Origin != "" {
 		c.ctx.baseParams.addRaw("origin", options.Origin)

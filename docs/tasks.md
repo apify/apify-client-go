@@ -34,7 +34,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. |
 | `GetInput(ctx) (json.RawMessage, bool, error)` | Fetch the stored input. |
 | `UpdateInput(ctx, input any) (json.RawMessage, error)` | Replace the stored input. |
-| `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |
+| `LastRun(status ActorJobStatus) *RunClient` | Client for the last run (optional status filter). |
 | `LastRunWithOptions(options LastRunOptions) *RunClient` | Client for the last run, filtered by status and/or origin. |
 | `Runs() *RunCollectionClient` | This task's runs. |
 | `Webhooks() *WebhookCollectionClient` | This task's webhooks. |
@@ -63,7 +63,7 @@ by the Actor client — see [actors.md](actors.md#single-actor) for its field re
 ```go
 // Most recent task run that SUCCEEDED.
 lastRun, ok, err := client.Task("my-task-id").
-	LastRunWithOptions(apify.LastRunOptions{Status: "SUCCEEDED"}).
+	LastRunWithOptions(apify.LastRunOptions{Status: apify.ActorJobStatusSucceeded}).
 	Get(ctx)
 if err != nil {
 	log.Fatal(err)

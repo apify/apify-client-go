@@ -69,7 +69,7 @@ func TestBatchAddRequestsChunks(t *testing.T) {
 	for i := range requests {
 		requests[i] = RequestQueueRequest{URL: "https://example.com"}
 	}
-	if _, err := client.RequestQueue("q1").BatchAddRequests(context.Background(), requests, false); err != nil {
+	if _, err := client.RequestQueue("q1").BatchAddRequests(context.Background(), requests, BatchAddRequestsOptions{}); err != nil {
 		t.Fatalf("batch add: %v", err)
 	}
 	if backend.calls != 3 {

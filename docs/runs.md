@@ -14,7 +14,7 @@ with `client.Run(id)`, and an Actor's or task's runs with `client.Actor(id).Runs
 
 | Field | Type | Meaning |
 |---|---|---|
-| `Status` | `[]string` | Filter by one or more run statuses; sent as a comma-separated list. Values are the eight `ActorJobStatus` values: `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`, `ABORTING`, `ABORTED`. |
+| `Status` | `[]ActorJobStatus` | Filter by one or more run statuses; sent as a comma-separated list. Each value is one of the `ActorJobStatus` constants (raw wire values `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`, `ABORTING`, `ABORTED`). |
 | `StartedAfter` | `*string` | Only runs started after this ISO-8601 timestamp. |
 | `StartedBefore` | `*string` | Only runs started before this ISO-8601 timestamp. |
 
@@ -92,7 +92,7 @@ run's metadata. The commonly used fields:
 | `ActID` | `string` | ID of the Actor that produced the run. |
 | `ActorTaskID` | `string` | ID of the task that started the run, if any. |
 | `UserID` | `string` | ID of the user who owns the run. |
-| `Status` | `string` | Run status. One of the eight `ActorJobStatus` values: `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`, `ABORTING`, `ABORTED`. |
+| `Status` | `ActorJobStatus` | Run status. One of the `ActorJobStatus` constants (raw wire values `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`, `ABORTING`, `ABORTED`). |
 | `StatusMessage` | `string` | Optional human-readable status message. |
 | `StartedAt` | `*time.Time` | When the run started. |
 | `FinishedAt` | `*time.Time` | When the run finished (`nil` while still running). |
@@ -103,6 +103,16 @@ run's metadata. The commonly used fields:
 | `ContainerURL` | `string` | URL of the run's container (for live access). |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
-`ActorRun.IsTerminal()` reports whether a run has finished. Status message convenience:
-`client.SetStatusMessage(ctx, message, isTerminal)` updates the current run identified by the
-`ACTOR_RUN_ID` environment variable.
+`ActorRun.IsTerminal()` reports whether a run has finished. `ActorJobStatus` is a named string
+type; each `ActorJobStatus` value also has an `IsTerminal()` method. The constants are
+`apify.ActorJobStatusReady`, `ActorJobStatusRunning`, `ActorJobStatusSucceeded`,
+`ActorJobStatusFailed`, `ActorJobStatusTimingOut`, `ActorJobStatusTimedOut`,
+`ActorJobStatusAborting`, and `ActorJobStatusAborted`. Status message convenience:
+`client.SetStatusMessage(ctx, message, apify.SetStatusMessageOptions{Terminal: true})` updates the
+current run identified by the `ACTOR_RUN_ID` environment variable.
+
+`SetStatusMessageOptions` (all fields optional):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Terminal` | `bool` | Make the status message final so it won't be overwritten by subsequent platform updates. |

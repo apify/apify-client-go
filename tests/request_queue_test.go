@@ -59,7 +59,7 @@ func TestRequestQueueCRUDFlow(t *testing.T) {
 		UniqueKey: "example",
 		Method:    "GET",
 		UserData:  []byte(`{"label":"DETAIL"}`),
-	}, false)
+	}, apify.AddRequestOptions{})
 	if err != nil {
 		t.Fatalf("add request: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestRequestQueuePaginateMultiplePages(t *testing.T) {
 	const total = 5
 	for i := 0; i < total; i++ {
 		url := fmt.Sprintf("https://example.com/%d", i)
-		if _, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: url, UniqueKey: url}, false); err != nil {
+		if _, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: url, UniqueKey: url}, apify.AddRequestOptions{}); err != nil {
 			t.Fatalf("add request %d: %v", i, err)
 		}
 	}
@@ -151,7 +151,7 @@ func TestRequestQueueBatchAddRequests(t *testing.T) {
 		url := fmt.Sprintf("https://batch.example.com/%d", i)
 		requests[i] = apify.RequestQueueRequest{URL: url, UniqueKey: url}
 	}
-	result, err := queue.BatchAddRequests(ctx, requests, false)
+	result, err := queue.BatchAddRequests(ctx, requests, apify.BatchAddRequestsOptions{})
 	if err != nil {
 		t.Fatalf("batch add: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestRequestQueueLockLifecycle(t *testing.T) {
 	// A stable client key is required to unlock the client's own locks.
 	queue := client.RequestQueue(rq.ID).WithClientKey("go-test-client-key")
 
-	info, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://lock.example.com", UniqueKey: "lock"}, false)
+	info, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://lock.example.com", UniqueKey: "lock"}, apify.AddRequestOptions{})
 	if err != nil {
 		t.Fatalf("add request: %v", err)
 	}
@@ -193,10 +193,10 @@ func TestRequestQueueLockLifecycle(t *testing.T) {
 	if _, err := queue.ListAndLockHead(ctx, 60, ptr(int64(10))); err != nil {
 		t.Fatalf("list and lock head: %v", err)
 	}
-	if _, err := queue.ProlongRequestLock(ctx, info.RequestID, 30, false); err != nil {
+	if _, err := queue.ProlongRequestLock(ctx, info.RequestID, 30, apify.ProlongRequestLockOptions{}); err != nil {
 		t.Fatalf("prolong lock: %v", err)
 	}
-	if err := queue.DeleteRequestLock(ctx, info.RequestID, false); err != nil {
+	if err := queue.DeleteRequestLock(ctx, info.RequestID, apify.DeleteRequestLockOptions{}); err != nil {
 		t.Fatalf("delete lock: %v", err)
 	}
 	if _, err := queue.UnlockRequests(ctx); err != nil {

@@ -6,18 +6,18 @@ import (
 )
 
 func TestVersionConstants(t *testing.T) {
-	if CLIENT_VERSION == "" || CLIENT_VERSION[0] < '0' || CLIENT_VERSION[0] > '9' {
-		t.Fatalf("CLIENT_VERSION should start with a digit, got %q", CLIENT_VERSION)
+	if ClientVersion == "" || ClientVersion[0] < '0' || ClientVersion[0] > '9' {
+		t.Fatalf("ClientVersion should start with a digit, got %q", ClientVersion)
 	}
-	if !strings.HasPrefix(API_SPEC_VERSION, "v2-") || !strings.HasSuffix(API_SPEC_VERSION, "Z") {
-		t.Fatalf("API_SPEC_VERSION should match v2-...Z, got %q", API_SPEC_VERSION)
+	if !strings.HasPrefix(APISpecVersion, "v2-") || !strings.HasSuffix(APISpecVersion, "Z") {
+		t.Fatalf("APISpecVersion should match v2-...Z, got %q", APISpecVersion)
 	}
 }
 
 func TestUserAgentFormat(t *testing.T) {
 	client := NewClient("token")
 	ua := client.UserAgent()
-	if !strings.HasPrefix(ua, "ApifyClient/"+CLIENT_VERSION+" (") {
+	if !strings.HasPrefix(ua, "ApifyClient/"+ClientVersion+" (") {
 		t.Fatalf("unexpected user-agent prefix: %q", ua)
 	}
 	if !strings.Contains(ua, "Go/") {

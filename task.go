@@ -118,10 +118,10 @@ func (c *TaskClient) UpdateInput(ctx context.Context, input any) (json.RawMessag
 }
 
 // LastRun returns a client for the last run of this task, optionally filtered by status
-// (e.g. "SUCCEEDED"). Pass an empty status for no filter.
+// (e.g. [ActorJobStatusSucceeded]). Pass an empty status for no filter.
 //
 // To also filter by run origin, use LastRunWithOptions.
-func (c *TaskClient) LastRun(status string) *RunClient {
+func (c *TaskClient) LastRun(status ActorJobStatus) *RunClient {
 	return c.LastRunWithOptions(LastRunOptions{Status: status})
 }
 

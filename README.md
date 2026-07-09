@@ -177,8 +177,8 @@ func main() {
 
 ## Versioning
 
-- `apify.CLIENT_VERSION` — the semantic version of this library.
-- `apify.API_SPEC_VERSION` — the Apify OpenAPI spec version this client was built against
+- `apify.ClientVersion` — the semantic version of this library.
+- `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
   (`v2-2026-07-07T132551Z`).
 
 ### Releasing
@@ -186,10 +186,10 @@ func main() {
 Go modules are distributed by pushing a semver git tag — there is no separate package registry to
 upload to. The [`Publish Go client`](.github/workflows/go-publish.yml) workflow is the release
 mechanism: a maintainer triggers it manually (`workflow_dispatch`), it runs the same quality gate
-as CI, then creates and pushes the `v<CLIENT_VERSION>` tag, opens a GitHub release, and asks the Go
+as CI, then creates and pushes the `v<ClientVersion>` tag, opens a GitHub release, and asks the Go
 module proxy to index the new version so it appears on
 [pkg.go.dev](https://pkg.go.dev/github.com/apify/apify-client-go). The tag is derived from
-`CLIENT_VERSION` in [`version.go`](version.go), so bump that constant before releasing. The workflow
+`ClientVersion` in [`version.go`](version.go), so bump that constant before releasing. The workflow
 uses only the built-in `GITHUB_TOKEN`; no extra credentials are required.
 
 There is no "Trusted Publisher" step: that mechanism applies to registries that authenticate

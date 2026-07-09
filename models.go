@@ -76,9 +76,8 @@ type ActorRun struct {
 	ActorTaskID string `json:"actorTaskId"`
 	// UserID is the ID of the user who owns the run.
 	UserID string `json:"userId"`
-	// Status is the current run status. One of the eight ActorJobStatus values: READY, RUNNING,
-	// SUCCEEDED, FAILED, TIMING-OUT, TIMED-OUT, ABORTING, ABORTED.
-	Status string `json:"status"`
+	// Status is the current run status (one of the ActorJobStatus constants).
+	Status ActorJobStatus `json:"status"`
 	// StatusMessage is an optional human-readable status message.
 	StatusMessage string `json:"statusMessage"`
 	// StartedAt is when the run started.
@@ -107,7 +106,7 @@ func (r *ActorRun) UnmarshalJSON(data []byte) error {
 
 // IsTerminal reports whether the run has reached a terminal (finished) status.
 func (r *ActorRun) IsTerminal() bool {
-	return isTerminalStatus(r.Status)
+	return r.Status.IsTerminal()
 }
 
 // Build is a single build of an Actor.
@@ -116,8 +115,8 @@ type Build struct {
 	ID string `json:"id"`
 	// ActID is the ID of the Actor this build belongs to.
 	ActID string `json:"actId"`
-	// Status is the current build status.
-	Status string `json:"status"`
+	// Status is the current build status (one of the ActorJobStatus constants).
+	Status ActorJobStatus `json:"status"`
 	// StartedAt is when the build started.
 	StartedAt *time.Time `json:"startedAt"`
 	// FinishedAt is when the build finished (absent while still building).
@@ -136,7 +135,7 @@ func (b *Build) UnmarshalJSON(data []byte) error {
 
 // IsTerminal reports whether the build has reached a terminal (finished) status.
 func (b *Build) IsTerminal() bool {
-	return isTerminalStatus(b.Status)
+	return b.Status.IsTerminal()
 }
 
 // Task is a pre-configured Actor run (an Actor task).

@@ -85,7 +85,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `DefaultBuild(ctx, waitForFinish *int64) (*BuildClient, error)` | Resolve the default build. |
 | `ValidateInput(ctx, input any) (json.RawMessage, error)` | Validate input against the `latest` build's schema. |
 | `ValidateInputForBuild(ctx, input any, build string) (json.RawMessage, error)` | Validate input against a specific build's schema (tag or number). |
-| `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |
+| `LastRun(status ActorJobStatus) *RunClient` | Client for the last run (optional status filter). |
 | `LastRunWithOptions(options LastRunOptions) *RunClient` | Client for the last run, filtered by status and/or origin. |
 | `Builds() *BuildCollectionClient` | This Actor's builds. |
 | `Runs() *RunCollectionClient` | This Actor's runs. |
@@ -105,13 +105,13 @@ reporting whether the input is valid and, if not, the schema violations.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `Status` | `string` | Filter by run status (e.g. `SUCCEEDED`, `FAILED`, `RUNNING`). |
+| `Status` | `ActorJobStatus` | Filter by run status (e.g. `apify.ActorJobStatusSucceeded`). |
 | `Origin` | `string` | Filter by how the run was started: `DEVELOPMENT`, `WEB`, `API`, `SCHEDULER`, `TEST`, `WEBHOOK`, `ACTOR`, `CLI`, `CI`, `STANDBY`, `MCP`. |
 
 ```go
 // Most recent run that both SUCCEEDED and was started via the API.
 lastRun, ok, err := client.Actor("apify/hello-world").
-	LastRunWithOptions(apify.LastRunOptions{Status: "SUCCEEDED", Origin: "API"}).
+	LastRunWithOptions(apify.LastRunOptions{Status: apify.ActorJobStatusSucceeded, Origin: "API"}).
 	Get(ctx)
 if err != nil {
 	log.Fatal(err)

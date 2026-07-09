@@ -25,7 +25,7 @@ func main() {
 	}
 
 	// Fetch the Actor's last successful run.
-	lastRun, ok, err := client.Actor("apify/hello-world").LastRun("SUCCEEDED").Get(ctx)
+	lastRun, ok, err := client.Actor("apify/hello-world").LastRun(apify.ActorJobStatusSucceeded).Get(ctx)
 	if err != nil || !ok {
 		log.Fatalf("fetch last run: ok=%v err=%v", ok, err)
 	}

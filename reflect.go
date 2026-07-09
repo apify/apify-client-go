@@ -38,17 +38,3 @@ func knownJSONKeys(v any) map[string]struct{} {
 	knownKeysCache.Store(t, keys)
 	return keys
 }
-
-// Terminal run/build statuses. A resource in any of these is finished and will not change.
-var terminalStatuses = map[string]struct{}{
-	"SUCCEEDED": {},
-	"FAILED":    {},
-	"ABORTED":   {},
-	"TIMED-OUT": {},
-}
-
-// isTerminalStatus reports whether status is a terminal (finished) run/build status.
-func isTerminalStatus(status string) bool {
-	_, ok := terminalStatuses[status]
-	return ok
-}

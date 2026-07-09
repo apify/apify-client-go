@@ -180,17 +180,17 @@ Single queue: `client.RequestQueue(id)`:
 | --- | --- |
 | `Get / Update / Delete(ctx)` | CRUD. |
 | `ListHead(ctx, limit *int64) (RequestQueueHead, error)` | Requests at the front. |
-| `AddRequest(ctx, RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error)` | Add a request. |
+| `AddRequest(ctx, RequestQueueRequest, AddRequestOptions) (RequestQueueOperationInfo, error)` | Add a request (`Options.Forefront` adds it to the front). |
 | `GetRequest(ctx, id) (*RequestQueueRequest, bool, error)` | Read a request. |
-| `UpdateRequest(ctx, RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error)` | Update a request (by its `ID`). |
+| `UpdateRequest(ctx, RequestQueueRequest, AddRequestOptions) (RequestQueueOperationInfo, error)` | Update a request (by its `ID`). |
 | `DeleteRequest(ctx, id) error` | Delete a request. |
 | `ListRequests(ctx, ListRequestsOptions) (json.RawMessage, error)` | Paginated list. Returns the raw API response (`{ "items": [...], "nextCursor": ... }`); unmarshal into your own type, or use `PaginateRequests` for typed iteration. |
 | `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
-| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests (auto-chunked at 25/call). |
+| `BatchAddRequests(ctx, []RequestQueueRequest, BatchAddRequestsOptions) (BatchAddResult, error)` | Add many requests (auto-chunked at 25/call). |
 | `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
 | `ListAndLockHead(ctx, lockSecs int64, limit *int64) (json.RawMessage, error)` | Fetch the head of the queue and lock the returned requests for `lockSecs` seconds. Returns the raw API response. |
-| `ProlongRequestLock(ctx, id string, lockSecs int64, forefront bool) (json.RawMessage, error)` | Extend the lock on a request by `lockSecs` seconds; `forefront` controls re-queue position when the lock expires. |
-| `DeleteRequestLock(ctx, id string, forefront bool) error` | Release the lock on a request without modifying it. |
+| `ProlongRequestLock(ctx, id string, lockSecs int64, ProlongRequestLockOptions) (json.RawMessage, error)` | Extend the lock on a request by `lockSecs` seconds; `Options.Forefront` controls re-queue position when the lock expires. |
+| `DeleteRequestLock(ctx, id string, DeleteRequestLockOptions) error` | Release the lock on a request without modifying it. |
 | `UnlockRequests(ctx) (json.RawMessage, error)` | Release all locks held by this client (see `WithClientKey`). |
 | `WithClientKey(key string) *RequestQueueClient` | Pin a stable client key (required to unlock own locks). |
 
@@ -214,6 +214,16 @@ API (omit it on create):
 | `ExclusiveStartID` | `*string` | List requests after this ID (deprecated; prefer `Cursor`). |
 | `Cursor` | `*string` | Opaque pagination cursor: the `string` returned as `nextCursor` in the previous `ListRequests` response. Pass it back to fetch the next page. Mutually exclusive with the deprecated `ExclusiveStartID` (setting both returns an error). |
 | `Filter` | `[]string` | Restrict the listing to requests in the given states; sent as a comma-separated list whose semantics are the union of the states (requests matching any are returned). Each value must be `"locked"` or `"pending"` — use the exported `apify.RequestFilterLocked` / `apify.RequestFilterPending` constants. |
+
+The request-mutation methods each take an options struct whose single field controls queue
+placement (all default to `false`):
+
+| Options struct | Used by | Field | Type | Meaning |
+|---|---|---|---|---|
+| `AddRequestOptions` | `AddRequest`, `UpdateRequest` | `Forefront` | `bool` | Add (or move) the request to the front of the queue. |
+| `BatchAddRequestsOptions` | `BatchAddRequests` | `Forefront` | `bool` | Add the requests to the front of the queue. |
+| `ProlongRequestLockOptions` | `ProlongRequestLock` | `Forefront` | `bool` | Move the request to the front when its lock expires. |
+| `DeleteRequestLockOptions` | `DeleteRequestLock` | `Forefront` | `bool` | Move the request to the front of the queue. |
 
 Return types:
 
@@ -246,7 +256,7 @@ rq, _ := client.RequestQueues().GetOrCreate(ctx, "")
 defer client.RequestQueue(rq.ID).Delete(ctx)
 
 queue := client.RequestQueue(rq.ID)
-_, _ = queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, false)
+_, _ = queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, apify.AddRequestOptions{})
 
 // List only pending or locked requests (the Filter values are sent comma-joined, union semantics).
 _, _ = queue.ListRequests(ctx, apify.ListRequestsOptions{

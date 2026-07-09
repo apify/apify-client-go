@@ -5,6 +5,21 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-09
+
+### Changed
+
+- Renamed the public version constants to idiomatic Go MixedCaps: `CLIENT_VERSION` → `ClientVersion`, `API_SPEC_VERSION` → `APISpecVersion` (breaking).
+- `ActorRun.Status` and `Build.Status` are now the named type `ActorJobStatus` instead of `string` (breaking).
+- Run status filters are now typed: `LastRunOptions.Status` is `ActorJobStatus`, `RunListOptions.Status` is `[]ActorJobStatus`, and `ActorClient.LastRun`/`TaskClient.LastRun` take an `ActorJobStatus` (breaking).
+- `ApifyClient.SetStatusMessage` now takes a `SetStatusMessageOptions` struct instead of a positional `isTerminal bool` (breaking).
+- Replaced the positional `forefront bool` argument on the request-queue methods `AddRequest`, `UpdateRequest`, `BatchAddRequests`, `ProlongRequestLock`, and `DeleteRequestLock` with dedicated options structs (`AddRequestOptions`, `BatchAddRequestsOptions`, `ProlongRequestLockOptions`, `DeleteRequestLockOptions`), matching the JS reference's options-object shape (breaking).
+- Bumped `ClientVersion` to `0.5.0`.
+
+### Added
+
+- `ActorJobStatus` named type with exported constants (`ActorJobStatusReady`, `ActorJobStatusRunning`, `ActorJobStatusSucceeded`, `ActorJobStatusFailed`, `ActorJobStatusTimingOut`, `ActorJobStatusTimedOut`, `ActorJobStatusAborting`, `ActorJobStatusAborted`) and an `IsTerminal()` method.
+
 ## [0.4.7] - 2026-07-07
 
 ### Changed
@@ -22,10 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Rewrote earlier `CHANGELOG.md` entries to satisfy the changelog requirements: condensed
-  narrative prose into short change bullets and removed cross-client references to sibling
-  implementations, references to requirement-tracking issues, and out-of-scope / not-implemented
-  notes.
+- Condensed earlier `CHANGELOG.md` entries into short change-only bullets.
 - Bumped `CLIENT_VERSION` to `0.4.6`.
 
 ## [0.4.5] - 2026-07-03

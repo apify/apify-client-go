@@ -69,7 +69,7 @@ func requestQueueExample(ctx context.Context, client *apify.ApifyClient) {
 	defer func() { _ = client.RequestQueue(rq.ID).Delete(ctx) }()
 
 	queue := client.RequestQueue(rq.ID)
-	if _, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, false); err != nil {
+	if _, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: "https://example.com", UniqueKey: "example"}, apify.AddRequestOptions{}); err != nil {
 		log.Fatalf("add request: %v", err)
 	}
 	head, err := queue.ListHead(ctx, nil)

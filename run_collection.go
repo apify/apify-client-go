@@ -6,9 +6,9 @@ import "context"
 // [RunCollectionClient.List]. The startedAfter/startedBefore filters are only honoured by
 // the Actor-scoped and task-scoped run collections.
 type RunListOptions struct {
-	// Status filters by one or more run statuses (e.g. "SUCCEEDED", "RUNNING"). Sent as a
+	// Status filters by one or more run statuses (the ActorJobStatus constants). Sent as a
 	// comma-separated list, as the API accepts.
-	Status []string
+	Status []ActorJobStatus
 	// StartedAfter filters to runs started after this ISO-8601 timestamp.
 	StartedAfter *string
 	// StartedBefore filters to runs started before this ISO-8601 timestamp.
@@ -16,7 +16,11 @@ type RunListOptions struct {
 }
 
 func (o RunListOptions) apply(q *QueryParams) {
-	q.AddCSV("status", o.Status).
+	statuses := make([]string, len(o.Status))
+	for i, s := range o.Status {
+		statuses[i] = string(s)
+	}
+	q.AddCSV("status", statuses).
 		AddString("startedAfter", o.StartedAfter).
 		AddString("startedBefore", o.StartedBefore)
 }

@@ -86,11 +86,17 @@ func (c *RequestQueueClient) ListHead(ctx context.Context, limit *int64) (Reques
 	return getResourceRequired[RequestQueueHead](ctx, c.ctx, "head", params)
 }
 
-// AddRequest adds a request to the queue. If forefront is true, the request is added to the
-// front of the queue.
-func (c *RequestQueueClient) AddRequest(ctx context.Context, request RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error) {
+// AddRequestOptions configures [RequestQueueClient.AddRequest] and
+// [RequestQueueClient.UpdateRequest].
+type AddRequestOptions struct {
+	// Forefront, if true, adds (or moves) the request to the front of the queue.
+	Forefront bool
+}
+
+// AddRequest adds a request to the queue.
+func (c *RequestQueueClient) AddRequest(ctx context.Context, request RequestQueueRequest, options AddRequestOptions) (RequestQueueOperationInfo, error) {
 	params := NewQueryParams()
-	params.AddBool("forefront", &forefront)
+	params.AddBool("forefront", &options.Forefront)
 	c.withClientKey(params)
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -109,10 +115,10 @@ func (c *RequestQueueClient) GetRequest(ctx context.Context, id string) (*Reques
 }
 
 // UpdateRequest updates an existing request (identified by its ID field) and returns the
-// operation info. If forefront is true, the request is moved to the front of the queue.
-func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error) {
+// operation info.
+func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQueueRequest, options AddRequestOptions) (RequestQueueOperationInfo, error) {
 	params := NewQueryParams()
-	params.AddBool("forefront", &forefront)
+	params.AddBool("forefront", &options.Forefront)
 	c.withClientKey(params)
 	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(request.ID)))
 	body, err := json.Marshal(request)
@@ -158,20 +164,25 @@ type BatchAddResult struct {
 	UnprocessedRequests []RequestQueueRequest `json:"unprocessedRequests"`
 }
 
-// BatchAddRequests adds multiple requests to the queue. If forefront is true, they are added
-// to the front of the queue.
+// BatchAddRequestsOptions configures [RequestQueueClient.BatchAddRequests].
+type BatchAddRequestsOptions struct {
+	// Forefront, if true, adds the requests to the front of the queue.
+	Forefront bool
+}
+
+// BatchAddRequests adds multiple requests to the queue.
 //
 // The input is automatically split into chunks of at most 25 requests (the API limit), and
 // the per-chunk results are merged into a single [BatchAddResult]. Each chunk is still
 // subject to the client's standard retry policy.
-func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []RequestQueueRequest, forefront bool) (BatchAddResult, error) {
+func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []RequestQueueRequest, options BatchAddRequestsOptions) (BatchAddResult, error) {
 	var merged BatchAddResult
 	for start := 0; start < len(requests); start += maxRequestsPerBatchOperation {
 		end := start + maxRequestsPerBatchOperation
 		if end > len(requests) {
 			end = len(requests)
 		}
-		chunkResult, err := c.batchAddChunk(ctx, requests[start:end], forefront)
+		chunkResult, err := c.batchAddChunk(ctx, requests[start:end], options.Forefront)
 		if err != nil {
 			return merged, err
 		}
@@ -233,11 +244,17 @@ func (c *RequestQueueClient) ListRequests(ctx context.Context, options ListReque
 	return getResourceRequired[json.RawMessage](ctx, c.ctx, "requests", params)
 }
 
-// ProlongRequestLock extends the lock on a request by lockSecs seconds. If forefront is
-// true, the request is moved to the front when its lock expires. Returns the raw response.
-func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, lockSecs int64, forefront bool) (json.RawMessage, error) {
+// ProlongRequestLockOptions configures [RequestQueueClient.ProlongRequestLock].
+type ProlongRequestLockOptions struct {
+	// Forefront, if true, moves the request to the front of the queue when its lock expires.
+	Forefront bool
+}
+
+// ProlongRequestLock extends the lock on a request by lockSecs seconds. Returns the raw
+// response.
+func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, lockSecs int64, options ProlongRequestLockOptions) (json.RawMessage, error) {
 	params := NewQueryParams()
-	params.AddInt("lockSecs", &lockSecs).AddBool("forefront", &forefront)
+	params.AddInt("lockSecs", &lockSecs).AddBool("forefront", &options.Forefront)
 	c.withClientKey(params)
 	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
 	resp, err := c.ctx.http.call(ctx, "PUT", url, nil, "", defaultRequestTimeout)
@@ -247,11 +264,16 @@ func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, 
 	return parseDataEnvelope[json.RawMessage](resp.body)
 }
 
-// DeleteRequestLock releases the lock on a request. If forefront is true, the request is
-// moved to the front of the queue.
-func (c *RequestQueueClient) DeleteRequestLock(ctx context.Context, id string, forefront bool) error {
+// DeleteRequestLockOptions configures [RequestQueueClient.DeleteRequestLock].
+type DeleteRequestLockOptions struct {
+	// Forefront, if true, moves the request to the front of the queue.
+	Forefront bool
+}
+
+// DeleteRequestLock releases the lock on a request.
+func (c *RequestQueueClient) DeleteRequestLock(ctx context.Context, id string, options DeleteRequestLockOptions) error {
 	params := NewQueryParams()
-	params.AddBool("forefront", &forefront)
+	params.AddBool("forefront", &options.Forefront)
 	c.withClientKey(params)
 	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
 	_, err := c.ctx.http.call(ctx, "DELETE", url, nil, "", defaultRequestTimeout)
