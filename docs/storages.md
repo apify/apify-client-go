@@ -7,6 +7,7 @@ Each is reachable both as a top-level resource and as a run's default storage
 ## Datasets
 
 Collection: `client.Datasets()` — `List(ctx, StorageListOptions)`,
+`Iterate(StorageListOptions)` (lazy iterator over all matching datasets),
 `GetOrCreate(ctx, name string)` (empty name → unnamed dataset).
 
 Single dataset: `client.Dataset(id)`:
@@ -15,6 +16,7 @@ Single dataset: `client.Dataset(id)`:
 | --- | --- |
 | `Get / Update / Delete(ctx)` | CRUD. |
 | `ListItems(ctx, DatasetListItemsOptions) (PaginationList[json.RawMessage], error)` | Read items. |
+| `IterateItems(DatasetListItemsOptions) *ListIterator[json.RawMessage]` | Lazy iterator over all items (paginates on demand); `IterateDatasetItems[T]` decodes into your type. |
 | `PushItems(ctx, items any) error` | Append one item or a slice of items. |
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
 | `GetStatistics(ctx) (json.RawMessage, bool, error)` | Dataset statistics. |
@@ -103,7 +105,7 @@ csv, _ := client.Dataset(ds.ID).DownloadItems(ctx, apify.FormatCSV, apify.Datase
 
 ## Key-value stores
 
-Collection: `client.KeyValueStores()` — `List`, `GetOrCreate`.
+Collection: `client.KeyValueStores()` — `List`, `Iterate` (lazy iterator over all matching stores), `GetOrCreate`.
 
 Single store: `client.KeyValueStore(id)`:
 
@@ -172,7 +174,7 @@ if ok {
 
 ## Request queues
 
-Collection: `client.RequestQueues()` — `List`, `GetOrCreate`.
+Collection: `client.RequestQueues()` — `List`, `Iterate` (lazy iterator over all matching queues), `GetOrCreate`.
 
 Single queue: `client.RequestQueue(id)`:
 

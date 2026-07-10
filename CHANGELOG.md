@@ -5,12 +5,22 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.1] - 2026-07-10
+## [0.6.0] - 2026-07-10
+
+### Added
+
+- Lazy `Iterate` helpers on every list collection (`Actors`, `Runs`, `Builds`, `Tasks`,
+  `Datasets`, `KeyValueStores`, `RequestQueues`, `Schedules`, `Webhooks`, `WebhookDispatches`,
+  actor versions and env vars) plus dataset-item iteration (`DatasetClient.IterateItems` and the
+  generic `IterateDatasetItems[T]`), matching the reference client's iterable `list()`. All are
+  backed by a new exported generic iterator type `ListIterator[T]`.
 
 ### Changed
 
 - Bumped `APISpecVersion` to `v2-2026-07-10T105921Z`.
-- Bumped `ClientVersion` to `0.5.1`.
+- Bumped `ClientVersion` to `0.6.0`.
+- Reimplemented `StoreCollectionClient.Iterate` on top of the shared `ListIterator[T]`;
+  `StoreActorIterator` is now an alias of `ListIterator[ActorStoreListItem]` (public API unchanged).
 - Synced the `APISpecVersion` reference in the `README.md` "Versioning" section to match `version.go`.
 
 ## [0.5.0] - 2026-07-09

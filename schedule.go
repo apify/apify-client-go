@@ -19,6 +19,17 @@ func (c *ScheduleCollectionClient) List(ctx context.Context, options ListOptions
 	return listResource[Schedule](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all schedules matching the options, fetching pages on
+// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
+// client's iterable list().
+func (c *ScheduleCollectionClient) Iterate(options ListOptions) *ListIterator[Schedule] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Schedule], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // Create creates a new schedule. schedule is any JSON-serializable schedule definition.
 func (c *ScheduleCollectionClient) Create(ctx context.Context, schedule any) (Schedule, error) {
 	return createResource[Schedule](ctx, c.ctx, NewQueryParams(), schedule)

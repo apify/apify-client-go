@@ -28,6 +28,17 @@ func (c *BuildCollectionClient) List(ctx context.Context, options ListOptions) (
 	return listResource[Build](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all builds matching the options, fetching pages on
+// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
+// client's iterable list().
+func (c *BuildCollectionClient) Iterate(options ListOptions) *ListIterator[Build] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Build], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // BuildClient is a client for a specific Actor build (/v2/actor-builds/{buildId}).
 type BuildClient struct {
 	ctx     *resourceContext

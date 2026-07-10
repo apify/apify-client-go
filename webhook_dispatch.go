@@ -25,6 +25,17 @@ func (c *WebhookDispatchCollectionClient) List(ctx context.Context, options List
 	return listResource[WebhookDispatch](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all webhook dispatches matching the options, fetching
+// pages on demand. The options' Limit (if set) is used as the per-page size. Mirrors the
+// reference client's iterable list().
+func (c *WebhookDispatchCollectionClient) Iterate(options ListOptions) *ListIterator[WebhookDispatch] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[WebhookDispatch], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // WebhookDispatchClient is a client for a specific webhook dispatch
 // (/v2/webhook-dispatches/{dispatchId}).
 type WebhookDispatchClient struct {

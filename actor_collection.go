@@ -40,6 +40,17 @@ func (c *ActorCollectionClient) List(ctx context.Context, options ActorListOptio
 	return listResource[Actor](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all Actors matching the options, fetching pages on
+// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
+// client's iterable list().
+func (c *ActorCollectionClient) Iterate(options ActorListOptions) *ListIterator[Actor] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Actor], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // Create creates a new Actor. actor is any JSON-serializable Actor definition.
 func (c *ActorCollectionClient) Create(ctx context.Context, actor any) (Actor, error) {
 	return createResource[Actor](ctx, c.ctx, NewQueryParams(), actor)

@@ -55,55 +55,16 @@ func (c *StoreCollectionClient) List(ctx context.Context, options StoreListOptio
 	return listResource[ActorStoreListItem](ctx, c.ctx, "", params)
 }
 
+// StoreActorIterator lazily iterates over Apify Store Actors, fetching one page at a time.
+// It is the generic [ListIterator] specialized to Store Actors; drain it with Next.
+type StoreActorIterator = ListIterator[ActorStoreListItem]
+
 // Iterate returns a lazy iterator over all Store Actors matching the options, fetching pages
 // on demand. The options' Limit (if set) is used as the per-page size.
 func (c *StoreCollectionClient) Iterate(options StoreListOptions) *StoreActorIterator {
-	return &StoreActorIterator{client: c, options: options}
-}
-
-// StoreActorIterator lazily iterates over Apify Store Actors, fetching one page at a time.
-type StoreActorIterator struct {
-	client  *StoreCollectionClient
-	options StoreListOptions
-
-	buffer    []ActorStoreListItem
-	pos       int
-	offset    int64
-	total     int64
-	exhausted bool
-}
-
-// Next returns the next Store Actor, or (nil, nil) when the iterator is exhausted.
-func (it *StoreActorIterator) Next(ctx context.Context) (*ActorStoreListItem, error) {
-	for it.pos >= len(it.buffer) {
-		if it.exhausted {
-			return nil, nil
-		}
-		if err := it.fetchPage(ctx); err != nil {
-			return nil, err
-		}
-	}
-	item := it.buffer[it.pos]
-	it.pos++
-	return &item, nil
-}
-
-// fetchPage loads the next page of Store Actors into the buffer.
-func (it *StoreActorIterator) fetchPage(ctx context.Context) error {
-	opts := it.options
-	opts.Offset = &it.offset
-	page, err := it.client.List(ctx, opts)
-	if err != nil {
-		return err
-	}
-	it.buffer = page.Items
-	it.pos = 0
-	it.total = page.Total
-	it.offset += int64(len(page.Items))
-
-	// Exhausted when the page is empty or we have reached the reported total.
-	if len(page.Items) == 0 || it.offset >= it.total {
-		it.exhausted = true
-	}
-	return nil
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[ActorStoreListItem], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
 }

@@ -19,6 +19,17 @@ func (c *ActorVersionCollectionClient) List(ctx context.Context, options ListOpt
 	return listResource[ActorVersion](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all of the Actor's versions matching the options,
+// fetching pages on demand. The options' Limit (if set) is used as the per-page size.
+// Mirrors the reference client's iterable list().
+func (c *ActorVersionCollectionClient) Iterate(options ListOptions) *ListIterator[ActorVersion] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[ActorVersion], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // Create creates a new Actor version. version is any JSON-serializable version definition.
 func (c *ActorVersionCollectionClient) Create(ctx context.Context, version any) (ActorVersion, error) {
 	return createResource[ActorVersion](ctx, c.ctx, NewQueryParams(), version)

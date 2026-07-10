@@ -9,6 +9,7 @@ with `client.Run(id)`, and an Actor's or task's runs with `client.Actor(id).Runs
 | Method | Description |
 | --- | --- |
 | `List(ctx, ListOptions, RunListOptions) (PaginationList[ActorRun], error)` | List runs. |
+| `Iterate(ListOptions, RunListOptions) *ListIterator[ActorRun]` | Lazy iterator over all matching runs (paginates on demand). |
 
 `RunListOptions`:
 

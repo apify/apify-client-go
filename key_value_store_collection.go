@@ -19,6 +19,17 @@ func (c *KeyValueStoreCollectionClient) List(ctx context.Context, options Storag
 	return listResource[KeyValueStore](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all key-value stores matching the options, fetching
+// pages on demand. The options' Limit (if set) is used as the per-page size. Mirrors the
+// reference client's iterable list().
+func (c *KeyValueStoreCollectionClient) Iterate(options StorageListOptions) *ListIterator[KeyValueStore] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[KeyValueStore], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // GetOrCreate gets the store with the given name, creating it if it does not exist. An
 // empty name creates a new unnamed store.
 func (c *KeyValueStoreCollectionClient) GetOrCreate(ctx context.Context, name string) (KeyValueStore, error) {

@@ -18,6 +18,17 @@ func (c *DatasetCollectionClient) List(ctx context.Context, options StorageListO
 	return listResource[Dataset](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over all datasets matching the options, fetching pages on
+// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
+// client's iterable list().
+func (c *DatasetCollectionClient) Iterate(options StorageListOptions) *ListIterator[Dataset] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Dataset], error) {
+		opts := options
+		opts.Offset = &offset
+		return c.List(ctx, opts)
+	})
+}
+
 // GetOrCreate gets the dataset with the given name, creating it if it does not exist. An
 // empty name creates a new unnamed dataset.
 func (c *DatasetCollectionClient) GetOrCreate(ctx context.Context, name string) (Dataset, error) {

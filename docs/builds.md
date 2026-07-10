@@ -8,6 +8,7 @@ single build with `client.Build(id)`, and an Actor's builds with `client.Actor(i
 | Method | Description |
 | --- | --- |
 | `List(ctx, ListOptions) (PaginationList[Build], error)` | List builds. |
+| `Iterate(ListOptions) *ListIterator[Build]` | Lazy iterator over all matching builds (paginates on demand). |
 
 ## Single build
 

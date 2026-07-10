@@ -9,6 +9,7 @@ Actors are the programs that run on the Apify platform. Access the Actor collect
 | Method | Description |
 | --- | --- |
 | `List(ctx, ActorListOptions) (PaginationList[Actor], error)` | List the account's Actors. |
+| `Iterate(ActorListOptions) *ListIterator[Actor]` | Lazy iterator over all matching Actors (paginates on demand). |
 | `Create(ctx, definition any) (Actor, error)` | Create a new Actor. |
 
 `Create` takes a free-form definition (`any`) serialized to JSON, so the Actor's fields are
@@ -173,9 +174,9 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 
 | Method | Description |
 | --- | --- |
-| `Versions().List(ctx, ListOptions)` / `Versions().Create(ctx, def)` | List/create versions. |
+| `Versions().List(ctx, ListOptions)` / `Versions().Iterate(ListOptions)` / `Versions().Create(ctx, def)` | List/iterate/create versions. |
 | `Version(n).Get/Update/Delete(ctx)` | Manage a single version. |
-| `Version(n).EnvVars().List(ctx)` / `.Create(ctx, ActorEnvVar)` | List/create env vars. |
+| `Version(n).EnvVars().List(ctx)` / `.Iterate()` / `.Create(ctx, ActorEnvVar)` | List/iterate/create env vars. |
 | `Version(n).EnvVar(name).Get/Update/Delete(ctx)` | Manage a single env var. |
 
 `ActorEnvVar` fields:

@@ -152,11 +152,12 @@ func (c *DatasetClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// ListItems lists items from the dataset.
+// ListDatasetItems lists a single page of items from the dataset, decoding each into T
+// (e.g. json.RawMessage or a struct).
 //
 // The dataset items endpoint returns a bare JSON array (not a data envelope) and reports
 // pagination via X-Apify-Pagination-* headers, which are surfaced in the returned
-// [PaginationList]. T is the item type to decode into (e.g. json.RawMessage or a struct).
+// [PaginationList].
 func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options DatasetListItemsOptions) (PaginationList[T], error) {
 	var result PaginationList[T]
 	params := NewQueryParams()
@@ -186,6 +187,23 @@ func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options Data
 // For typed decoding use [ListDatasetItems].
 func (c *DatasetClient) ListItems(ctx context.Context, options DatasetListItemsOptions) (PaginationList[json.RawMessage], error) {
 	return ListDatasetItems[json.RawMessage](ctx, c, options)
+}
+
+// IterateDatasetItems returns a lazy iterator over all items in the dataset, decoding each
+// into T and fetching pages on demand. The options' Limit (if set) is used as the per-page
+// size. Mirrors the reference client's iterable listItems().
+func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOptions) *ListIterator[T] {
+	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[T], error) {
+		opts := options
+		opts.Offset = &offset
+		return ListDatasetItems[T](ctx, c, opts)
+	})
+}
+
+// IterateItems returns a lazy iterator over all items in the dataset, decoding each into a
+// generic json.RawMessage. For typed decoding use [IterateDatasetItems].
+func (c *DatasetClient) IterateItems(options DatasetListItemsOptions) *ListIterator[json.RawMessage] {
+	return IterateDatasetItems[json.RawMessage](c, options)
 }
 
 // DownloadItems downloads dataset items serialized in the given format, returning the raw

@@ -17,6 +17,15 @@ func (c *ActorEnvVarCollectionClient) List(ctx context.Context) (PaginationList[
 	return listResource[ActorEnvVar](ctx, c.ctx, "", NewQueryParams())
 }
 
+// Iterate returns a lazy iterator over the version's environment variables. Mirrors the
+// reference client's iterable list(). The env-vars endpoint is not offset-paginated (it
+// returns the full set in a single page), so the iterator drains that one page.
+func (c *ActorEnvVarCollectionClient) Iterate() *ListIterator[ActorEnvVar] {
+	return newListIterator(func(ctx context.Context, _ int64) (PaginationList[ActorEnvVar], error) {
+		return c.List(ctx)
+	})
+}
+
 // Create creates a new environment variable.
 func (c *ActorEnvVarCollectionClient) Create(ctx context.Context, envVar ActorEnvVar) (ActorEnvVar, error) {
 	return createResource[ActorEnvVar](ctx, c.ctx, NewQueryParams(), envVar)

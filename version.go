@@ -4,7 +4,7 @@ package apify
 //
 // It follows Semantic Versioning (https://semver.org/). Changes to the public
 // interface (other than additive ones) are considered breaking changes.
-const ClientVersion = "0.5.1"
+const ClientVersion = "0.6.0"
 
 // APISpecVersion is the version of the Apify OpenAPI specification that this
 // client was generated and verified against.
