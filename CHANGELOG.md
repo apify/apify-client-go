@@ -14,13 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped `APISpecVersion` to `v2-2026-07-08T143931Z`.
 - Bumped `ClientVersion` to `0.5.0`.
 
-- Mapped the `User-Agent` OS token so Windows reports `win32` and Solaris reports `sunos`; all
-  other platforms are unchanged.
+- Mapped the `User-Agent` OS token to match Node's `os.platform()` exactly: `windows` -> `win32`,
+  `solaris`/`illumos` -> `sunos`, `ios` -> `darwin`; all other platforms are unchanged.
 
 ### Added
 
-- Request bodies of 1024 bytes or larger are now gzip-compressed (`Content-Encoding: gzip`) before
-  being sent.
+- Request bodies of 1024 bytes or larger are now compressed before being sent, preferring Brotli
+  (`Content-Encoding: br`) and falling back to gzip (`Content-Encoding: gzip`).
 
 ## [0.4.7] - 2026-07-07
 

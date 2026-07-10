@@ -109,16 +109,16 @@ func TestDatasetCRUDFlow(t *testing.T) {
 	}
 }
 
-// TestDatasetPushCompressedBody verifies that the live API accepts a gzip-compressed request
-// body (Content-Encoding: gzip) and stores it intact. The client automatically gzips request
-// bodies of 1024 bytes or larger, so pushing an item well above that threshold exercises the
-// compression path end-to-end and confirms the round-trip is lossless.
+// TestDatasetPushCompressedBody verifies that the live API accepts a compressed request body
+// (Content-Encoding: br, with gzip as the fallback) and stores it intact. The client
+// automatically compresses request bodies of 1024 bytes or larger, so pushing an item well above
+// that threshold exercises the compression path end-to-end and confirms the round-trip is lossless.
 func TestDatasetPushCompressedBody(t *testing.T) {
 	client := requireClient(t)
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	ds, err := client.Datasets().GetOrCreate(ctx, uniqueName("ds-gzip"))
+	ds, err := client.Datasets().GetOrCreate(ctx, uniqueName("ds-compress"))
 	if err != nil {
 		t.Fatalf("get-or-create: %v", err)
 	}
@@ -127,10 +127,10 @@ func TestDatasetPushCompressedBody(t *testing.T) {
 
 	// A payload comfortably above the 1024-byte compression threshold. A distinctive marker
 	// plus a long repeated body lets us assert the stored value survived compression intact.
-	marker := "gzip-marker-" + uniqueName("v")
+	marker := "compress-marker-" + uniqueName("v")
 	blob := marker + strings.Repeat("x", 4096)
 	if err := dataset.PushItems(ctx, map[string]any{"blob": blob}); err != nil {
-		t.Fatalf("push large (gzipped) item: %v", err)
+		t.Fatalf("push large (compressed) item: %v", err)
 	}
 
 	page, err := dataset.ListItems(ctx, apify.DatasetListItemsOptions{})

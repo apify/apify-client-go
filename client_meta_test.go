@@ -34,17 +34,24 @@ func TestUserAgentFormat(t *testing.T) {
 	}
 }
 
-// The User-Agent OS token must match the platform names the other Apify clients emit
-// (Node os.platform() / Python sys.platform): Windows is "win32" and Solaris is "sunos",
-// while every other GOOS value (linux, darwin, android, ...) passes through unchanged.
+// The User-Agent OS token must exactly match the value Node's os.platform() (used by the
+// reference JS client) reports for the running platform. Go's runtime.GOOS spells a few
+// platforms differently, so those are mapped: windows->win32, solaris/illumos->sunos,
+// ios->darwin. Every other GOOS value already matches os.platform() and passes through unchanged.
 func TestPlatformToken(t *testing.T) {
 	cases := map[string]string{
+		// Go spellings that diverge from os.platform() and must be remapped.
 		"windows": "win32",
 		"solaris": "sunos",
+		"illumos": "sunos",
+		"ios":     "darwin",
+		// GOOS values that already equal the os.platform() token and must pass through unchanged.
 		"linux":   "linux",
 		"darwin":  "darwin",
 		"android": "android",
 		"freebsd": "freebsd",
+		"openbsd": "openbsd",
+		"aix":     "aix",
 	}
 	for goos, want := range cases {
 		if got := platformToken(goos); got != want {

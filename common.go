@@ -209,14 +209,21 @@ type PaginationList[T any] struct {
 	Items []T `json:"items"`
 }
 
-// osTokenOverrides maps Go's runtime.GOOS values to the platform names the other Apify clients
-// emit in the User-Agent OS token. The reference clients derive the token from Node's
-// os.platform() / Python's sys.platform, which spell two platforms differently from Go: Windows is
-// "win32" (not "windows") and Solaris is "sunos" (not "solaris"). Every other GOOS value already
-// matches (e.g. "linux", "darwin", "android"), so it is passed through unchanged.
+// osTokenOverrides maps Go's runtime.GOOS values to the platform names the reference Apify JS
+// client emits in the User-Agent OS token. That token comes from Node's os.platform(), which
+// spells a few platforms differently from Go's runtime.GOOS:
+//   - "windows" -> "win32"
+//   - "solaris" -> "sunos", and Go's "illumos" (a Solaris/OpenSolaris derivative that Node/libuv
+//     also reports as "sunos") -> "sunos"
+//   - "ios" -> "darwin" (Node/libuv reports Apple platforms uniformly as "darwin")
+//
+// Every other GOOS value already matches os.platform() verbatim (e.g. "linux", "darwin",
+// "android", "freebsd", "openbsd", "aix"), so it is passed through unchanged.
 var osTokenOverrides = map[string]string{
 	"windows": "win32",
 	"solaris": "sunos",
+	"illumos": "sunos",
+	"ios":     "darwin",
 }
 
 // platformToken maps a Go GOOS value to the aligned User-Agent OS token (see osTokenOverrides).

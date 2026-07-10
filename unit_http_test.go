@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 // mockBackend is a deterministic HTTPBackend for offline unit tests. It serves a queue of
@@ -223,6 +225,16 @@ func gunzip(t *testing.T, data []byte) []byte {
 	return out
 }
 
+// unbrotli decompresses brotli-encoded bytes, failing the test on error.
+func unbrotli(t *testing.T, data []byte) []byte {
+	t.Helper()
+	out, err := io.ReadAll(brotli.NewReader(bytes.NewReader(data)))
+	if err != nil {
+		t.Fatalf("body is not valid brotli: %v", err)
+	}
+	return out
+}
+
 func TestMaybeCompressRequestBody(t *testing.T) {
 	// Below the threshold: sent verbatim, no encoding.
 	small := []byte("small payload")
@@ -237,21 +249,21 @@ func TestMaybeCompressRequestBody(t *testing.T) {
 		t.Fatalf("nil body must stay nil, got enc=%q out=%v", enc, out)
 	}
 
-	// Above the threshold and compressible: gzip-encoded, round-trips to the original.
+	// Above the threshold and compressible: brotli is preferred, and it round-trips to the original.
 	large := []byte(strings.Repeat("compress me ", 200)) // ~2400 bytes, highly repetitive
 	out, enc = maybeCompressRequestBody(large)
-	if enc != contentEncodingGzip {
-		t.Fatalf("large compressible body must be gzip, got enc=%q", enc)
+	if enc != contentEncodingBrotli {
+		t.Fatalf("large compressible body must prefer brotli, got enc=%q", enc)
 	}
 	if len(out) >= len(large) {
 		t.Fatalf("compressed body should be smaller: %d >= %d", len(out), len(large))
 	}
-	if !bytes.Equal(gunzip(t, out), large) {
+	if !bytes.Equal(unbrotli(t, out), large) {
 		t.Fatal("decompressed body does not match original")
 	}
 
-	// Above the threshold but incompressible: gzip cannot shrink random bytes, so the shrink
-	// guard sends the original body uncompressed (empty encoding).
+	// Above the threshold but incompressible: neither codec can shrink random bytes, so the
+	// shrink guard sends the original body uncompressed (empty encoding).
 	rng := rand.New(rand.NewSource(1))
 	incompressible := make([]byte, 2048)
 	if _, err := rng.Read(incompressible); err != nil {
@@ -266,9 +278,56 @@ func TestMaybeCompressRequestBody(t *testing.T) {
 	}
 }
 
-// A request body large enough to compress is sent gzip-encoded, with the Content-Encoding
-// header set, and the bytes on the wire decompress back to the original payload.
-func TestLargeRequestBodyIsGzipCompressed(t *testing.T) {
+// Both codecs must round-trip a payload and actually shrink it, so each compression path is
+// exercised directly rather than only through the preference selector.
+func TestRequestCompressorsRoundTrip(t *testing.T) {
+	payload := []byte(strings.Repeat("compress me ", 200))
+
+	brOut, err := brotliCompress(payload)
+	if err != nil {
+		t.Fatalf("brotliCompress error: %v", err)
+	}
+	if len(brOut) >= len(payload) {
+		t.Fatalf("brotli should shrink payload: %d >= %d", len(brOut), len(payload))
+	}
+	if !bytes.Equal(unbrotli(t, brOut), payload) {
+		t.Fatal("brotli round-trip mismatch")
+	}
+
+	gzOut, err := gzipCompress(payload)
+	if err != nil {
+		t.Fatalf("gzipCompress error: %v", err)
+	}
+	if len(gzOut) >= len(payload) {
+		t.Fatalf("gzip should shrink payload: %d >= %d", len(gzOut), len(payload))
+	}
+	if !bytes.Equal(gunzip(t, gzOut), payload) {
+		t.Fatal("gzip round-trip mismatch")
+	}
+}
+
+// The gzip fallback must be genuinely reachable: when the preferred (brotli) codec errors, the
+// selector falls through to gzip and emits Content-Encoding: gzip.
+func TestCompressionFallsBackToGzipWhenBrotliFails(t *testing.T) {
+	payload := []byte(strings.Repeat("compress me ", 200))
+	failingBrotli := requestCompressor{
+		encoding: contentEncodingBrotli,
+		compress: func([]byte) ([]byte, error) { return nil, errors.New("brotli unavailable") },
+	}
+	compressors := []requestCompressor{failingBrotli, {encoding: contentEncodingGzip, compress: gzipCompress}}
+
+	out, enc := compressWith(payload, compressors)
+	if enc != contentEncodingGzip {
+		t.Fatalf("expected gzip fallback, got enc=%q", enc)
+	}
+	if !bytes.Equal(gunzip(t, out), payload) {
+		t.Fatal("gzip fallback body does not round-trip")
+	}
+}
+
+// A request body large enough to compress is sent brotli-encoded (the preferred codec), with the
+// Content-Encoding header set, and the bytes on the wire decompress back to the original payload.
+func TestLargeRequestBodyIsBrotliCompressed(t *testing.T) {
 	backend := &mockBackend{responses: constant(201, `{"data":{}}`)}
 	client := testClient(backend, 0)
 
@@ -277,10 +336,10 @@ func TestLargeRequestBodyIsGzipCompressed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if got := backend.lastHeaders.Get("Content-Encoding"); got != contentEncodingGzip {
-		t.Fatalf("expected Content-Encoding %q, got %q", contentEncodingGzip, got)
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != contentEncodingBrotli {
+		t.Fatalf("expected Content-Encoding %q, got %q", contentEncodingBrotli, got)
 	}
-	decoded := gunzip(t, []byte(backend.lastBody))
+	decoded := unbrotli(t, []byte(backend.lastBody))
 	if !strings.Contains(string(decoded), bigValue) {
 		t.Fatal("decompressed request body does not contain the pushed payload")
 	}
