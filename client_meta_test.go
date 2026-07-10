@@ -1,23 +1,24 @@
 package apify
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestVersionConstants(t *testing.T) {
-	if CLIENT_VERSION == "" || CLIENT_VERSION[0] < '0' || CLIENT_VERSION[0] > '9' {
-		t.Fatalf("CLIENT_VERSION should start with a digit, got %q", CLIENT_VERSION)
+	if ClientVersion == "" || ClientVersion[0] < '0' || ClientVersion[0] > '9' {
+		t.Fatalf("ClientVersion should start with a digit, got %q", ClientVersion)
 	}
-	if !strings.HasPrefix(API_SPEC_VERSION, "v2-") || !strings.HasSuffix(API_SPEC_VERSION, "Z") {
-		t.Fatalf("API_SPEC_VERSION should match v2-...Z, got %q", API_SPEC_VERSION)
+	if !strings.HasPrefix(APISpecVersion, "v2-") || !strings.HasSuffix(APISpecVersion, "Z") {
+		t.Fatalf("APISpecVersion should match v2-...Z, got %q", APISpecVersion)
 	}
 }
 
 func TestUserAgentFormat(t *testing.T) {
 	client := NewClient("token")
 	ua := client.UserAgent()
-	if !strings.HasPrefix(ua, "ApifyClient/"+CLIENT_VERSION+" (") {
+	if !strings.HasPrefix(ua, "ApifyClient/"+ClientVersion+" (") {
 		t.Fatalf("unexpected user-agent prefix: %q", ua)
 	}
 	if !strings.Contains(ua, "Go/") {
@@ -30,6 +31,42 @@ func TestUserAgentFormat(t *testing.T) {
 	after := strings.SplitN(ua, "Go/", 2)[1]
 	if len(after) == 0 || after[0] < '0' || after[0] > '9' {
 		t.Fatalf("Go version must be a real version, got %q", ua)
+	}
+}
+
+// The User-Agent OS token must exactly match the value Node's os.platform() (used by the
+// reference JS client) reports for the running platform. Go's runtime.GOOS spells a few
+// platforms differently, so those are mapped: windows->win32, solaris/illumos->sunos,
+// ios->darwin. Every other GOOS value already matches os.platform() and passes through unchanged.
+func TestPlatformToken(t *testing.T) {
+	cases := map[string]string{
+		// Go spellings that diverge from os.platform() and must be remapped.
+		"windows": "win32",
+		"solaris": "sunos",
+		"illumos": "sunos",
+		"ios":     "darwin",
+		// GOOS values that already equal the os.platform() token and must pass through unchanged.
+		"linux":   "linux",
+		"darwin":  "darwin",
+		"android": "android",
+		"freebsd": "freebsd",
+		"openbsd": "openbsd",
+		"aix":     "aix",
+	}
+	for goos, want := range cases {
+		if got := platformToken(goos); got != want {
+			t.Errorf("platformToken(%q) = %q, want %q", goos, got, want)
+		}
+	}
+}
+
+// The OS token emitted for the platform the tests run on must be the aligned token for that
+// platform, i.e. the mapping applied to runtime.GOOS.
+func TestUserAgentOSTokenMatchesPlatform(t *testing.T) {
+	ua := NewClient("token").UserAgent()
+	want := "(" + platformToken(runtime.GOOS) + "; "
+	if !strings.Contains(ua, want) {
+		t.Fatalf("user-agent OS token = %q, want it to contain %q", ua, want)
 	}
 }
 

@@ -209,18 +209,53 @@ type PaginationList[T any] struct {
 	Items []T `json:"items"`
 }
 
+// osTokenOverrides maps Go's runtime.GOOS values to the platform names the reference Apify JS
+// client emits in the User-Agent OS token. That token comes from Node's os.platform(), which
+// spells a few platforms differently from Go's runtime.GOOS:
+//   - "windows" -> "win32"
+//   - "solaris" -> "sunos", and Go's "illumos" (a Solaris/OpenSolaris derivative that Node/libuv
+//     also reports as "sunos") -> "sunos"
+//   - "ios" -> "darwin" (Node/libuv reports Apple platforms uniformly as "darwin")
+//
+// Every other GOOS value already matches os.platform() verbatim (e.g. "linux", "darwin",
+// "android", "freebsd", "openbsd", "aix"), so it is passed through unchanged.
+var osTokenOverrides = map[string]string{
+	"windows": "win32",
+	"solaris": "sunos",
+	"illumos": "sunos",
+	"ios":     "darwin",
+}
+
+// platformToken maps a Go GOOS value to the aligned User-Agent OS token (see osTokenOverrides).
+// It is a pure function of its argument so the mapping can be unit-tested for every platform,
+// not just the one the tests happen to run on.
+func platformToken(goos string) string {
+	if mapped, ok := osTokenOverrides[goos]; ok {
+		return mapped
+	}
+	return goos
+}
+
+// osToken returns the User-Agent OS token for the current platform. runtime.GOOS is the idiomatic
+// Go source of the platform identifier; platformToken aligns the two names that Go spells
+// differently from the reference clients.
+func osToken() string {
+	return platformToken(runtime.GOOS)
+}
+
 // BuildUserAgent builds the User-Agent header value mandated by the client requirements:
 // `ApifyClient/{version} ({os}; {language version}); isAtHome/{isAtHome}`.
 //
 // isAtHome is driven solely by the platform's APIFY_IS_AT_HOME environment variable (matching
 // the requirements and the reference JS client, which reads it via @apify/consts) and is
-// rendered lowercase (true/false), consistent with the JS and Rust sibling clients.
+// rendered lowercase (true/false). The {os} token uses osToken so it matches the platform names
+// the reference clients emit.
 func BuildUserAgent(suffix string, isAtHomeFn func() bool) string {
 	atHome := "false"
 	if isAtHomeFn() {
 		atHome = "true"
 	}
-	ua := "ApifyClient/" + CLIENT_VERSION + " (" + runtime.GOOS + "; Go/" + goVersion() + "); isAtHome/" + atHome
+	ua := "ApifyClient/" + ClientVersion + " (" + osToken() + "; Go/" + goVersion() + "); isAtHome/" + atHome
 	if suffix != "" {
 		ua += "; " + suffix
 	}

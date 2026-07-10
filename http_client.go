@@ -2,12 +2,15 @@ package apify
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"math/rand"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 // Status-code thresholds used to classify responses. Named constants so the retry
@@ -22,6 +25,20 @@ const (
 	// backoffFactor is the multiplier applied to the inter-retry delay after each
 	// attempt (exponential backoff). Matches the reference client's async-retry factor of 2.
 	backoffFactor = 2
+	// minCompressRequestBytes is the smallest request body worth compressing. Below this
+	// size the CPU cost and Content-Encoding header overhead outweigh the bandwidth saved,
+	// so the body is sent as-is. Matches the reference client's MIN_COMPRESS_BYTES threshold.
+	minCompressRequestBytes = 1024
+)
+
+// Content-Encoding values for compressed request bodies. The reference client prefers brotli
+// and falls back to gzip, so this client supports both: brotli (best ratio) is tried first and
+// gzip is the fallback when brotli is unavailable or fails to shrink the payload.
+const (
+	// contentEncodingBrotli is the preferred Content-Encoding (Brotli, RFC 7932).
+	contentEncodingBrotli = "br"
+	// contentEncodingGzip is the fallback Content-Encoding (gzip, RFC 1952).
+	contentEncodingGzip = "gzip"
 )
 
 // HTTPBackend is the replaceable transport contract of the client.
@@ -109,9 +126,13 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 	maxAttempts := c.retry.maxRetries + 1
 	path := extractPath(url)
 
+	// Compress the body once (not per attempt): it is identical on every retry. contentEncoding
+	// is "" when the body was left uncompressed (too small, or compression did not shrink it).
+	sendBody, contentEncoding := maybeCompressRequestBody(body)
+
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := c.doAttempt(ctx, method, url, body, contentType, extraHeaders, c.attemptTimeout(baseTimeout, attempt))
+		resp, err := c.doAttempt(ctx, method, url, sendBody, contentType, contentEncoding, extraHeaders, c.attemptTimeout(baseTimeout, attempt))
 
 		var retryable bool
 		if err != nil {
@@ -152,7 +173,10 @@ func (c *httpClient) applyAuthHeaders(req *http.Request) {
 }
 
 // doAttempt performs a single HTTP round-trip with the given per-attempt timeout.
-func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []byte, contentType string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
+//
+// contentEncoding, when non-empty, is set as the Content-Encoding header (the body is already
+// compressed with that encoding by the caller).
+func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []byte, contentType, contentEncoding string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -169,6 +193,9 @@ func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []b
 	c.applyAuthHeaders(req)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	if contentEncoding != "" {
+		req.Header.Set("Content-Encoding", contentEncoding)
 	}
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)
@@ -187,6 +214,83 @@ func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []b
 	}
 
 	return &apiResponse{statusCode: resp.StatusCode, header: resp.Header, body: data}, nil
+}
+
+// requestCompressor pairs a Content-Encoding value with the function that produces a body
+// in that encoding. Splitting the encodings this way lets maybeCompressRequestBody try them
+// in preference order and keeps each codec independently testable.
+type requestCompressor struct {
+	// encoding is the Content-Encoding header value this codec produces (e.g. "br", "gzip").
+	encoding string
+	// compress returns the compressed form of body, or an error if that codec is unavailable.
+	compress func(body []byte) ([]byte, error)
+}
+
+// requestCompressors lists the supported request-body codecs in preference order. Brotli is
+// preferred (it typically achieves a better ratio than gzip), and gzip is the fallback — the
+// same brotli-then-gzip preference the reference client uses. Both paths are reachable:
+// maybeCompressRequestBody falls through to gzip whenever brotli errors or fails to shrink the
+// body, and finally to an uncompressed body if neither codec helps.
+var requestCompressors = []requestCompressor{
+	{encoding: contentEncodingBrotli, compress: brotliCompress},
+	{encoding: contentEncodingGzip, compress: gzipCompress},
+}
+
+// compressBody runs body through the streaming writer built by newWriter and returns the
+// compressed bytes. newWriter's WriteCloser must flush all buffered output on Close. This is the
+// shared body of the per-codec helpers, which differ only in the writer they construct.
+func compressBody(body []byte, newWriter func(io.Writer) io.WriteCloser) ([]byte, error) {
+	var buf bytes.Buffer
+	w := newWriter(&buf)
+	if _, err := w.Write(body); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// brotliCompress compresses body with Brotli (Content-Encoding: br).
+func brotliCompress(body []byte) ([]byte, error) {
+	return compressBody(body, func(w io.Writer) io.WriteCloser { return brotli.NewWriter(w) })
+}
+
+// gzipCompress compresses body with gzip (Content-Encoding: gzip).
+func gzipCompress(body []byte) ([]byte, error) {
+	return compressBody(body, func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) })
+}
+
+// maybeCompressRequestBody compresses body when it is large enough to be worth it, returning
+// the bytes to send and the Content-Encoding value ("" when the body is sent uncompressed).
+//
+// This mirrors the reference client, which compresses request payloads above a 1 KiB threshold
+// to save upload bandwidth, preferring brotli and falling back to gzip. Compression is
+// best-effort: brotli is tried first, then gzip; if a codec errors or does not actually shrink
+// the body (e.g. an already-compressed payload), the next codec is tried, and if none help the
+// original body is sent uncompressed rather than failing the request.
+func maybeCompressRequestBody(body []byte) ([]byte, string) {
+	if len(body) < minCompressRequestBytes {
+		return body, ""
+	}
+	return compressWith(body, requestCompressors)
+}
+
+// compressWith applies the given codecs in order and returns the first result that is smaller
+// than body, along with its encoding. If no codec shrinks the body (or all error), it returns
+// the original body with an empty encoding. It is separated from maybeCompressRequestBody so the
+// preference-and-fallback logic can be tested with custom codec lists (e.g. a failing brotli).
+func compressWith(body []byte, compressors []requestCompressor) ([]byte, string) {
+	for _, c := range compressors {
+		out, err := c.compress(body)
+		if err != nil {
+			continue // codec unavailable/failed: fall back to the next one
+		}
+		if len(out) < len(body) {
+			return out, c.encoding
+		}
+	}
+	return body, ""
 }
 
 // attemptTimeout returns min(overall, base * 2^(attempt-1)).

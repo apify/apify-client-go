@@ -6,7 +6,7 @@ name: Publish Go client
 # is therefore the language-specific distribution standard for Go.
 #
 # It is triggered manually only (workflow_dispatch) so a maintainer deliberately decides when a
-# release is cut. The version is taken from the single source of truth (the CLIENT_VERSION constant
+# release is cut. The version is taken from the single source of truth (the ClientVersion constant
 # in version.go) so the published tag can never disagree with the in-code client version.
 on:
   workflow_dispatch:
@@ -79,18 +79,18 @@ jobs:
         run: go test . -v
 
       # Derive the release tag from the single source of truth (version.go). Keeping the tag in lock
-      # step with the in-code CLIENT_VERSION means consumers who read the constant and consumers who
+      # step with the in-code ClientVersion means consumers who read the constant and consumers who
       # `go get` a tag always see the same version.
       - name: Resolve version from version.go
         id: version
         run: |
-          version=$(sed -n 's/^const CLIENT_VERSION = "\(.*\)"$/\1/p' version.go)
+          version=$(sed -n 's/^const ClientVersion = "\(.*\)"$/\1/p' version.go)
           if [ -z "${version}" ]; then
-            echo "::error::Could not read CLIENT_VERSION from version.go."
+            echo "::error::Could not read ClientVersion from version.go."
             exit 1
           fi
           if ! echo "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::CLIENT_VERSION '${version}' is not a bare semver (X.Y.Z)."
+            echo "::error::ClientVersion '${version}' is not a bare semver (X.Y.Z)."
             exit 1
           fi
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
           if git ls-remote --exit-code --tags origin "${TAG}" >/dev/null 2>&1; then
-            echo "::error::Tag ${TAG} already exists on origin; bump CLIENT_VERSION in version.go first."
+            echo "::error::Tag ${TAG} already exists on origin; bump ClientVersion in version.go first."
             exit 1
           fi
 

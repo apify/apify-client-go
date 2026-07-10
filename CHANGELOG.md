@@ -5,6 +5,23 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-09
+
+### Changed
+
+- **Breaking:** Renamed the exported version constants `CLIENT_VERSION` -> `ClientVersion` and
+  `API_SPEC_VERSION` -> `APISpecVersion` to follow idiomatic Go naming (MixedCaps, not ALL_CAPS).
+- Bumped `APISpecVersion` to `v2-2026-07-08T143931Z`.
+- Bumped `ClientVersion` to `0.5.0`.
+
+- Mapped the `User-Agent` OS token to match Node's `os.platform()` exactly: `windows` -> `win32`,
+  `solaris`/`illumos` -> `sunos`, `ios` -> `darwin`; all other platforms are unchanged.
+
+### Added
+
+- Request bodies of 1024 bytes or larger are now compressed before being sent, preferring Brotli
+  (`Content-Encoding: br`) and falling back to gzip (`Content-Encoding: gzip`).
+
 ## [0.4.7] - 2026-07-07
 
 ### Changed
