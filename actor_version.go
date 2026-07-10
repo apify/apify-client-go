@@ -19,13 +19,15 @@ func (c *ActorVersionCollectionClient) List(ctx context.Context, options ListOpt
 	return listResource[ActorVersion](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over all of the Actor's versions matching the options,
-// fetching pages on demand. The options' Limit (if set) is used as the per-page size.
-// Mirrors the reference client's iterable list().
-func (c *ActorVersionCollectionClient) Iterate(options ListOptions) *ListIterator[ActorVersion] {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[ActorVersion], error) {
+// Iterate returns a lazy iterator over the Actor's versions matching the options, fetching
+// pages on demand. The options' Limit caps the total number of versions yielded (unset means
+// all); the per-page size is chunkSize (nil for the server default). Mirrors the reference
+// client's iterable list().
+func (c *ActorVersionCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[ActorVersion] {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[ActorVersion], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return c.List(ctx, opts)
 	})
 }

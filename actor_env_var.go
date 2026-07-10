@@ -19,9 +19,10 @@ func (c *ActorEnvVarCollectionClient) List(ctx context.Context) (PaginationList[
 
 // Iterate returns a lazy iterator over the version's environment variables. Mirrors the
 // reference client's iterable list(). The env-vars endpoint is not offset-paginated (it
-// returns the full set in a single page), so the iterator drains that one page.
+// returns the full set in a single page), so there is no Limit/chunkSize control and the
+// closure ignores the offset/limit arguments; the iterator drains that one page.
 func (c *ActorEnvVarCollectionClient) Iterate() *ListIterator[ActorEnvVar] {
-	return newListIterator(func(ctx context.Context, _ int64) (PaginationList[ActorEnvVar], error) {
+	return newListIterator(nil, nil, func(ctx context.Context, _, _ int64) (PaginationList[ActorEnvVar], error) {
 		return c.List(ctx)
 	})
 }

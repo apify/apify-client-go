@@ -189,21 +189,24 @@ func (c *DatasetClient) ListItems(ctx context.Context, options DatasetListItemsO
 	return ListDatasetItems[json.RawMessage](ctx, c, options)
 }
 
-// IterateDatasetItems returns a lazy iterator over all items in the dataset, decoding each
-// into T and fetching pages on demand. The options' Limit (if set) is used as the per-page
-// size. Mirrors the reference client's iterable listItems().
-func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOptions) *ListIterator[T] {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[T], error) {
+// IterateDatasetItems returns a lazy iterator over the dataset's items, decoding each into T
+// and fetching pages on demand. The options' Limit caps the total number of items yielded
+// (unset means all); the per-page size is chunkSize (nil for the server default). Mirrors the
+// reference client's iterable listItems().
+func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOptions, chunkSize *int64) *ListIterator[T] {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[T], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return ListDatasetItems[T](ctx, c, opts)
 	})
 }
 
-// IterateItems returns a lazy iterator over all items in the dataset, decoding each into a
-// generic json.RawMessage. For typed decoding use [IterateDatasetItems].
-func (c *DatasetClient) IterateItems(options DatasetListItemsOptions) *ListIterator[json.RawMessage] {
-	return IterateDatasetItems[json.RawMessage](c, options)
+// IterateItems returns a lazy iterator over the dataset's items, decoding each into a generic
+// json.RawMessage. For typed decoding use [IterateDatasetItems]. See IterateDatasetItems for
+// how the options' Limit (total cap) and chunkSize (page size) are interpreted.
+func (c *DatasetClient) IterateItems(options DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage] {
+	return IterateDatasetItems[json.RawMessage](c, options, chunkSize)
 }
 
 // DownloadItems downloads dataset items serialized in the given format, returning the raw

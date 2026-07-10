@@ -8,7 +8,7 @@ single build with `client.Build(id)`, and an Actor's builds with `client.Actor(i
 | Method | Description |
 | --- | --- |
 | `List(ctx, ListOptions) (PaginationList[Build], error)` | List builds. |
-| `Iterate(ListOptions) *ListIterator[Build]` | Lazy iterator over all matching builds (paginates on demand). |
+| `Iterate(ListOptions, chunkSize *int64) *ListIterator[Build]` | Lazy iterator over matching builds. `Limit` caps the total yielded; `chunkSize` is the page size. |
 
 ## Single build
 

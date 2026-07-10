@@ -12,15 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lazy `Iterate` helpers on every list collection (`Actors`, `Runs`, `Builds`, `Tasks`,
   `Datasets`, `KeyValueStores`, `RequestQueues`, `Schedules`, `Webhooks`, `WebhookDispatches`,
   actor versions and env vars) plus dataset-item iteration (`DatasetClient.IterateItems` and the
-  generic `IterateDatasetItems[T]`), matching the reference client's iterable `list()`. All are
-  backed by a new exported generic iterator type `ListIterator[T]`.
+  generic `IterateDatasetItems[T]`), backed by a new exported generic iterator type
+  `ListIterator[T]`. As in the reference client's iterable `list()`, the options' `Limit` caps the
+  total number of items yielded across all pages (unset means all), and the per-page size is a
+  separate `chunkSize` argument (nil for the server default).
 
 ### Changed
 
 - Bumped `APISpecVersion` to `v2-2026-07-10T105921Z`.
 - Bumped `ClientVersion` to `0.6.0`.
-- Reimplemented `StoreCollectionClient.Iterate` on top of the shared `ListIterator[T]`;
-  `StoreActorIterator` is now an alias of `ListIterator[ActorStoreListItem]` (public API unchanged).
+- **Breaking:** `StoreCollectionClient.Iterate` now takes a second `chunkSize *int64` argument and
+  treats the options' `Limit` as a total-item cap rather than the per-page size, to match the
+  reference client's iterator semantics. `StoreActorIterator` is now an alias of
+  `ListIterator[ActorStoreListItem]`.
 - Synced the `APISpecVersion` reference in the `README.md` "Versioning" section to match `version.go`.
 
 ## [0.5.0] - 2026-07-09

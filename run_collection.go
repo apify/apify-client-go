@@ -40,13 +40,15 @@ func (c *RunCollectionClient) List(ctx context.Context, options ListOptions, fil
 	return listResource[ActorRun](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over all runs matching the options and filter, fetching
-// pages on demand. The options' Limit (if set) is used as the per-page size. Mirrors the
-// reference client's iterable list().
-func (c *RunCollectionClient) Iterate(options ListOptions, filter RunListOptions) *ListIterator[ActorRun] {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[ActorRun], error) {
+// Iterate returns a lazy iterator over the runs matching the options and filter, fetching
+// pages on demand. The options' Limit caps the total number of runs yielded (unset means all);
+// the per-page size is chunkSize (nil for the server default). Mirrors the reference client's
+// iterable list().
+func (c *RunCollectionClient) Iterate(options ListOptions, filter RunListOptions, chunkSize *int64) *ListIterator[ActorRun] {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[ActorRun], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return c.List(ctx, opts, filter)
 	})
 }

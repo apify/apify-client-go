@@ -8,7 +8,7 @@ Schedules start Actor or task runs at specified times. Access the schedule colle
 | Method | Description |
 | --- | --- |
 | `List(ctx, ListOptions) (PaginationList[Schedule], error)` | List the account's schedules. |
-| `Iterate(ListOptions) *ListIterator[Schedule]` | Lazy iterator over all matching schedules (paginates on demand). |
+| `Iterate(ListOptions, chunkSize *int64) *ListIterator[Schedule]` | Lazy iterator over matching schedules. `Limit` caps the total yielded; `chunkSize` is the page size. |
 | `Create(ctx, definition any) (Schedule, error)` | Create a new schedule. |
 
 ### `Schedule` fields

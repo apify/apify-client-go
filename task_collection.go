@@ -19,13 +19,15 @@ func (c *TaskCollectionClient) List(ctx context.Context, options ListOptions) (P
 	return listResource[Task](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over all tasks matching the options, fetching pages on
-// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
-// client's iterable list().
-func (c *TaskCollectionClient) Iterate(options ListOptions) *ListIterator[Task] {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Task], error) {
+// Iterate returns a lazy iterator over the tasks matching the options, fetching pages on
+// demand. The options' Limit caps the total number of tasks yielded (unset means all); the
+// per-page size is chunkSize (nil for the server default). Mirrors the reference client's
+// iterable list().
+func (c *TaskCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[Task] {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[Task], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return c.List(ctx, opts)
 	})
 }

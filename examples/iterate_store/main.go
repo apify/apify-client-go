@@ -19,9 +19,11 @@ func main() {
 	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
 	ctx := context.Background()
 
-	// Iterate the store lazily, fetching pages of 5 on demand.
-	limit := int64(5)
-	it := client.Store().Iterate(apify.StoreListOptions{Limit: &limit})
+	// Iterate the store lazily, fetching pages of 5 on demand (chunkSize). The options' Limit
+	// would cap the total number of Actors yielded; here it is left unset so iteration would
+	// cover the whole store, and the loop below stops after the first few.
+	chunkSize := int64(5)
+	it := client.Store().Iterate(apify.StoreListOptions{}, &chunkSize)
 
 	const want = 10
 	for i := 0; i < want; i++ {

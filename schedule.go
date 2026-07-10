@@ -19,13 +19,15 @@ func (c *ScheduleCollectionClient) List(ctx context.Context, options ListOptions
 	return listResource[Schedule](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over all schedules matching the options, fetching pages on
-// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
-// client's iterable list().
-func (c *ScheduleCollectionClient) Iterate(options ListOptions) *ListIterator[Schedule] {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Schedule], error) {
+// Iterate returns a lazy iterator over the schedules matching the options, fetching pages on
+// demand. The options' Limit caps the total number of schedules yielded (unset means all); the
+// per-page size is chunkSize (nil for the server default). Mirrors the reference client's
+// iterable list().
+func (c *ScheduleCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[Schedule] {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[Schedule], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return c.List(ctx, opts)
 	})
 }

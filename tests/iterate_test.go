@@ -62,7 +62,7 @@ func iterateFindIDs[T any](t *testing.T, ctx context.Context, makeIter func() *a
 // smallPage returns list options that page one item at a time, newest first, so the just-created
 // resources appear near the front and multiple pages are traversed.
 func smallPageDesc() apify.ListOptions {
-	return apify.ListOptions{Desc: ptr(true), Limit: ptr(int64(1))}
+	return apify.ListOptions{Desc: ptr(true)}
 }
 
 func TestIterateActors(t *testing.T) {
@@ -81,7 +81,7 @@ func TestIterateActors(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.Actor] {
-		return client.Actors().Iterate(apify.ActorListOptions{My: ptr(true), Desc: ptr(true), Limit: ptr(int64(1))})
+		return client.Actors().Iterate(apify.ActorListOptions{My: ptr(true), Desc: ptr(true)}, ptr(int64(1)))
 	}, func(a *apify.Actor) string { return a.ID }, want, 500)
 }
 
@@ -101,7 +101,7 @@ func TestIterateTasks(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.Task] {
-		return client.Tasks().Iterate(smallPageDesc())
+		return client.Tasks().Iterate(smallPageDesc(), ptr(int64(1)))
 	}, func(x *apify.Task) string { return x.ID }, want, 500)
 }
 
@@ -121,7 +121,7 @@ func TestIterateSchedules(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.Schedule] {
-		return client.Schedules().Iterate(smallPageDesc())
+		return client.Schedules().Iterate(smallPageDesc(), ptr(int64(1)))
 	}, func(s *apify.Schedule) string { return s.ID }, want, 500)
 }
 
@@ -141,7 +141,7 @@ func TestIterateWebhooks(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.Webhook] {
-		return client.Webhooks().Iterate(smallPageDesc())
+		return client.Webhooks().Iterate(smallPageDesc(), ptr(int64(1)))
 	}, func(w *apify.Webhook) string { return w.ID }, want, 500)
 }
 
@@ -161,7 +161,7 @@ func TestIterateDatasets(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.Dataset] {
-		return client.Datasets().Iterate(apify.StorageListOptions{Desc: ptr(true), Limit: ptr(int64(1))})
+		return client.Datasets().Iterate(apify.StorageListOptions{Desc: ptr(true)}, ptr(int64(1)))
 	}, func(d *apify.Dataset) string { return d.ID }, want, 500)
 }
 
@@ -181,7 +181,7 @@ func TestIterateKeyValueStores(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.KeyValueStore] {
-		return client.KeyValueStores().Iterate(apify.StorageListOptions{Desc: ptr(true), Limit: ptr(int64(1))})
+		return client.KeyValueStores().Iterate(apify.StorageListOptions{Desc: ptr(true)}, ptr(int64(1)))
 	}, func(s *apify.KeyValueStore) string { return s.ID }, want, 500)
 }
 
@@ -201,7 +201,7 @@ func TestIterateRequestQueues(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.RequestQueue] {
-		return client.RequestQueues().Iterate(apify.StorageListOptions{Desc: ptr(true), Limit: ptr(int64(1))})
+		return client.RequestQueues().Iterate(apify.StorageListOptions{Desc: ptr(true)}, ptr(int64(1)))
 	}, func(q *apify.RequestQueue) string { return q.ID }, want, 500)
 }
 
@@ -228,7 +228,7 @@ func TestIterateActorVersions(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.ActorVersion] {
-		return actor.Versions().Iterate(smallPageDesc())
+		return actor.Versions().Iterate(smallPageDesc(), ptr(int64(1)))
 	}, func(v *apify.ActorVersion) string { return v.VersionNumber }, []string{"0.0", "0.1"}, 100)
 }
 
@@ -273,7 +273,7 @@ func TestIterateRuns(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.ActorRun] {
-		return actor.Runs().Iterate(smallPageDesc(), apify.RunListOptions{})
+		return actor.Runs().Iterate(smallPageDesc(), apify.RunListOptions{}, ptr(int64(1)))
 	}, func(r *apify.ActorRun) string { return r.ID }, want, 200)
 }
 
@@ -284,7 +284,7 @@ func TestIterateBuilds(t *testing.T) {
 
 	// The public hello-world Actor has at least one build; iterate its build collection one
 	// build per page and confirm the iterator yields real builds with non-empty IDs.
-	it := client.Actor("apify/hello-world").Builds().Iterate(smallPageDesc())
+	it := client.Actor("apify/hello-world").Builds().Iterate(smallPageDesc(), ptr(int64(1)))
 	count := 0
 	for count < 50 {
 		build, err := it.Next(ctx)
@@ -327,7 +327,7 @@ func TestIterateWebhookDispatches(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.WebhookDispatch] {
-		return webhook.Dispatches().Iterate(smallPageDesc())
+		return webhook.Dispatches().Iterate(smallPageDesc(), ptr(int64(1)))
 	}, func(d *apify.WebhookDispatch) string { return d.ID }, want, 200)
 }
 
@@ -371,7 +371,7 @@ func TestIterateDatasetItems(t *testing.T) {
 	}
 
 	// Page two items at a time so iteration crosses multiple pages.
-	it := dataset.IterateItems(apify.DatasetListItemsOptions{Limit: ptr(int64(2))})
+	it := dataset.IterateItems(apify.DatasetListItemsOptions{}, ptr(int64(2)))
 	count := 0
 	for {
 		item, err := it.Next(ctx)
@@ -385,5 +385,24 @@ func TestIterateDatasetItems(t *testing.T) {
 	}
 	if count != total {
 		t.Fatalf("expected to iterate %d items, got %d", total, count)
+	}
+
+	// Limit is a cap on the total number of items yielded (not the page size), matching the
+	// reference client. With Limit=3 and a page size of 2, iteration must stop at exactly 3.
+	const cap = 3
+	capped := dataset.IterateItems(apify.DatasetListItemsOptions{Limit: ptr(int64(cap))}, ptr(int64(2)))
+	capCount := 0
+	for {
+		item, err := capped.Next(ctx)
+		if err != nil {
+			t.Fatalf("iterate (capped): %v", err)
+		}
+		if item == nil {
+			break
+		}
+		capCount++
+	}
+	if capCount != cap {
+		t.Fatalf("expected Limit to cap iteration at %d items, got %d", cap, capCount)
 	}
 }

@@ -59,12 +59,15 @@ func (c *StoreCollectionClient) List(ctx context.Context, options StoreListOptio
 // It is the generic [ListIterator] specialized to Store Actors; drain it with Next.
 type StoreActorIterator = ListIterator[ActorStoreListItem]
 
-// Iterate returns a lazy iterator over all Store Actors matching the options, fetching pages
-// on demand. The options' Limit (if set) is used as the per-page size.
-func (c *StoreCollectionClient) Iterate(options StoreListOptions) *StoreActorIterator {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[ActorStoreListItem], error) {
+// Iterate returns a lazy iterator over the Store Actors matching the options, fetching pages
+// on demand. The options' Limit caps the total number of Actors yielded (unset means all); the
+// per-page size is chunkSize (nil for the server default). Mirrors the reference client's
+// iterable list().
+func (c *StoreCollectionClient) Iterate(options StoreListOptions, chunkSize *int64) *StoreActorIterator {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[ActorStoreListItem], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return c.List(ctx, opts)
 	})
 }

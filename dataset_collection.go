@@ -18,13 +18,15 @@ func (c *DatasetCollectionClient) List(ctx context.Context, options StorageListO
 	return listResource[Dataset](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over all datasets matching the options, fetching pages on
-// demand. The options' Limit (if set) is used as the per-page size. Mirrors the reference
-// client's iterable list().
-func (c *DatasetCollectionClient) Iterate(options StorageListOptions) *ListIterator[Dataset] {
-	return newListIterator(func(ctx context.Context, offset int64) (PaginationList[Dataset], error) {
+// Iterate returns a lazy iterator over the datasets matching the options, fetching pages on
+// demand. The options' Limit caps the total number of datasets yielded (unset means all); the
+// per-page size is chunkSize (nil for the server default). Mirrors the reference client's
+// iterable list().
+func (c *DatasetCollectionClient) Iterate(options StorageListOptions, chunkSize *int64) *ListIterator[Dataset] {
+	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[Dataset], error) {
 		opts := options
 		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
 		return c.List(ctx, opts)
 	})
 }
