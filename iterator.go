@@ -8,9 +8,10 @@ import "context"
 //
 // Its end-user semantics match the reference JS client's iterable list(): the list options'
 // Limit is a cap on the total number of items yielded across all pages (unset means "all
-// matching items"), and the page size is the separate chunkSize argument passed to Iterate
-// (unset means the server default). This keeps the two clients consistent for callers reasoning
-// about limit/chunk behaviour.
+// matching items"), the page size is the separate chunkSize argument passed to Iterate (unset
+// means the server default), and a caller-set Offset on the options is honored as the starting
+// point (iteration begins there and yields at most Limit items from that offset onward). This
+// keeps the two clients consistent for callers reasoning about offset/limit/chunk behaviour.
 type ListIterator[T any] struct {
 	// fetch fetches one page starting at offset. limit is the per-page limit to request
 	// (0 means "unset", i.e. let the server choose). The collection's Iterate method bakes the
@@ -21,19 +22,21 @@ type ListIterator[T any] struct {
 	// chunkSize is the per-page size (nil or <=0 means the server default).
 	chunkSize *int64
 
-	buffer    []T
-	pos       int
-	offset    int64
-	remaining int64 // items still allowed to be yielded after the current buffer; valid once started
-	started   bool
-	exhausted bool
+	buffer      []T
+	pos         int
+	startOffset int64 // offset the caller asked iteration to start from (0 when unset)
+	offset      int64
+	remaining   int64 // items still allowed to be yielded after the current buffer; valid once started
+	started     bool
+	exhausted   bool
 }
 
-// newListIterator builds a ListIterator from a page-fetch closure, the total-item cap (limit)
-// and the per-page size (chunkSize). It is the single constructor behind every collection's
-// Iterate helper, keeping the paging logic in one place (DRY).
-func newListIterator[T any](limit, chunkSize *int64, fetch func(ctx context.Context, offset, limit int64) (PaginationList[T], error)) *ListIterator[T] {
-	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize}
+// newListIterator builds a ListIterator from a page-fetch closure, the total-item cap (limit),
+// the per-page size (chunkSize) and the starting offset (startOffset, the caller's Offset, 0
+// when unset). It is the single constructor behind every collection's Iterate helper, keeping
+// the paging logic in one place (DRY).
+func newListIterator[T any](limit, chunkSize *int64, startOffset int64, fetch func(ctx context.Context, offset, limit int64) (PaginationList[T], error)) *ListIterator[T] {
+	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize, startOffset: startOffset, offset: startOffset}
 }
 
 // Next returns the next item, or (nil, nil) once the collection (or the total-item cap) is
@@ -76,13 +79,19 @@ func (it *ListIterator[T]) loadPage(ctx context.Context) error {
 
 	if !it.started {
 		it.started = true
-		// Cap the total number of yielded items by the reported total (a Limit larger than
-		// the collection yields the whole collection, matching the reference).
-		cap := page.Total
-		if l := it.limitVal(); l > 0 && l < cap {
-			cap = l
+		// Cap the number of items to yield: from the start offset onward at most
+		// (Total - startOffset) items remain, and no more than the caller's Limit. This mirrors
+		// the reference client's remainingItems = min(total - offset, limit) - firstPageCount,
+		// so a caller-set Offset is honored as the starting point and a Limit larger than the
+		// collection still yields everything from the offset onward.
+		capItems := page.Total - it.startOffset
+		if capItems < 0 {
+			capItems = 0
 		}
-		it.remaining = cap - n
+		if l := it.limitVal(); l > 0 && l < capItems {
+			capItems = l
+		}
+		it.remaining = capItems - n
 	} else {
 		it.remaining -= n
 	}
@@ -128,4 +137,13 @@ func pageLimitPtr(limit int64) *int64 {
 		return &limit
 	}
 	return nil
+}
+
+// offsetVal reads a caller-set starting offset (from a list options struct) into a plain int64,
+// treating nil or a negative value as 0 ("start from the beginning").
+func offsetVal(offset *int64) int64 {
+	if offset == nil || *offset < 0 {
+		return 0
+	}
+	return *offset
 }

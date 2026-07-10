@@ -33,7 +33,7 @@ func (c *BuildCollectionClient) List(ctx context.Context, options ListOptions) (
 // per-page size is chunkSize (nil for the server default). Mirrors the reference client's
 // iterable list().
 func (c *BuildCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[Build] {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[Build], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[Build], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)

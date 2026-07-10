@@ -24,7 +24,7 @@ func (c *ScheduleCollectionClient) List(ctx context.Context, options ListOptions
 // per-page size is chunkSize (nil for the server default). Mirrors the reference client's
 // iterable list().
 func (c *ScheduleCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[Schedule] {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[Schedule], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[Schedule], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)

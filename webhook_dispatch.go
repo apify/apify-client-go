@@ -30,7 +30,7 @@ func (c *WebhookDispatchCollectionClient) List(ctx context.Context, options List
 // all); the per-page size is chunkSize (nil for the server default). Mirrors the reference
 // client's iterable list().
 func (c *WebhookDispatchCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[WebhookDispatch] {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[WebhookDispatch], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[WebhookDispatch], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)

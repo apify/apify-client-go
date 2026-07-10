@@ -24,7 +24,7 @@ func (c *RequestQueueCollectionClient) List(ctx context.Context, options Storage
 // all); the per-page size is chunkSize (nil for the server default). Mirrors the reference
 // client's iterable list().
 func (c *RequestQueueCollectionClient) Iterate(options StorageListOptions, chunkSize *int64) *ListIterator[RequestQueue] {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[RequestQueue], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[RequestQueue], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)

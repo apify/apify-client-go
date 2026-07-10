@@ -98,6 +98,114 @@ func (c *KeyValueStoreClient) ListKeys(ctx context.Context, options ListKeysOpti
 	return getResourceRequired[KeyValueStoreKeysPage](ctx, c.ctx, "keys", params)
 }
 
+// IterateKeys returns a lazy iterator over the store's keys, fetching one page at a time on
+// demand via the cursor-based keys endpoint (exclusiveStartKey / nextExclusiveStartKey). It
+// mirrors the reference client's async-iterable listKeys() and follows this client's iteration
+// convention (like the collection Iterate helpers): the options' Limit caps the total number of
+// keys yielded across all pages (unset means all keys), the per-page size is the separate
+// chunkSize argument (nil for the server default), Prefix/Collection/Signature filter every
+// page, and ExclusiveStartKey sets the key to start listing after.
+//
+// Because keys are cursor-paginated (not offset/limit paginated) it uses its own
+// KeyValueStoreKeysIterator rather than the generic ListIterator, sharing the cursor mechanics
+// of RequestQueueClient.PaginateRequests.
+func (c *KeyValueStoreClient) IterateKeys(options ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator {
+	return &KeyValueStoreKeysIterator{client: c, options: options, chunkSize: chunkSize, nextStartKey: options.ExclusiveStartKey}
+}
+
+// KeyValueStoreKeysIterator lazily iterates over a key-value store's keys, fetching one page at
+// a time via the cursor-based listing endpoint. Obtain one from KeyValueStoreClient.IterateKeys
+// and drain it by calling Next until it returns (nil, nil).
+type KeyValueStoreKeysIterator struct {
+	client    *KeyValueStoreClient
+	options   ListKeysOptions
+	chunkSize *int64 // per-page size (nil or <=0 means the server default)
+
+	buffer       []KeyValueStoreKey
+	pos          int
+	nextStartKey *string // cursor for the next page (nil once the API reports no more keys)
+	remaining    int64   // total-item cap countdown; <0 means "no cap". Valid once started.
+	started      bool
+	exhausted    bool
+}
+
+// Next returns the next key, or (nil, nil) when the iterator is exhausted (no more keys or the
+// total-item cap is reached). It calls the API for another page only when the current in-memory
+// page is used up.
+func (it *KeyValueStoreKeysIterator) Next(ctx context.Context) (*KeyValueStoreKey, error) {
+	for it.pos >= len(it.buffer) {
+		if it.exhausted {
+			return nil, nil
+		}
+		if err := it.fetchPage(ctx); err != nil {
+			return nil, err
+		}
+	}
+	key := it.buffer[it.pos]
+	it.pos++
+	return &key, nil
+}
+
+// fetchPage loads the next page of keys into the buffer, advancing the cursor and the remaining
+// cap. The per-page limit is the smaller of the remaining total cap and the requested chunk
+// size, so the final page is never over-fetched.
+func (it *KeyValueStoreKeysIterator) fetchPage(ctx context.Context) error {
+	opts := it.options
+	opts.ExclusiveStartKey = it.nextStartKey
+
+	// capLeft is how many items the total cap still allows (0 = "no cap so far", treated as
+	// unset when combined with the chunk size).
+	var capLeft int64
+	if !it.started {
+		if l := it.options.Limit; l != nil && *l > 0 {
+			capLeft = *l
+		}
+	} else if it.remaining > 0 {
+		capLeft = it.remaining
+	}
+	opts.Limit = pageLimitPtr(minForLimitParam(capLeft, it.chunkVal()))
+
+	page, err := it.client.ListKeys(ctx, opts)
+	if err != nil {
+		return err
+	}
+	n := int64(len(page.Items))
+	it.buffer = page.Items
+	it.pos = 0
+
+	if page.NextExclusiveStartKey != "" {
+		it.nextStartKey = &page.NextExclusiveStartKey
+	} else {
+		it.nextStartKey = nil
+	}
+
+	if !it.started {
+		it.started = true
+		if l := it.options.Limit; l != nil && *l > 0 {
+			it.remaining = *l - n
+		} else {
+			it.remaining = -1 // no cap
+		}
+	} else if it.remaining >= 0 {
+		it.remaining -= n
+	}
+
+	// Stop when the API returns an empty page, reports no more keys (not truncated / no next
+	// cursor), or the total-item cap has been reached.
+	if n == 0 || !page.IsTruncated || it.nextStartKey == nil || it.remaining == 0 {
+		it.exhausted = true
+	}
+	return nil
+}
+
+// chunkVal returns the per-page size as a plain int64 (0 when unset, i.e. server default).
+func (it *KeyValueStoreKeysIterator) chunkVal() int64 {
+	if it.chunkSize == nil || *it.chunkSize < 0 {
+		return 0
+	}
+	return *it.chunkSize
+}
+
 // GetRecords downloads all records of the store (optionally filtered) as a ZIP archive,
 // returning the raw bytes.
 func (c *KeyValueStoreClient) GetRecords(ctx context.Context, options GetRecordsOptions) ([]byte, error) {

@@ -112,7 +112,8 @@ Single store: `client.KeyValueStore(id)`:
 | Method | Description |
 | --- | --- |
 | `Get / Update / Delete(ctx)` | CRUD. |
-| `ListKeys(ctx, ListKeysOptions) (KeyValueStoreKeysPage, error)` | List keys. |
+| `ListKeys(ctx, ListKeysOptions) (KeyValueStoreKeysPage, error)` | List one page of keys. |
+| `IterateKeys(ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator` | Lazy iterator over keys (cursor-based). `Limit` caps the total yielded; `chunkSize` is the page size; `Prefix`/`Collection`/`Signature` filter every page; `ExclusiveStartKey` sets where to start. |
 | `GetRecord(ctx, key) (*KeyValueStoreRecord, bool, error)` | Read a record. |
 | `GetRecordWithOptions(ctx, key, GetRecordOptions)` | Read with options. |
 | `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes. |
@@ -169,6 +170,19 @@ _ = client.KeyValueStore(store.ID).SetRecordJSON(ctx, "OUTPUT", map[string]any{"
 rec, ok, _ := client.KeyValueStore(store.ID).GetRecord(ctx, "OUTPUT")
 if ok {
 	fmt.Println(string(rec.Value))
+}
+
+// Lazily iterate over every key in the store (cursor-based paging is handled internally).
+keys := client.KeyValueStore(store.ID).IterateKeys(apify.ListKeysOptions{}, nil)
+for {
+	key, err := keys.Next(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if key == nil {
+		break
+	}
+	fmt.Println(key.Key, key.Size)
 }
 ```
 

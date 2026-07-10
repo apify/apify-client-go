@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ListIterator[T]`. As in the reference client's iterable `list()`, the options' `Limit` caps the
   total number of items yielded across all pages (unset means all), and the per-page size is a
   separate `chunkSize` argument (nil for the server default).
+- Cursor-based key iteration on the key-value store: `KeyValueStoreClient.IterateKeys` returns a
+  `KeyValueStoreKeysIterator` that lazily walks all keys via `nextExclusiveStartKey`, matching the
+  reference client's iterable `listKeys()`. `Limit` caps the total keys yielded and `chunkSize` is
+  the page size.
+
+### Fixed
+
+- The `Iterate` helpers now honor a caller-set `Offset` on the list options as the starting point
+  (iteration begins there and the cap counts from that offset), instead of silently discarding it.
+  Matches the reference client's `options.offset` handling.
 
 ### Changed
 

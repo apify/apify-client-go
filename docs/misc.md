@@ -82,7 +82,10 @@ user, ok, err := client.Me().Get(ctx)
 if err != nil {
 	log.Fatal(err)
 }
-fmt.Println(user.Username, ok)
+if !ok {
+	log.Fatal("account not found")
+}
+fmt.Println(user.Username)
 
 usage, err := client.Me().MonthlyUsage(ctx)
 if err != nil {

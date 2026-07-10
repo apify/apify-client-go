@@ -22,7 +22,7 @@ func (c *ActorEnvVarCollectionClient) List(ctx context.Context) (PaginationList[
 // returns the full set in a single page), so there is no Limit/chunkSize control and the
 // closure ignores the offset/limit arguments; the iterator drains that one page.
 func (c *ActorEnvVarCollectionClient) Iterate() *ListIterator[ActorEnvVar] {
-	return newListIterator(nil, nil, func(ctx context.Context, _, _ int64) (PaginationList[ActorEnvVar], error) {
+	return newListIterator(nil, nil, 0, func(ctx context.Context, _, _ int64) (PaginationList[ActorEnvVar], error) {
 		return c.List(ctx)
 	})
 }

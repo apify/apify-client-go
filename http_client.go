@@ -150,9 +150,16 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 			return nil, lastErr
 		}
 
-		// Sleep with randomized exponential backoff before the next attempt. The backoff
-		// doubles each retry (matching the reference client's async-retry factor of 2) and
-		// is capped at the overall request timeout.
+		// Sleep with exponential backoff before the next attempt. The base delay doubles each
+		// retry (matching the reference client's async-retry factor of 2). Two intentional and
+		// documented divergences from the reference JS client:
+		//   - Jitter: the actual sleep is drawn uniformly from [delay, 2*delay). The reference
+		//     does not jitter, but the Apify API docs explicitly prescribe it ("wait for a period
+		//     of time chosen randomly from the interval DELAY to 2*DELAY milliseconds") to avoid
+		//     synchronized retries (thundering herd), so we follow the API guidance here.
+		//   - Cap: the base delay is capped at the overall request timeout as a safety net (the
+		//     reference leaves it uncapped). With the default settings this cap is never reached
+		//     within maxRetries, so it does not change observable behaviour.
 		if !sleepWithContext(ctx, randomizedDelay(delay)) {
 			return nil, ctx.Err()
 		}

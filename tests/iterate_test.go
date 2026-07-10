@@ -59,8 +59,10 @@ func iterateFindIDs[T any](t *testing.T, ctx context.Context, makeIter func() *a
 	t.Fatalf("iteration did not yield all created resources; missing %v", missing)
 }
 
-// smallPage returns list options that page one item at a time, newest first, so the just-created
-// resources appear near the front and multiple pages are traversed.
+// smallPageDesc returns list options sorted newest-first (Desc), so just-created resources
+// appear near the front of the listing. It only sets the sort order; the page size is controlled
+// separately by the chunkSize argument passed to Iterate at each call site (a small chunkSize is
+// what forces iteration across multiple pages).
 func smallPageDesc() apify.ListOptions {
 	return apify.ListOptions{Desc: ptr(true)}
 }
@@ -203,6 +205,45 @@ func TestIterateRequestQueues(t *testing.T) {
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.RequestQueue] {
 		return client.RequestQueues().Iterate(apify.StorageListOptions{Desc: ptr(true)}, ptr(int64(1)))
 	}, func(q *apify.RequestQueue) string { return q.ID }, want, 500)
+}
+
+func TestIterateKeyValueStoreKeys(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	store, err := client.KeyValueStores().GetOrCreate(ctx, uniqueName("iter-keys"))
+	if err != nil {
+		t.Fatalf("get-or-create store: %v", err)
+	}
+	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
+	kvs := client.KeyValueStore(store.ID)
+
+	want := []string{"alpha", "beta", "gamma", "delta"}
+	for _, key := range want {
+		if err := kvs.SetRecordJSON(ctx, key, map[string]any{"k": key}); err != nil {
+			t.Fatalf("set record %s: %v", key, err)
+		}
+	}
+
+	// Iterate all keys with a small per-page chunkSize so cursor paging crosses more than one page.
+	it := kvs.IterateKeys(apify.ListKeysOptions{}, ptr(int64(2)))
+	seen := make(map[string]bool)
+	for {
+		key, err := it.Next(ctx)
+		if err != nil {
+			t.Fatalf("iterate keys: %v", err)
+		}
+		if key == nil {
+			break
+		}
+		seen[key.Key] = true
+	}
+	for _, key := range want {
+		if !seen[key] {
+			t.Fatalf("key %q was not yielded by IterateKeys (seen: %v)", key, seen)
+		}
+	}
 }
 
 func TestIterateActorVersions(t *testing.T) {
@@ -389,8 +430,8 @@ func TestIterateDatasetItems(t *testing.T) {
 
 	// Limit is a cap on the total number of items yielded (not the page size), matching the
 	// reference client. With Limit=3 and a page size of 2, iteration must stop at exactly 3.
-	const cap = 3
-	capped := dataset.IterateItems(apify.DatasetListItemsOptions{Limit: ptr(int64(cap))}, ptr(int64(2)))
+	const wantCap = 3
+	capped := dataset.IterateItems(apify.DatasetListItemsOptions{Limit: ptr(int64(wantCap))}, ptr(int64(2)))
 	capCount := 0
 	for {
 		item, err := capped.Next(ctx)
@@ -402,7 +443,7 @@ func TestIterateDatasetItems(t *testing.T) {
 		}
 		capCount++
 	}
-	if capCount != cap {
-		t.Fatalf("expected Limit to cap iteration at %d items, got %d", cap, capCount)
+	if capCount != wantCap {
+		t.Fatalf("expected Limit to cap iteration at %d items, got %d", wantCap, capCount)
 	}
 }

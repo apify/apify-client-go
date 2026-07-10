@@ -24,7 +24,7 @@ func (c *KeyValueStoreCollectionClient) List(ctx context.Context, options Storag
 // all); the per-page size is chunkSize (nil for the server default). Mirrors the reference
 // client's iterable list().
 func (c *KeyValueStoreCollectionClient) Iterate(options StorageListOptions, chunkSize *int64) *ListIterator[KeyValueStore] {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[KeyValueStore], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[KeyValueStore], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)

@@ -39,12 +39,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	apify "github.com/apify/apify-client-go"
 )
 
 func main() {
-	client := apify.NewClient("my-api-token")
+	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
 	ctx := context.Background()
 
 	// Start an Actor and wait for it to finish.

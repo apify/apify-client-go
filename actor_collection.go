@@ -45,7 +45,7 @@ func (c *ActorCollectionClient) List(ctx context.Context, options ActorListOptio
 // per-page size is chunkSize (nil for the server default). Mirrors the reference client's
 // iterable list().
 func (c *ActorCollectionClient) Iterate(options ActorListOptions, chunkSize *int64) *ListIterator[Actor] {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[Actor], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[Actor], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)

@@ -64,7 +64,7 @@ type StoreActorIterator = ListIterator[ActorStoreListItem]
 // per-page size is chunkSize (nil for the server default). Mirrors the reference client's
 // iterable list().
 func (c *StoreCollectionClient) Iterate(options StoreListOptions, chunkSize *int64) *StoreActorIterator {
-	return newListIterator(options.Limit, chunkSize, func(ctx context.Context, offset, limit int64) (PaginationList[ActorStoreListItem], error) {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[ActorStoreListItem], error) {
 		opts := options
 		opts.Offset = &offset
 		opts.Limit = pageLimitPtr(limit)
