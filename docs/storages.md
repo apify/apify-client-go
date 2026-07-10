@@ -6,21 +6,35 @@ Each is reachable both as a top-level resource and as a run's default storage
 
 ## Datasets
 
-Collection: `client.Datasets()` — `List(ctx, StorageListOptions)`,
-`Iterate(StorageListOptions, chunkSize *int64)` (lazy iterator; `Limit` caps total, `chunkSize` is page size),
-`GetOrCreate(ctx, name string)` (empty name → unnamed dataset).
+Collection: `client.Datasets()` — `List(ctx, StorageListOptions) (PaginationList[Dataset], error)`,
+`Iterate(StorageListOptions, chunkSize *int64) *ListIterator[Dataset]` (lazy iterator; `Limit` caps total, `chunkSize` is page size),
+`GetOrCreate(ctx, name string) (Dataset, error)` (empty name → unnamed dataset).
 
 Single dataset: `client.Dataset(id)`:
 
 | Method | Description |
 | --- | --- |
-| `Get / Update / Delete(ctx)` | CRUD. |
+| `Get(ctx) (Dataset, bool, error)` | Fetch the dataset (`false` if it does not exist). |
+| `Update(ctx, newFields any) (Dataset, error)` | Update the dataset. |
+| `Delete(ctx) error` | Delete the dataset. |
 | `ListItems(ctx, DatasetListItemsOptions) (PaginationList[json.RawMessage], error)` | Read items. |
 | `IterateItems(DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage]` | Lazy iterator over items (`Limit` caps total, `chunkSize` is page size); `IterateDatasetItems[T]` decodes into your type. |
 | `PushItems(ctx, items any) error` | Append one item or a slice of items. |
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
 | `GetStatistics(ctx) (json.RawMessage, bool, error)` | Dataset statistics. |
 | `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL. |
+
+The `Dataset` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique dataset ID. |
+| `Name` | `string` | Dataset name (empty for unnamed datasets). |
+| `UserID` | `string` | ID of the user who owns the dataset. |
+| `CreatedAt` | `*time.Time` | When the dataset was created. |
+| `ModifiedAt` | `*time.Time` | When the dataset was last modified. |
+| `ItemCount` | `int64` | Number of items currently stored. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 `DatasetListItemsOptions` controls filtering, projection, and pagination of the items
 (`ListItems`, `ListDatasetItems`, and the `Items` field of `DatasetDownloadOptions`). All
@@ -105,13 +119,15 @@ csv, _ := client.Dataset(ds.ID).DownloadItems(ctx, apify.FormatCSV, apify.Datase
 
 ## Key-value stores
 
-Collection: `client.KeyValueStores()` — `List`, `Iterate(StorageListOptions, chunkSize *int64)` (`Limit` caps total, `chunkSize` is page size), `GetOrCreate`.
+Collection: `client.KeyValueStores()` — `List(ctx, StorageListOptions) (PaginationList[KeyValueStore], error)`, `Iterate(StorageListOptions, chunkSize *int64) *ListIterator[KeyValueStore]` (`Limit` caps total, `chunkSize` is page size), `GetOrCreate(ctx, name string) (KeyValueStore, error)`.
 
 Single store: `client.KeyValueStore(id)`:
 
 | Method | Description |
 | --- | --- |
-| `Get / Update / Delete(ctx)` | CRUD. |
+| `Get(ctx) (KeyValueStore, bool, error)` | Fetch the store (`false` if it does not exist). |
+| `Update(ctx, newFields any) (KeyValueStore, error)` | Update the store. |
+| `Delete(ctx) error` | Delete the store. |
 | `ListKeys(ctx, ListKeysOptions) (KeyValueStoreKeysPage, error)` | List one page of keys. |
 | `IterateKeys(ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator` | Lazy iterator over keys (cursor-based). `Limit` caps the total yielded; `chunkSize` is the page size; `Prefix`/`Collection`/`Signature` filter every page; `ExclusiveStartKey` sets where to start. |
 | `GetRecord(ctx, key) (*KeyValueStoreRecord, bool, error)` | Read a record. |
@@ -123,6 +139,17 @@ Single store: `client.KeyValueStore(id)`:
 | `GetRecords(ctx, GetRecordsOptions) ([]byte, error)` | Download all records as a ZIP. |
 | `GetRecordPublicURL(ctx, key) (string, error)` | Signed public record URL. |
 | `CreateKeysPublicURL(ctx, expiresInSecs *int64) (string, error)` | Signed public key-list URL. |
+
+The `KeyValueStore` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique store ID. |
+| `Name` | `string` | Store name (empty for unnamed stores). |
+| `UserID` | `string` | ID of the user who owns the store. |
+| `CreatedAt` | `*time.Time` | When the store was created. |
+| `ModifiedAt` | `*time.Time` | When the store was last modified. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 Option structs (all fields optional):
 
@@ -188,13 +215,15 @@ for {
 
 ## Request queues
 
-Collection: `client.RequestQueues()` — `List`, `Iterate(StorageListOptions, chunkSize *int64)` (`Limit` caps total, `chunkSize` is page size), `GetOrCreate`.
+Collection: `client.RequestQueues()` — `List(ctx, StorageListOptions) (PaginationList[RequestQueue], error)`, `Iterate(StorageListOptions, chunkSize *int64) *ListIterator[RequestQueue]` (`Limit` caps total, `chunkSize` is page size), `GetOrCreate(ctx, name string) (RequestQueue, error)`.
 
 Single queue: `client.RequestQueue(id)`:
 
 | Method | Description |
 | --- | --- |
-| `Get / Update / Delete(ctx)` | CRUD. |
+| `Get(ctx) (RequestQueue, bool, error)` | Fetch the queue (`false` if it does not exist). |
+| `Update(ctx, newFields any) (RequestQueue, error)` | Update the queue. |
+| `Delete(ctx) error` | Delete the queue. |
 | `ListHead(ctx, limit *int64) (RequestQueueHead, error)` | Requests at the front. |
 | `AddRequest(ctx, RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error)` | Add a request. |
 | `GetRequest(ctx, id) (*RequestQueueRequest, bool, error)` | Read a request. |
@@ -209,6 +238,18 @@ Single queue: `client.RequestQueue(id)`:
 | `DeleteRequestLock(ctx, id string, forefront bool) error` | Release the lock on a request without modifying it. |
 | `UnlockRequests(ctx) (json.RawMessage, error)` | Release all locks held by this client (see `WithClientKey`). |
 | `WithClientKey(key string) *RequestQueueClient` | Pin a stable client key (required to unlock own locks). |
+
+The `RequestQueue` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ID` | `string` | Unique queue ID. |
+| `Name` | `string` | Queue name (empty for unnamed queues). |
+| `UserID` | `string` | ID of the user who owns the queue. |
+| `CreatedAt` | `*time.Time` | When the queue was created. |
+| `ModifiedAt` | `*time.Time` | When the queue was last modified. |
+| `TotalRequestCount` | `int64` | Total number of requests ever added. |
+| `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 `RequestQueueRequest` is the request payload/record. `URL` is required; `ID` is assigned by the
 API (omit it on create):
