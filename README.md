@@ -64,6 +64,11 @@ func main() {
 }
 ```
 
+Get your API token from the [Apify Console](https://console.apify.com/) under **Settings →
+Integrations** (the **Personal API tokens** section). The client never reads it from the
+environment itself: pass the token to `NewClient`/`WithToken` explicitly (the examples above
+read `APIFY_TOKEN` from the environment only as a convenience in `main`).
+
 ## Configuration
 
 Use `NewClient(token)` for a token-only setup, or `NewClientWithOptions` with functional
@@ -72,8 +77,9 @@ options for full control:
 ```go
 client := apify.NewClientWithOptions(
 	apify.WithToken("my-api-token"),
-	apify.WithBaseURL("https://api.apify.com"), // /v2 is appended automatically
-	apify.WithMaxRetries(8),                    // default 8
+	apify.WithBaseURL("https://api.apify.com"),       // /v2 is appended automatically
+	apify.WithPublicBaseURL("https://api.apify.com"), // base for signed, shareable URLs
+	apify.WithMaxRetries(8),                          // default 8
 	apify.WithMinDelayBetweenRetries(500*time.Millisecond),
 	apify.WithTimeout(360*time.Second), // default 6 minutes
 	apify.WithUserAgentSuffix("MyTool/1.0"),

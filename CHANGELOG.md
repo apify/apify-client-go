@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ListIterator[ActorStoreListItem]`.
 - Synced the `APISpecVersion` reference in the `README.md` "Versioning" section to match `version.go`.
 
+### Documentation
+
+- Documented how the client-side `Call`/`WaitForFinish` polling relates to `WithTimeout` (each
+  poll asks the server to wait ≤60s, so the per-request timeout never cuts off a `nil` wait).
+- Added a pointer to where API tokens come from (Apify Console → Settings → Integrations).
+- Added the `IterateDatasetItems[T]` signature and a usage example to the storages guide.
+- Added `WithPublicBaseURL` to the `NewClientWithOptions` sample and a note distinguishing
+  `client.Build(id)` from `Actor.Build(...)`.
+
 ## [0.5.0] - 2026-07-09
 
 ### Changed

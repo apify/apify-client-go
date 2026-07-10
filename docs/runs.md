@@ -73,7 +73,9 @@ The time filters apply only to Actor- and task-scoped collections.
 > (empty string) as "unset"; only `RunChargeOptions.Count` is a pointer.
 
 ```go
-run, err := client.Run(runID).WaitForFinish(ctx, nil) // nil waits indefinitely
+// nil polls until the run is terminal and is not cut off by WithTimeout (which bounds each
+// poll request, not the total wait) — see docs/actors.md for the full explanation.
+run, err := client.Run(runID).WaitForFinish(ctx, nil)
 if err != nil {
 	log.Fatal(err)
 }

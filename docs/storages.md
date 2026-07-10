@@ -81,6 +81,36 @@ for _, item := range page.Items {
 }
 ```
 
+For lazy, typed iteration over items across pages use the generic helper
+`apify.IterateDatasetItems[T](dataset *DatasetClient, opts DatasetListItemsOptions, chunkSize *int64) *ListIterator[T]`.
+It is the typed counterpart of the `IterateItems` method: `Limit` caps the total number of
+items yielded and `chunkSize` sets the per-page size, but each item is decoded into your type
+`T` instead of `json.RawMessage`. Advance it with `Next(ctx)`, which returns `nil` when the
+iteration is exhausted:
+
+```go
+// A struct matching the shape of your dataset items.
+type Result struct {
+	Title string `json:"title"`
+}
+
+// Limit caps the total items yielded; the last argument is the per-page size.
+it := apify.IterateDatasetItems[Result](client.Dataset("DATASET_ID"),
+	apify.DatasetListItemsOptions{Limit: apify.Ptr(int64(1000))},
+	apify.Ptr(int64(100)),
+)
+for {
+	item, err := it.Next(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if item == nil {
+		break
+	}
+	fmt.Println(item.Title)
+}
+```
+
 `DownloadItems` takes a `DownloadItemsFormat`. The exported constants are:
 
 | Constant | Value |

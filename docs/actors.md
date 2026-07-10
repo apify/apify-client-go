@@ -93,6 +93,11 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Versions. |
 | `Webhooks() *WebhookCollectionClient` | This Actor's webhooks. |
 
+> **Note — two different `Build`s.** `Actor.Build(ctx, versionNumber, ActorBuildOptions)` here
+> *starts* a build of a version and returns the resulting `Build`. It is unrelated to the
+> top-level accessor `client.Build(id)`, which returns a `*BuildClient` for inspecting an
+> existing build by ID (see [builds.md](builds.md)). Same name, different jobs.
+
 `ValidateInput` is equivalent to `ValidateInputForBuild(ctx, input, "")`: an empty `build`
 omits the parameter, so the API validates against the build tagged `latest` (per the API
 specification). Both return the raw JSON validation result from the API — a JSON object
@@ -167,6 +172,18 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 	&waitSecs,
 )
 ```
+
+> **How `Call`/`WaitForFinish` relate to `WithTimeout`.** The wait is done client-side by
+> *polling*: the client repeatedly re-fetches the run, each poll being a separate HTTP request
+> that asks the server to block for at most 60 seconds (the API's per-request wait cap). Because
+> every poll returns within that 60-second server cap — comfortably inside the client's
+> `WithTimeout` budget (default 360s, which bounds each individual request, not the total wait) —
+> the overall wait is **not** cut off at 360s. It continues across as many polls as needed until
+> the run reaches a terminal state. Passing `waitSecs == nil` therefore genuinely waits until the
+> run finishes (bounded only by a very large internal cap of ~11.5 days, or by cancelling the
+> `ctx` you pass in); a non-nil `waitSecs` bounds the total client-side wait instead. The distinct
+> `ActorStartOptions.WaitForFinish` field is unrelated: it only controls the single server-side
+> wait on the initial `Start` request (max 60s), not the client-side polling loop.
 
 ## Versions and environment variables
 
