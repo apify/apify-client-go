@@ -2,10 +2,13 @@ package apify
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
+	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -203,6 +206,100 @@ func TestErrorBodyIsParsed(t *testing.T) {
 	}
 	if apiErr.Data["field"] == nil {
 		t.Fatalf("expected error data to be parsed, got %+v", apiErr.Data)
+	}
+}
+
+// gunzip decompresses gzip-encoded bytes, failing the test on error.
+func gunzip(t *testing.T, data []byte) []byte {
+	t.Helper()
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("body is not valid gzip: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("failed to read gzip body: %v", err)
+	}
+	return out
+}
+
+func TestMaybeCompressRequestBody(t *testing.T) {
+	// Below the threshold: sent verbatim, no encoding.
+	small := []byte("small payload")
+	out, enc := maybeCompressRequestBody(small)
+	if enc != "" || !bytes.Equal(out, small) {
+		t.Fatalf("small body must not be compressed, got enc=%q", enc)
+	}
+
+	// A nil body stays nil (GET requests have no body).
+	out, enc = maybeCompressRequestBody(nil)
+	if enc != "" || out != nil {
+		t.Fatalf("nil body must stay nil, got enc=%q out=%v", enc, out)
+	}
+
+	// Above the threshold and compressible: gzip-encoded, round-trips to the original.
+	large := []byte(strings.Repeat("compress me ", 200)) // ~2400 bytes, highly repetitive
+	out, enc = maybeCompressRequestBody(large)
+	if enc != contentEncodingGzip {
+		t.Fatalf("large compressible body must be gzip, got enc=%q", enc)
+	}
+	if len(out) >= len(large) {
+		t.Fatalf("compressed body should be smaller: %d >= %d", len(out), len(large))
+	}
+	if !bytes.Equal(gunzip(t, out), large) {
+		t.Fatal("decompressed body does not match original")
+	}
+
+	// Above the threshold but incompressible: gzip cannot shrink random bytes, so the shrink
+	// guard sends the original body uncompressed (empty encoding).
+	rng := rand.New(rand.NewSource(1))
+	incompressible := make([]byte, 2048)
+	if _, err := rng.Read(incompressible); err != nil {
+		t.Fatalf("failed to build random payload: %v", err)
+	}
+	out, enc = maybeCompressRequestBody(incompressible)
+	if enc != "" {
+		t.Fatalf("incompressible body must be sent uncompressed, got enc=%q", enc)
+	}
+	if !bytes.Equal(out, incompressible) {
+		t.Fatal("incompressible body must be returned unchanged")
+	}
+}
+
+// A request body large enough to compress is sent gzip-encoded, with the Content-Encoding
+// header set, and the bytes on the wire decompress back to the original payload.
+func TestLargeRequestBodyIsGzipCompressed(t *testing.T) {
+	backend := &mockBackend{responses: constant(201, `{"data":{}}`)}
+	client := testClient(backend, 0)
+
+	bigValue := strings.Repeat("x", 4096)
+	if err := client.Dataset("ds1").PushItems(context.Background(), map[string]string{"blob": bigValue}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != contentEncodingGzip {
+		t.Fatalf("expected Content-Encoding %q, got %q", contentEncodingGzip, got)
+	}
+	decoded := gunzip(t, []byte(backend.lastBody))
+	if !strings.Contains(string(decoded), bigValue) {
+		t.Fatal("decompressed request body does not contain the pushed payload")
+	}
+}
+
+// A small request body is sent uncompressed and carries no Content-Encoding header.
+func TestSmallRequestBodyIsNotCompressed(t *testing.T) {
+	backend := &mockBackend{responses: constant(201, `{"data":{}}`)}
+	client := testClient(backend, 0)
+
+	if err := client.Dataset("ds1").PushItems(context.Background(), map[string]string{"k": "v"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != "" {
+		t.Fatalf("small body must not set Content-Encoding, got %q", got)
+	}
+	if !strings.Contains(backend.lastBody, `"v"`) {
+		t.Fatalf("small body should be sent as plain JSON, got %q", backend.lastBody)
 	}
 }
 

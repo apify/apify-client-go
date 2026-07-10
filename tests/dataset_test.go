@@ -3,6 +3,7 @@ package apify_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	apify "github.com/apify/apify-client-go"
@@ -105,5 +106,48 @@ func TestDatasetCRUDFlow(t *testing.T) {
 	}
 	if err := json.Unmarshal(page.Items[0], &first); err != nil {
 		t.Fatalf("decode item: %v", err)
+	}
+}
+
+// TestDatasetPushCompressedBody verifies that the live API accepts a gzip-compressed request
+// body (Content-Encoding: gzip) and stores it intact. The client automatically gzips request
+// bodies of 1024 bytes or larger, so pushing an item well above that threshold exercises the
+// compression path end-to-end and confirms the round-trip is lossless.
+func TestDatasetPushCompressedBody(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	ds, err := client.Datasets().GetOrCreate(ctx, uniqueName("ds-gzip"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.Dataset(ds.ID).Delete(ctx) }()
+	dataset := client.Dataset(ds.ID)
+
+	// A payload comfortably above the 1024-byte compression threshold. A distinctive marker
+	// plus a long repeated body lets us assert the stored value survived compression intact.
+	marker := "gzip-marker-" + uniqueName("v")
+	blob := marker + strings.Repeat("x", 4096)
+	if err := dataset.PushItems(ctx, map[string]any{"blob": blob}); err != nil {
+		t.Fatalf("push large (gzipped) item: %v", err)
+	}
+
+	page, err := dataset.ListItems(ctx, apify.DatasetListItemsOptions{})
+	if err != nil {
+		t.Fatalf("list items: %v", err)
+	}
+	if page.Count != 1 || len(page.Items) != 1 {
+		t.Fatalf("expected 1 item, got count=%d len=%d", page.Count, len(page.Items))
+	}
+	var got struct {
+		Blob string `json:"blob"`
+	}
+	if err := json.Unmarshal(page.Items[0], &got); err != nil {
+		t.Fatalf("decode item: %v", err)
+	}
+	if got.Blob != blob {
+		t.Fatalf("stored blob does not round-trip: got %d bytes (prefix %q), want %d bytes",
+			len(got.Blob), got.Blob[:min(len(got.Blob), len(marker))], len(blob))
 	}
 }

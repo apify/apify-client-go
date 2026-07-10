@@ -2,6 +2,7 @@ package apify
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"math/rand"
@@ -22,7 +23,19 @@ const (
 	// backoffFactor is the multiplier applied to the inter-retry delay after each
 	// attempt (exponential backoff). Matches the reference client's async-retry factor of 2.
 	backoffFactor = 2
+	// minCompressRequestBytes is the smallest request body worth compressing. Below this
+	// size the CPU cost and Content-Encoding header overhead outweigh the bandwidth saved,
+	// so the body is sent as-is. Matches the reference client's MIN_COMPRESS_BYTES threshold.
+	minCompressRequestBytes = 1024
 )
+
+// contentEncodingGzip is the Content-Encoding value for gzip-compressed request bodies.
+//
+// The reference client prefers brotli and falls back to gzip. Go's standard library ships
+// gzip (compress/gzip) but no brotli, and this client is intentionally dependency-free, so
+// adding a third-party brotli package would be anti-idiomatic for the sake of parity. gzip
+// is therefore the idiomatic choice here (the requirements accept the gzip fallback).
+const contentEncodingGzip = "gzip"
 
 // HTTPBackend is the replaceable transport contract of the client.
 //
@@ -109,9 +122,13 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 	maxAttempts := c.retry.maxRetries + 1
 	path := extractPath(url)
 
+	// Compress the body once (not per attempt): it is identical on every retry. contentEncoding
+	// is "" when the body was left uncompressed (too small, or compression did not shrink it).
+	sendBody, contentEncoding := maybeCompressRequestBody(body)
+
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := c.doAttempt(ctx, method, url, body, contentType, extraHeaders, c.attemptTimeout(baseTimeout, attempt))
+		resp, err := c.doAttempt(ctx, method, url, sendBody, contentType, contentEncoding, extraHeaders, c.attemptTimeout(baseTimeout, attempt))
 
 		var retryable bool
 		if err != nil {
@@ -152,7 +169,10 @@ func (c *httpClient) applyAuthHeaders(req *http.Request) {
 }
 
 // doAttempt performs a single HTTP round-trip with the given per-attempt timeout.
-func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []byte, contentType string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
+//
+// contentEncoding, when non-empty, is set as the Content-Encoding header (the body is already
+// compressed with that encoding by the caller).
+func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []byte, contentType, contentEncoding string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -169,6 +189,9 @@ func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []b
 	c.applyAuthHeaders(req)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	if contentEncoding != "" {
+		req.Header.Set("Content-Encoding", contentEncoding)
 	}
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)
@@ -187,6 +210,33 @@ func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []b
 	}
 
 	return &apiResponse{statusCode: resp.StatusCode, header: resp.Header, body: data}, nil
+}
+
+// maybeCompressRequestBody gzip-compresses body when it is large enough to be worth it,
+// returning the bytes to send and the Content-Encoding value ("" when the body is sent
+// uncompressed).
+//
+// This mirrors the reference client, which compresses request payloads above a 1 KiB
+// threshold to save upload bandwidth. Compression is best-effort: on any error, or when the
+// "compressed" output is not actually smaller (e.g. an already-compressed payload), the
+// original body is sent uncompressed rather than failing the request.
+func maybeCompressRequestBody(body []byte) ([]byte, string) {
+	if len(body) < minCompressRequestBytes {
+		return body, ""
+	}
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(body); err != nil {
+		return body, ""
+	}
+	if err := gz.Close(); err != nil {
+		return body, ""
+	}
+	if buf.Len() >= len(body) {
+		return body, ""
+	}
+	return buf.Bytes(), contentEncodingGzip
 }
 
 // attemptTimeout returns min(overall, base * 2^(attempt-1)).
