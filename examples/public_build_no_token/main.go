@@ -1,7 +1,9 @@
 // Command public_build_no_token demonstrates the unauthenticated client. A client built with
-// NewClient and no WithToken option can still call the endpoints that require no API token —
-// here it resolves and fetches the default build of a public Actor, which needs only the
-// public Actor ID (GET /v2/actors/{actorId}/builds/default is a token-free endpoint).
+// NewClient and no WithToken option can still call the endpoints that require no API token.
+// Here it resolves and fetches the default build of a public Actor, which needs only the
+// public Actor ID. Both endpoints it touches are token-free (declared security: [] in the
+// spec): GET /v2/actors/{actorId}/builds/default to resolve the default build, then
+// GET /v2/actor-builds/{buildId} to fetch it.
 //
 // Run with (no token needed):
 //

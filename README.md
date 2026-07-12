@@ -211,12 +211,14 @@ built-in `GITHUB_TOKEN` to push the tag and open the release.
 
 ## Examples
 
-Runnable examples live in [`examples/`](examples) and are exercised in CI. Run any of them
-with your token:
+Runnable examples live in [`examples/`](examples) and are exercised in CI. Most need a token;
+run them like:
 
 ```sh
 APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 ```
+
+`public_build_no_token` needs no token — run it with `go run ./examples/public_build_no_token`.
 
 | Example | Description |
 | --- | --- |
@@ -227,6 +229,7 @@ APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 | `iterate_store` | Lazily iterate Actors in the Apify Store. |
 | `log_redirection` | Start an Actor and stream its log in real time. |
 | `create_build_run_actor` | Create an Actor, build it, run it, and print the run log. |
+| `public_build_no_token` | Fetch a public Actor's default build with an unauthenticated client (no token). |
 
 ## Documentation
 
