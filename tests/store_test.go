@@ -25,7 +25,7 @@ func TestIterateStore(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	it := client.Store().Iterate(apify.StoreListOptions{Limit: ptr(int64(5))})
+	it := client.Store().Iterate(apify.StoreListOptions{}, ptr(int64(5)))
 	count := 0
 	for count < 12 {
 		item, err := it.Next(ctx)

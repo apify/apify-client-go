@@ -9,6 +9,7 @@ Actors are the programs that run on the Apify platform. Access the Actor collect
 | Method | Description |
 | --- | --- |
 | `List(ctx, ActorListOptions) (PaginationList[Actor], error)` | List the account's Actors. |
+| `Iterate(ActorListOptions, chunkSize *int64) *ListIterator[Actor]` | Lazy iterator over matching Actors. `Limit` caps the total yielded; `chunkSize` is the page size. |
 | `Create(ctx, definition any) (Actor, error)` | Create a new Actor. |
 
 `Create` takes a free-form definition (`any`) serialized to JSON, so the Actor's fields are
@@ -92,6 +93,11 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Versions. |
 | `Webhooks() *WebhookCollectionClient` | This Actor's webhooks. |
 
+> **Note — two different `Build`s.** `Actor.Build(ctx, versionNumber, ActorBuildOptions)` here
+> *starts* a build of a version and returns the resulting `Build`. It is unrelated to the
+> top-level accessor `client.Build(id)`, which returns a `*BuildClient` for inspecting an
+> existing build by ID (see [builds.md](builds.md)). Same name, different jobs.
+
 `ValidateInput` is equivalent to `ValidateInputForBuild(ctx, input, "")`: an empty `build`
 omits the parameter, so the API validates against the build tagged `latest` (per the API
 specification). Both return the raw JSON validation result from the API — a JSON object
@@ -167,15 +173,27 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 )
 ```
 
+> **How `Call`/`WaitForFinish` relate to `WithTimeout`.** The wait is done client-side by
+> *polling*: the client repeatedly re-fetches the run, each poll being a separate HTTP request
+> that asks the server to block for at most 60 seconds (the API's per-request wait cap). Because
+> every poll returns within that 60-second server cap — comfortably inside the client's
+> `WithTimeout` budget (default 360s, which bounds each individual request, not the total wait) —
+> the overall wait is **not** cut off at 360s. It continues across as many polls as needed until
+> the run reaches a terminal state. Passing `waitSecs == nil` therefore genuinely waits until the
+> run finishes (bounded only by a very large internal cap of ~11.5 days, or by cancelling the
+> `ctx` you pass in); a non-nil `waitSecs` bounds the total client-side wait instead. The distinct
+> `ActorStartOptions.WaitForFinish` field is unrelated: it only controls the single server-side
+> wait on the initial `Start` request (max 60s), not the client-side polling loop.
+
 ## Versions and environment variables
 
 `client.Actor(id).Versions()` and `.Version(n)`:
 
 | Method | Description |
 | --- | --- |
-| `Versions().List(ctx, ListOptions)` / `Versions().Create(ctx, def)` | List/create versions. |
+| `Versions().List(ctx, ListOptions)` / `Versions().Iterate(ListOptions, chunkSize *int64)` / `Versions().Create(ctx, def)` | List/iterate/create versions. |
 | `Version(n).Get/Update/Delete(ctx)` | Manage a single version. |
-| `Version(n).EnvVars().List(ctx)` / `.Create(ctx, ActorEnvVar)` | List/create env vars. |
+| `Version(n).EnvVars().List(ctx)` / `.Iterate()` / `.Create(ctx, ActorEnvVar)` | List/iterate/create env vars. |
 | `Version(n).EnvVar(name).Get/Update/Delete(ctx)` | Manage a single env var. |
 
 `ActorEnvVar` fields:

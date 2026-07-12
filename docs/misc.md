@@ -7,7 +7,7 @@ Browse public Actors with `client.Store()`:
 | Method | Description |
 | --- | --- |
 | `List(ctx, StoreListOptions) (PaginationList[ActorStoreListItem], error)` | One page of Store Actors. |
-| `Iterate(StoreListOptions) *StoreActorIterator` | Lazy iterator over all matching Actors. |
+| `Iterate(StoreListOptions, chunkSize *int64) *StoreActorIterator` | Lazy iterator over matching Actors. `Limit` caps the total yielded; `chunkSize` is the page size. |
 
 `StoreListOptions` (all fields optional):
 
@@ -35,7 +35,8 @@ Each item is an `ActorStoreListItem`:
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 ```go
-it := client.Store().Iterate(apify.StoreListOptions{Limit: apify.Ptr(int64(20)), Search: apify.Ptr("scraper")})
+// Limit caps the total number of Actors yielded; the second argument is the per-page size.
+it := client.Store().Iterate(apify.StoreListOptions{Limit: apify.Ptr(int64(20)), Search: apify.Ptr("scraper")}, apify.Ptr(int64(10)))
 for {
 	actor, err := it.Next(ctx)
 	if err != nil {
@@ -81,7 +82,10 @@ user, ok, err := client.Me().Get(ctx)
 if err != nil {
 	log.Fatal(err)
 }
-fmt.Println(user.Username, ok)
+if !ok {
+	log.Fatal("account not found")
+}
+fmt.Println(user.Username)
 
 usage, err := client.Me().MonthlyUsage(ctx)
 if err != nil {

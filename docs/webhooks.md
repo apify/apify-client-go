@@ -9,6 +9,7 @@ Webhooks notify external services when events occur. Access the webhook collecti
 | Method | Description |
 | --- | --- |
 | `List(ctx, ListOptions) (PaginationList[Webhook], error)` | List webhooks. |
+| `Iterate(ListOptions, chunkSize *int64) *ListIterator[Webhook]` | Lazy iterator over matching webhooks. `Limit` caps the total yielded; `chunkSize` is the page size. |
 | `Create(ctx, definition any) (Webhook, error)` | Create a webhook. |
 
 An Actor's or task's webhooks are also listable via `client.Actor(id).Webhooks()` /
@@ -76,7 +77,7 @@ The same values apply to the ad-hoc `ActorStartOptions.Webhooks` element (see
 
 | Method | Description |
 | --- | --- |
-| `WebhookDispatches().List(ctx, ListOptions)` | List dispatches. |
+| `WebhookDispatches().List(ctx, ListOptions)` / `WebhookDispatches().Iterate(ListOptions, chunkSize *int64)` | List/iterate dispatches. |
 | `WebhookDispatch(id).Get(ctx) (WebhookDispatch, bool, error)` | Fetch a dispatch. |
 
 ```go

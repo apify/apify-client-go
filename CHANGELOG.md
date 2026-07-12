@@ -5,6 +5,47 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-10
+
+### Added
+
+- Lazy `Iterate` helpers on every list collection (`Actors`, `Runs`, `Builds`, `Tasks`,
+  `Datasets`, `KeyValueStores`, `RequestQueues`, `Schedules`, `Webhooks`, `WebhookDispatches`,
+  actor versions and env vars) plus dataset-item iteration (`DatasetClient.IterateItems` and the
+  generic `IterateDatasetItems[T]`), backed by a new exported generic iterator type
+  `ListIterator[T]`. As in the reference client's iterable `list()`, the options' `Limit` caps the
+  total number of items yielded across all pages (unset means all), and the per-page size is a
+  separate `chunkSize` argument (nil for the server default).
+- Cursor-based key iteration on the key-value store: `KeyValueStoreClient.IterateKeys` returns a
+  `KeyValueStoreKeysIterator` that lazily walks all keys via `nextExclusiveStartKey`, matching the
+  reference client's iterable `listKeys()`. `Limit` caps the total keys yielded and `chunkSize` is
+  the page size.
+
+### Fixed
+
+- The `Iterate` helpers now honor a caller-set `Offset` on the list options as the starting point
+  (iteration begins there and the cap counts from that offset), instead of silently discarding it.
+  Matches the reference client's `options.offset` handling.
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-07-10T105921Z`.
+- Bumped `ClientVersion` to `0.6.0`.
+- **Breaking:** `StoreCollectionClient.Iterate` now takes a second `chunkSize *int64` argument and
+  treats the options' `Limit` as a total-item cap rather than the per-page size, to match the
+  reference client's iterator semantics. `StoreActorIterator` is now an alias of
+  `ListIterator[ActorStoreListItem]`.
+- Synced the `APISpecVersion` reference in the `README.md` "Versioning" section to match `version.go`.
+
+### Documentation
+
+- Documented how the client-side `Call`/`WaitForFinish` polling relates to `WithTimeout` (each
+  poll asks the server to wait ≤60s, so the per-request timeout never cuts off a `nil` wait).
+- Added a pointer to where API tokens come from (Apify Console → Settings → Integrations).
+- Added the `IterateDatasetItems[T]` signature and a usage example to the storages guide.
+- Added `WithPublicBaseURL` to the `NewClientWithOptions` sample and a note distinguishing
+  `client.Build(id)` from `Actor.Build(...)`.
+
 ## [0.5.0] - 2026-07-09
 
 ### Changed

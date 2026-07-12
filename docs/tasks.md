@@ -8,6 +8,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | Method | Description |
 | --- | --- |
 | `List(ctx, ListOptions) (PaginationList[Task], error)` | List the account's tasks. |
+| `Iterate(ListOptions, chunkSize *int64) *ListIterator[Task]` | Lazy iterator over matching tasks. `Limit` caps the total yielded; `chunkSize` is the page size. |
 | `Create(ctx, definition any) (Task, error)` | Create a new task. |
 
 ### `Task` fields

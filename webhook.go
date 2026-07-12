@@ -25,6 +25,19 @@ func (c *WebhookCollectionClient) List(ctx context.Context, options ListOptions)
 	return listResource[Webhook](ctx, c.ctx, "", params)
 }
 
+// Iterate returns a lazy iterator over the webhooks matching the options, fetching pages on
+// demand. The options' Limit caps the total number of webhooks yielded (unset means all); the
+// per-page size is chunkSize (nil for the server default). Mirrors the reference client's
+// iterable list().
+func (c *WebhookCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[Webhook] {
+	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[Webhook], error) {
+		opts := options
+		opts.Offset = &offset
+		opts.Limit = pageLimitPtr(limit)
+		return c.List(ctx, opts)
+	})
+}
+
 // Create creates a new webhook. webhook is any JSON-serializable webhook definition.
 func (c *WebhookCollectionClient) Create(ctx context.Context, webhook any) (Webhook, error) {
 	return createResource[Webhook](ctx, c.ctx, NewQueryParams(), webhook)

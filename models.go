@@ -5,8 +5,10 @@ import (
 	"time"
 )
 
-// Extra is the catch-all map of unmodelled JSON fields. Every resource model carries one
-// so that additive changes to the API never break deserialization (forward compatibility).
+// Extra is the catch-all map of unmodelled JSON fields. Most resource models carry one so
+// that unknown fields are preserved rather than dropped. Forward compatibility with additive
+// API fields holds for every model regardless: the client never sets DisallowUnknownFields,
+// so encoding/json silently ignores fields a model does not declare.
 type Extra = map[string]json.RawMessage
 
 // unmarshalWithExtra unmarshals data into the typed value v (which must be a pointer to a
