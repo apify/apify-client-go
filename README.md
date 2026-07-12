@@ -72,7 +72,10 @@ read `APIFY_TOKEN` from the environment only as a convenience in `main`).
 ## Configuration
 
 `NewClient` takes functional options. Pass `WithToken` for authentication, plus any other
-options for full control:
+options for full control. `WithToken` is optional: omit it to create an unauthenticated
+client, which can still call endpoints that do not require a token (for example, browsing the
+public [Apify Store](https://apify.com/store)). Most endpoints — anything account-scoped or
+that reads or writes your resources — require a token.
 
 ```go
 client := apify.NewClient(
@@ -89,7 +92,7 @@ client := apify.NewClient(
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `WithToken` | — | API token, sent as a `Bearer` token. |
+| `WithToken` | — | API token, sent as a `Bearer` token. Optional; omit for an unauthenticated client limited to endpoints that need no token. |
 | `WithBaseURL` | `https://api.apify.com` | API base URL; `/v2` is appended automatically. |
 | `WithPublicBaseURL` | API base URL | Base URL used for building public, shareable URLs. |
 | `WithMaxRetries` | `8` | Maximum retries for failed requests. |
