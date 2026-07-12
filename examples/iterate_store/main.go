@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 	ctx := context.Background()
 
 	// Iterate the store lazily, fetching pages of 5 on demand (chunkSize). The options' Limit

@@ -12,7 +12,7 @@
 //
 // # Quick start
 //
-//	client := apify.NewClient("my-api-token")
+//	client := apify.NewClient(apify.WithToken("my-api-token"))
 //
 //	// Start an Actor and wait for it to finish.
 //	run, err := client.Actor("apify/hello-world").Call(ctx, nil, apify.ActorStartOptions{}, nil)
@@ -56,7 +56,7 @@ const (
 
 // ApifyClient is the entry point for interacting with the Apify API.
 //
-// Construct it with [NewClient] (token-only) or [NewClientWithOptions], then obtain
+// Construct it with [NewClient], passing functional options such as [WithToken], then obtain
 // resource clients via the accessor methods, e.g. [ApifyClient.Actor], [ApifyClient.Dataset],
 // [ApifyClient.Run]. It is safe for concurrent use.
 type ApifyClient struct {
@@ -65,7 +65,7 @@ type ApifyClient struct {
 	publicBaseURL string
 }
 
-// clientConfig accumulates the options passed to NewClientWithOptions.
+// clientConfig accumulates the options passed to NewClient.
 type clientConfig struct {
 	token                  string
 	baseURL                string
@@ -78,7 +78,7 @@ type clientConfig struct {
 	isAtHomeFn             func() bool
 }
 
-// Option configures an [ApifyClient]. Pass options to [NewClientWithOptions].
+// Option configures an [ApifyClient]. Pass options to [NewClient].
 type Option func(*clientConfig)
 
 // WithToken sets the API token used for authentication (sent as a Bearer token).
@@ -143,13 +143,14 @@ func defaultIsAtHome() bool {
 	return os.Getenv(envIsAtHome) != ""
 }
 
-// NewClient creates a client authenticated with the given API token and default settings.
-func NewClient(token string) *ApifyClient {
-	return NewClientWithOptions(WithToken(token))
-}
-
-// NewClientWithOptions creates a client configured by the given options.
-func NewClientWithOptions(opts ...Option) *ApifyClient {
+// NewClient creates a client configured by the given functional options.
+//
+// Authentication is supplied via [WithToken]; without it the client can still call
+// endpoints that do not require authentication. Other options ([WithBaseURL],
+// [WithMaxRetries], [WithTimeout], [WithHTTPBackend], ...) tune the transport and behaviour.
+//
+//	client := apify.NewClient(apify.WithToken("my-api-token"))
+func NewClient(opts ...Option) *ApifyClient {
 	cfg := &clientConfig{
 		baseURL:                defaultBaseURL,
 		maxRetries:             defaultMaxRetries,

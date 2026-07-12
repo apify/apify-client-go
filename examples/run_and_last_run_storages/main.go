@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 	ctx := context.Background()
 
 	waitSecs := int64(120)

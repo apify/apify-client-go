@@ -5,6 +5,20 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-12
+
+### Changed
+
+- **Breaking:** Merged the two client constructors into a single `NewClient(opts ...Option)`
+  that takes functional options; the token is now supplied via `WithToken`. Removed
+  `NewClientWithOptions` and the token-only `NewClient(token string)` signature.
+- Bumped `ClientVersion` to `0.7.0`.
+
+### Documentation
+
+- Updated the README, `docs/` pages, and examples to construct the client with
+  `apify.NewClient(apify.WithToken(...))`.
+
 ## [0.6.0] - 2026-07-10
 
 ### Added

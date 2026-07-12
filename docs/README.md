@@ -12,14 +12,15 @@ overview, configuration, error handling, and the full resource table, see the
 All snippets assume a configured client and a context:
 
 ```go
-client := apify.NewClient("my-api-token")
+client := apify.NewClient(apify.WithToken("my-api-token"))
 ctx := context.Background()
 ```
 
-`NewClient` takes the token as an explicit argument — it does **not** read `APIFY_TOKEN` (or
-any other environment variable) automatically. Read it yourself if you want that, e.g.
-`apify.NewClient(os.Getenv("APIFY_TOKEN"))`. Use `apify.NewClientWithOptions(...)` for
-non-default settings (base URL, retries, timeout, user-agent suffix, custom HTTP backend).
+`NewClient` takes functional options; authentication is supplied via `apify.WithToken`. It
+does **not** read `APIFY_TOKEN` (or any other environment variable) automatically. Read it
+yourself if you want that, e.g. `apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))`.
+Pass additional options for non-default settings (base URL, retries, timeout, user-agent
+suffix, custom HTTP backend).
 
 Methods that fetch a single resource return a `(value, ok, error)` triple: a missing
 resource is reported by `ok == false` rather than an error. API failures are returned as

@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 	ctx := context.Background()
 
 	// Start the public hello-world Actor and wait up to 120 seconds for it to finish.

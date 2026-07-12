@@ -45,7 +45,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 	ctx := context.Background()
 
 	// Start an Actor and wait for it to finish.
@@ -66,16 +66,16 @@ func main() {
 
 Get your API token from the [Apify Console](https://console.apify.com/) under **Settings →
 Integrations** (the **Personal API tokens** section). The client never reads it from the
-environment itself: pass the token to `NewClient`/`WithToken` explicitly (the examples above
+environment itself: pass the token via `apify.WithToken` explicitly (the examples above
 read `APIFY_TOKEN` from the environment only as a convenience in `main`).
 
 ## Configuration
 
-Use `NewClient(token)` for a token-only setup, or `NewClientWithOptions` with functional
+`NewClient` takes functional options. Pass `WithToken` for authentication, plus any other
 options for full control:
 
 ```go
-client := apify.NewClientWithOptions(
+client := apify.NewClient(
 	apify.WithToken("my-api-token"),
 	apify.WithBaseURL("https://api.apify.com"),       // /v2 is appended automatically
 	apify.WithPublicBaseURL("https://api.apify.com"), // base for signed, shareable URLs
@@ -174,7 +174,7 @@ func (b *myBackend) Do(req *http.Request) (*http.Response, error) {
 }
 
 func main() {
-	client := apify.NewClientWithOptions(
+	client := apify.NewClient(
 		apify.WithToken("my-api-token"),
 		apify.WithHTTPBackend(&myBackend{inner: http.DefaultClient}),
 	)

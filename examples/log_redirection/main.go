@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 	ctx := context.Background()
 
 	// Start the Actor and return immediately (do not wait for it to finish).

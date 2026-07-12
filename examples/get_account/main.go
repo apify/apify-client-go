@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 
 	user, ok, err := client.Me().Get(context.Background())
 	if err != nil {

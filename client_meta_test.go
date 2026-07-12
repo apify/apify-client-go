@@ -16,7 +16,7 @@ func TestVersionConstants(t *testing.T) {
 }
 
 func TestUserAgentFormat(t *testing.T) {
-	client := NewClient("token")
+	client := NewClient(WithToken("token"))
 	ua := client.UserAgent()
 	if !strings.HasPrefix(ua, "ApifyClient/"+ClientVersion+" (") {
 		t.Fatalf("unexpected user-agent prefix: %q", ua)
@@ -63,7 +63,7 @@ func TestPlatformToken(t *testing.T) {
 // The OS token emitted for the platform the tests run on must be the aligned token for that
 // platform, i.e. the mapping applied to runtime.GOOS.
 func TestUserAgentOSTokenMatchesPlatform(t *testing.T) {
-	ua := NewClient("token").UserAgent()
+	ua := NewClient(WithToken("token")).UserAgent()
 	want := "(" + platformToken(runtime.GOOS) + "; "
 	if !strings.Contains(ua, want) {
 		t.Fatalf("user-agent OS token = %q, want it to contain %q", ua, want)
@@ -72,11 +72,11 @@ func TestUserAgentOSTokenMatchesPlatform(t *testing.T) {
 
 func TestUserAgentIsAtHomeFlag(t *testing.T) {
 	// isAtHome flag must be driven by the platform env var, not flipped arbitrarily.
-	offClient := NewClientWithOptions(WithToken("t"), withIsAtHomeFn(func() bool { return false }))
+	offClient := NewClient(WithToken("t"), withIsAtHomeFn(func() bool { return false }))
 	if !strings.Contains(offClient.UserAgent(), "isAtHome/false") {
 		t.Fatalf("expected isAtHome/false, got %q", offClient.UserAgent())
 	}
-	onClient := NewClientWithOptions(WithToken("t"), withIsAtHomeFn(func() bool { return true }))
+	onClient := NewClient(WithToken("t"), withIsAtHomeFn(func() bool { return true }))
 	if !strings.Contains(onClient.UserAgent(), "isAtHome/true") {
 		t.Fatalf("expected isAtHome/true, got %q", onClient.UserAgent())
 	}
@@ -106,21 +106,21 @@ func TestDefaultIsAtHomeReadsOnlyApifyIsAtHome(t *testing.T) {
 }
 
 func TestUserAgentSuffix(t *testing.T) {
-	client := NewClientWithOptions(WithToken("t"), WithUserAgentSuffix("MyTool/1.0"))
+	client := NewClient(WithToken("t"), WithUserAgentSuffix("MyTool/1.0"))
 	if !strings.HasSuffix(client.UserAgent(), "; MyTool/1.0") {
 		t.Fatalf("expected user-agent suffix, got %q", client.UserAgent())
 	}
 }
 
 func TestBaseURLDefaultAndV2Suffix(t *testing.T) {
-	client := NewClient("t")
+	client := NewClient(WithToken("t"))
 	if client.APIBaseURL() != "https://api.apify.com/v2" {
 		t.Fatalf("unexpected default base URL: %q", client.APIBaseURL())
 	}
 }
 
 func TestBaseURLOverrideAppendsV2(t *testing.T) {
-	client := NewClientWithOptions(WithToken("t"), WithBaseURL("https://api.example.com/"))
+	client := NewClient(WithToken("t"), WithBaseURL("https://api.example.com/"))
 	if client.APIBaseURL() != "https://api.example.com/v2" {
 		t.Fatalf("unexpected base URL: %q", client.APIBaseURL())
 	}

@@ -68,7 +68,7 @@ func constant(status int, body string) []mockResponse {
 // testClient builds a client wired to the given backend with a tiny retry delay so tests
 // are fast.
 func testClient(backend HTTPBackend, maxRetries int) *ApifyClient {
-	return NewClientWithOptions(
+	return NewClient(
 		WithToken("test-token"),
 		WithHTTPBackend(backend),
 		WithMaxRetries(maxRetries),
