@@ -20,7 +20,8 @@ request queues, tasks, schedules, webhooks, the store, users and logs).
 - Convenience helpers: start-and-wait, build/run polling, lazy store and request-queue
   iterators, dataset export, signed public URLs, request-queue locking, and more.
 - Forward-compatible models that keep unknown API fields in an `Extra` map.
-- Zero third-party dependencies (standard library only).
+- A single third-party dependency (`github.com/andybalholm/brotli`, used for Brotli
+  request-body compression); everything else is the Go standard library.
 
 ## Installation
 

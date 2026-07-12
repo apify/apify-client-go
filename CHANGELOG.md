@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that can still call the few token-free endpoints (e.g. resolving a public Actor's default
   build). Added the `examples/public_build_no_token` example (and its `Test examples` smoke
   test) exercising the unauthenticated path end-to-end.
+- Corrected the README Features list, which incorrectly claimed zero third-party dependencies;
+  it now states the single `github.com/andybalholm/brotli` dependency used for Brotli
+  request-body compression.
 
 ## [0.6.0] - 2026-07-10
 
