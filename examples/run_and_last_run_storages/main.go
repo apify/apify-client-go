@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("read dataset: %v", err)
 	}
-	fmt.Printf("Default dataset items: %d\n", items.Count)
+	fmt.Printf("Default dataset items: %d\n", items.Total)
 
 	keys, err := run.KeyValueStore().ListKeys(ctx, apify.ListKeysOptions{})
 	if err != nil {
