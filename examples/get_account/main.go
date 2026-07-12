@@ -9,13 +9,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
-	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
+	client := exampleclient.New()
 
 	user, ok, err := client.Me().Get(context.Background())
 	if err != nil {

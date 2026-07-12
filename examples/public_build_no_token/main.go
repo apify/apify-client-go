@@ -15,15 +15,15 @@ import (
 	"fmt"
 	"log"
 
-	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 // publicActor is a well-known public Actor whose default build is readable without a token.
 const publicActor = "apify/hello-world"
 
 func main() {
-	// No WithToken: an unauthenticated client, usable for token-free endpoints only.
-	client := apify.NewClient()
+	// An unauthenticated client (no API token), usable for token-free endpoints only.
+	client := exampleclient.NewAnonymous()
 	ctx := context.Background()
 
 	// DefaultBuild resolves the Actor's default build by public Actor ID, so no build ID has

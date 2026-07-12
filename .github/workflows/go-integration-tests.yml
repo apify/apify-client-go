@@ -14,6 +14,7 @@ on:
       - 'docs/**'
       - 'README.md'
       - '.github/workflows/go-integration-tests.yml'
+      - '.github/scripts/assert-tests-ran.sh'
   workflow_dispatch:
 
 # Avoid concurrent runs of the same ref racing on the shared test account.
@@ -85,7 +86,15 @@ jobs:
         # programs (TestExample*) and the in-documentation snippet checks (TestDocSnippets*) are
         # exercised by the standalone "Test examples" step below, so they are skipped here to
         # keep the two concerns separate.
-        run: go test ./tests/ -v -timeout 900s -p 1 -parallel 4 -skip '^(TestExample|TestDocSnippets)'
+        #
+        # -json is parsed by assert-tests-ran.sh so the step fails if zero tests actually ran or
+        # every test skipped (a filter that matches nothing, a package with no test functions,
+        # or an all-skip run would otherwise exit green and hide that the API logic never ran).
+        run: |
+          set -o pipefail
+          go test ./tests/ -json -timeout 900s -p 1 -parallel 4 -skip '^(TestExample|TestDocSnippets)' \
+            | tee integration.jsonl
+          ./.github/scripts/assert-tests-ran.sh integration.jsonl "Integration tests"
 
       # Standalone CI step that verifies the documentation examples actually work. It runs the
       # example programs in examples/ end-to-end against the live API (via the TestExample*
@@ -99,5 +108,10 @@ jobs:
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         # Match the integration-test thread cap so the example programs (which hit the live
-        # account) stay gentle on the shared test account.
-        run: go test ./tests/ -v -timeout 900s -p 1 -parallel 4 -run '^(TestExample|TestDocSnippets)'
+        # account) stay gentle on the shared test account. As above, -json is asserted so the
+        # step fails if the example/snippet tests did not actually run or all skipped.
+        run: |
+          set -o pipefail
+          go test ./tests/ -json -timeout 900s -p 1 -parallel 4 -run '^(TestExample|TestDocSnippets)' \
+            | tee examples.jsonl
+          ./.github/scripts/assert-tests-ran.sh examples.jsonl "Test examples"

@@ -209,10 +209,9 @@ func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOption
 }
 
 // IterateItems returns a lazy iterator over the dataset's items, decoding each into a generic
-// json.RawMessage. For typed decoding use [IterateDatasetItems]. See IterateDatasetItems for
+// json.RawMessage. For typed decoding use [IterateDatasetItems]. See [IterateDatasetItems] for
 // how the options' Limit (total cap) and chunkSize (page size) are interpreted, including the
-// caveat that the pagination-total header can lag right after a push and cause an immediate
-// iteration to stop after one page.
+// pagination-total lag caveat.
 func (c *DatasetClient) IterateItems(options DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage] {
 	return IterateDatasetItems[json.RawMessage](c, options, chunkSize)
 }

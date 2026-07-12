@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Merged the two client constructors into a single `NewClient(opts ...Option)`
   that takes functional options; the token is now supplied via `WithToken`. Removed
   `NewClientWithOptions` and the token-only `NewClient(token string)` signature.
+- **Breaking:** Removed `KeyValueStoreClient.GetRecords` and `GetRecordsOptions`; the bulk
+  records-download endpoint is not exposed by the reference JS client and is out of scope.
+- **Breaking:** Removed `UserClient.MonthlyUsageForDate`; `MonthlyUsage` now matches the
+  reference client's parameterless signature (current month only).
+- Aligned the key-value-store keys iterator's cap-exhaustion check with the generic list
+  iterator and clamped a negative page size to the server default in both.
 - Bumped `ClientVersion` to `0.7.0`.
 
 ### Documentation

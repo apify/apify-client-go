@@ -10,13 +10,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
+	client := exampleclient.New()
 	ctx := context.Background()
 
 	// Start the public hello-world Actor and wait up to 120 seconds for it to finish.
@@ -32,5 +32,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to read dataset: %v", err)
 	}
-	fmt.Printf("Default dataset contains %d items\n", page.Count)
+	fmt.Printf("Default dataset contains %d items\n", page.Total)
 }

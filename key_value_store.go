@@ -3,7 +3,6 @@ package apify
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 )
 
 // ListKeysOptions configures [KeyValueStoreClient.ListKeys].
@@ -25,22 +24,6 @@ func (o ListKeysOptions) apply(q *QueryParams) {
 		AddString("exclusiveStartKey", o.ExclusiveStartKey).
 		AddString("prefix", o.Prefix).
 		AddString("collection", o.Collection).
-		AddString("signature", o.Signature)
-}
-
-// GetRecordsOptions configures [KeyValueStoreClient.GetRecords].
-type GetRecordsOptions struct {
-	// Collection restricts the download to a named collection of records.
-	Collection *string
-	// Prefix restricts the download to records with this key prefix.
-	Prefix *string
-	// Signature is a pre-shared URL signature granting access without an API token.
-	Signature *string
-}
-
-func (o GetRecordsOptions) apply(q *QueryParams) {
-	q.AddString("collection", o.Collection).
-		AddString("prefix", o.Prefix).
 		AddString("signature", o.Signature)
 }
 
@@ -104,7 +87,8 @@ func (c *KeyValueStoreClient) ListKeys(ctx context.Context, options ListKeysOpti
 // convention (like the collection Iterate helpers): the options' Limit caps the total number of
 // keys yielded across all pages (unset means all keys), the per-page size is the separate
 // chunkSize argument (nil for the server default), Prefix/Collection/Signature filter every
-// page, and ExclusiveStartKey sets the key to start listing after.
+// page, and ExclusiveStartKey sets the key to start listing after. Limit uses the "0 == unset"
+// convention: a nil Limit, or Limit set to ptr(0), yields all keys rather than zero keys.
 //
 // Because keys are cursor-paginated (not offset/limit paginated) it uses its own
 // KeyValueStoreKeysIterator rather than the generic ListIterator, sharing the cursor mechanics
@@ -124,7 +108,8 @@ type KeyValueStoreKeysIterator struct {
 	buffer       []KeyValueStoreKey
 	pos          int
 	nextStartKey *string // cursor for the next page (nil once the API reports no more keys)
-	remaining    int64   // total-item cap countdown; <0 means "no cap". Valid once started.
+	capped       bool    // whether a total-item cap (options.Limit) is in effect
+	remaining    int64   // items the total-item cap still allows; only meaningful when capped
 	started      bool
 	exhausted    bool
 }
@@ -150,17 +135,23 @@ func (it *KeyValueStoreKeysIterator) Next(ctx context.Context) (*KeyValueStoreKe
 // cap. The per-page limit is the smaller of the remaining total cap and the requested chunk
 // size, so the final page is never over-fetched.
 func (it *KeyValueStoreKeysIterator) fetchPage(ctx context.Context) error {
+	// Initialize the total-item cap on the first fetch, so the very first page is also bounded
+	// by options.Limit (not just the chunk size).
+	if !it.started {
+		it.started = true
+		if l := it.options.Limit; l != nil && *l > 0 {
+			it.capped = true
+			it.remaining = *l
+		}
+	}
+
 	opts := it.options
 	opts.ExclusiveStartKey = it.nextStartKey
 
-	// capLeft is how many items the total cap still allows (0 = "no cap so far", treated as
-	// unset when combined with the chunk size).
+	// capLeft is how many items the total cap still allows (0 = "no cap", treated as unset when
+	// combined with the chunk size).
 	var capLeft int64
-	if !it.started {
-		if l := it.options.Limit; l != nil && *l > 0 {
-			capLeft = *l
-		}
-	} else if it.remaining > 0 {
+	if it.capped {
 		capLeft = it.remaining
 	}
 	opts.Limit = pageLimitPtr(minForLimitParam(capLeft, it.chunkVal()))
@@ -179,20 +170,15 @@ func (it *KeyValueStoreKeysIterator) fetchPage(ctx context.Context) error {
 		it.nextStartKey = nil
 	}
 
-	if !it.started {
-		it.started = true
-		if l := it.options.Limit; l != nil && *l > 0 {
-			it.remaining = *l - n
-		} else {
-			it.remaining = -1 // no cap
-		}
-	} else if it.remaining >= 0 {
+	if it.capped {
 		it.remaining -= n
 	}
 
 	// Stop when the API returns an empty page, reports no more keys (not truncated / no next
-	// cursor), or the total-item cap has been reached.
-	if n == 0 || !page.IsTruncated || it.nextStartKey == nil || it.remaining == 0 {
+	// cursor), or the total-item cap has been reached. The `<= 0` form guards against a server
+	// that ever over-returns past the requested cap. The cap is only consulted when capped, so
+	// uncapped iteration ends solely on the cursor/empty-page conditions.
+	if n == 0 || !page.IsTruncated || it.nextStartKey == nil || (it.capped && it.remaining <= 0) {
 		it.exhausted = true
 	}
 	return nil
@@ -204,19 +190,6 @@ func (it *KeyValueStoreKeysIterator) chunkVal() int64 {
 		return 0
 	}
 	return *it.chunkSize
-}
-
-// GetRecords downloads all records of the store (optionally filtered) as a ZIP archive,
-// returning the raw bytes.
-func (c *KeyValueStoreClient) GetRecords(ctx context.Context, options GetRecordsOptions) ([]byte, error) {
-	params := NewQueryParams()
-	options.apply(params)
-	url := params.applyToURL(c.ctx.subURL("records"))
-	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
-	if err != nil {
-		return nil, err
-	}
-	return resp.body, nil
 }
 
 // RecordExists reports whether a record with the given key exists.

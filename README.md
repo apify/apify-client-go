@@ -61,7 +61,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Got %d items\n", page.Count)
+	fmt.Printf("Got %d items\n", page.Total)
 }
 ```
 

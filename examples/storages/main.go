@@ -11,13 +11,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 
 	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
+	client := exampleclient.New()
 	ctx := context.Background()
 
 	datasetExample(ctx, client)
