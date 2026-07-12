@@ -12,6 +12,9 @@ import "context"
 // means the server default), and a caller-set Offset on the options is honored as the starting
 // point (iteration begins there and yields at most Limit items from that offset onward). This
 // keeps the two clients consistent for callers reasoning about offset/limit/chunk behaviour.
+//
+// The Limit uses the "0 == unset" convention: a nil Limit, or Limit set to ptr(0), yields the
+// whole collection (no cap), rather than zero items.
 type ListIterator[T any] struct {
 	// fetch fetches one page starting at offset. limit is the per-page limit to request
 	// (0 means "unset", i.e. let the server choose). The collection's Iterate method bakes the
@@ -110,9 +113,10 @@ func (it *ListIterator[T]) limitVal() int64 {
 	return *it.limit
 }
 
-// chunkVal returns the per-page size as a plain int64 (0 when unset).
+// chunkVal returns the per-page size as a plain int64 (0 when unset, i.e. server default). A
+// nil or negative chunkSize is treated as unset, matching KeyValueStoreKeysIterator.chunkVal.
 func (it *ListIterator[T]) chunkVal() int64 {
-	if it.chunkSize == nil {
+	if it.chunkSize == nil || *it.chunkSize < 0 {
 		return 0
 	}
 	return *it.chunkSize

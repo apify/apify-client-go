@@ -11,13 +11,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 
 	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := exampleclient.New()
 	ctx := context.Background()
 
 	datasetExample(ctx, client)
@@ -40,7 +40,9 @@ func datasetExample(ctx context.Context, client *apify.ApifyClient) {
 	if err != nil {
 		log.Fatalf("list items: %v", err)
 	}
-	fmt.Printf("Dataset %s has %d items\n", ds.ID, page.Count)
+	// page.Count is the number of items on this page (not the dataset total, which the API
+	// updates asynchronously and can briefly lag right after a push).
+	fmt.Printf("Dataset %s has %d items on this page\n", ds.ID, page.Count)
 }
 
 func keyValueStoreExample(ctx context.Context, client *apify.ApifyClient) {

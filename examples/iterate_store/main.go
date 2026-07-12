@@ -10,13 +10,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := exampleclient.New()
 	ctx := context.Background()
 
 	// Iterate the store lazily, fetching pages of 5 on demand (chunkSize). The options' Limit

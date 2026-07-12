@@ -5,6 +5,33 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-12
+
+### Changed
+
+- **Breaking:** Merged the two client constructors into a single `NewClient(opts ...Option)`
+  that takes functional options; the token is now supplied via `WithToken`. Removed
+  `NewClientWithOptions` and the token-only `NewClient(token string)` signature.
+- **Breaking:** Removed `KeyValueStoreClient.GetRecords` and `GetRecordsOptions`; the bulk
+  records-download endpoint is not exposed by the reference JS client and is out of scope.
+- **Breaking:** Removed `UserClient.MonthlyUsageForDate`; `MonthlyUsage` now matches the
+  reference client's parameterless signature (current month only).
+- Aligned the key-value-store keys iterator's cap-exhaustion check with the generic list
+  iterator and clamped a negative page size to the server default in both.
+- Bumped `ClientVersion` to `0.7.0`.
+
+### Documentation
+
+- Updated the README, `docs/` pages, and examples to construct the client with
+  `apify.NewClient(apify.WithToken(...))`.
+- Documented that `WithToken` is now optional: omitting it yields an unauthenticated client
+  that can still call the few token-free endpoints (e.g. resolving a public Actor's default
+  build). Added the `examples/public_build_no_token` example (and its `Test examples` smoke
+  test) exercising the unauthenticated path end-to-end.
+- Corrected the README Features list, which incorrectly claimed zero third-party dependencies;
+  it now states the single `github.com/andybalholm/brotli` dependency used for Brotli
+  request-body compression.
+
 ## [0.6.0] - 2026-07-10
 
 ### Added

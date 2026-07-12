@@ -13,10 +13,11 @@ import (
 	"os"
 
 	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := exampleclient.New()
 	ctx := context.Background()
 
 	// Start the Actor and return immediately (do not wait for it to finish).

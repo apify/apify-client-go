@@ -30,17 +30,26 @@ func TestGetMonthlyUsage(t *testing.T) {
 	}
 }
 
-func TestGetMonthlyUsageForDate(t *testing.T) {
+// TestGetUserByID covers the public-user getter client.User(id).Get() — GET /v2/users/{userId}
+// — which is distinct from the client.Me() ("users/me") path. It resolves the test account's
+// own userId via Me() first, then fetches it through the by-ID client. Both calls are
+// read-only, so the test stays safe to run concurrently on the shared test account.
+func TestGetUserByID(t *testing.T) {
 	client := requireClient(t)
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	usage, err := client.Me().MonthlyUsageForDate(ctx, "2026-06-01")
-	if err != nil {
-		t.Fatalf("MonthlyUsageForDate: %v", err)
+	me, ok, err := client.Me().Get(ctx)
+	if err != nil || !ok || me.ID == "" {
+		t.Fatalf("Me().Get: ok=%v err=%v id=%q", ok, err, me.ID)
 	}
-	if len(usage) == 0 {
-		t.Fatal("expected a non-empty monthly usage object")
+
+	user, ok, err := client.User(me.ID).Get(ctx)
+	if err != nil {
+		t.Fatalf("User(%q).Get: %v", me.ID, err)
+	}
+	if !ok || user.ID != me.ID {
+		t.Fatalf("expected the public profile of %q, got ok=%v id=%q", me.ID, ok, user.ID)
 	}
 }
 

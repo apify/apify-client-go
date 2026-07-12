@@ -166,7 +166,6 @@ Single store: `client.KeyValueStore(id)`:
 | `SetRecordJSON(ctx, key, value any) error` | Write JSON. |
 | `RecordExists(ctx, key) (bool, error)` | HEAD check. |
 | `DeleteRecord(ctx, key) error` | Delete a record. |
-| `GetRecords(ctx, GetRecordsOptions) ([]byte, error)` | Download all records as a ZIP. |
 | `GetRecordPublicURL(ctx, key) (string, error)` | Signed public record URL. |
 | `CreateKeysPublicURL(ctx, expiresInSecs *int64) (string, error)` | Signed public key-list URL. |
 
@@ -191,9 +190,6 @@ Option structs (all fields optional):
 | | `Collection` | `*string` | Restrict the listing to a named collection of keys. |
 | | `Signature` | `*string` | Pre-shared URL signature (access without a token). |
 | `GetRecordOptions` | `Attachment` | `*bool` | Control the `Content-Disposition: attachment` behaviour. |
-| | `Signature` | `*string` | Pre-shared URL signature (access without a token). |
-| `GetRecordsOptions` | `Collection` | `*string` | Restrict the download to a named collection. |
-| | `Prefix` | `*string` | Restrict the download to records with this key prefix. |
 | | `Signature` | `*string` | Pre-shared URL signature (access without a token). |
 
 Return types:

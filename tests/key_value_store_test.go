@@ -1,7 +1,6 @@
 package apify_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -75,30 +74,6 @@ func TestRecordKeyWithSpecialChars(t *testing.T) {
 	}
 	if err := kvs.DeleteRecord(ctx, key); err != nil {
 		t.Fatalf("delete record: %v", err)
-	}
-}
-
-func TestGetRecordsReturnsZip(t *testing.T) {
-	client := requireClient(t)
-	ctx, cancel := testContext(t)
-	defer cancel()
-
-	store, err := client.KeyValueStores().GetOrCreate(ctx, uniqueName("kvs-zip"))
-	if err != nil {
-		t.Fatalf("get-or-create: %v", err)
-	}
-	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
-	kvs := client.KeyValueStore(store.ID)
-
-	if err := kvs.SetRecordJSON(ctx, "rec1", map[string]any{"a": 1}); err != nil {
-		t.Fatalf("set record: %v", err)
-	}
-	zip, err := kvs.GetRecords(ctx, apify.GetRecordsOptions{})
-	if err != nil {
-		t.Fatalf("get records: %v", err)
-	}
-	if !bytes.HasPrefix(zip, []byte("PK\x03\x04")) {
-		t.Fatalf("expected a ZIP archive, got %d bytes with prefix %q", len(zip), zip[:min(4, len(zip))])
 	}
 }
 

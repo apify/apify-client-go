@@ -20,7 +20,8 @@ request queues, tasks, schedules, webhooks, the store, users and logs).
 - Convenience helpers: start-and-wait, build/run polling, lazy store and request-queue
   iterators, dataset export, signed public URLs, request-queue locking, and more.
 - Forward-compatible models that keep unknown API fields in an `Extra` map.
-- Zero third-party dependencies (standard library only).
+- A single third-party dependency (`github.com/andybalholm/brotli`, used for Brotli
+  request-body compression); everything else is the Go standard library.
 
 ## Installation
 
@@ -45,7 +46,7 @@ import (
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := apify.NewClient(apify.WithToken(os.Getenv("APIFY_TOKEN")))
 	ctx := context.Background()
 
 	// Start an Actor and wait for it to finish.
@@ -60,22 +61,26 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Got %d items\n", page.Count)
+	fmt.Printf("Got %d items\n", page.Total)
 }
 ```
 
 Get your API token from the [Apify Console](https://console.apify.com/) under **Settings →
 Integrations** (the **Personal API tokens** section). The client never reads it from the
-environment itself: pass the token to `NewClient`/`WithToken` explicitly (the examples above
+environment itself: pass the token via `apify.WithToken` explicitly (the examples above
 read `APIFY_TOKEN` from the environment only as a convenience in `main`).
 
 ## Configuration
 
-Use `NewClient(token)` for a token-only setup, or `NewClientWithOptions` with functional
-options for full control:
+`NewClient` takes functional options. Pass `WithToken` for authentication, plus any other
+options for full control. `WithToken` is optional: omit it to create an unauthenticated
+client, which can still call the few endpoints that require no token (for example, resolving a
+public Actor's default build with `client.Actor("apify/hello-world").DefaultBuild(ctx, nil)` —
+see [`examples/public_build_no_token`](examples/public_build_no_token)). Most endpoints —
+anything account-scoped or that reads or writes your resources — require a token.
 
 ```go
-client := apify.NewClientWithOptions(
+client := apify.NewClient(
 	apify.WithToken("my-api-token"),
 	apify.WithBaseURL("https://api.apify.com"),       // /v2 is appended automatically
 	apify.WithPublicBaseURL("https://api.apify.com"), // base for signed, shareable URLs
@@ -89,7 +94,7 @@ client := apify.NewClientWithOptions(
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `WithToken` | — | API token, sent as a `Bearer` token. |
+| `WithToken` | — | API token, sent as a `Bearer` token. Optional; omit for an unauthenticated client limited to endpoints that need no token. |
 | `WithBaseURL` | `https://api.apify.com` | API base URL; `/v2` is appended automatically. |
 | `WithPublicBaseURL` | API base URL | Base URL used for building public, shareable URLs. |
 | `WithMaxRetries` | `8` | Maximum retries for failed requests. |
@@ -174,7 +179,7 @@ func (b *myBackend) Do(req *http.Request) (*http.Response, error) {
 }
 
 func main() {
-	client := apify.NewClientWithOptions(
+	client := apify.NewClient(
 		apify.WithToken("my-api-token"),
 		apify.WithHTTPBackend(&myBackend{inner: http.DefaultClient}),
 	)
@@ -207,12 +212,14 @@ built-in `GITHUB_TOKEN` to push the tag and open the release.
 
 ## Examples
 
-Runnable examples live in [`examples/`](examples) and are exercised in CI. Run any of them
-with your token:
+Runnable examples live in [`examples/`](examples) and are exercised in CI. Most need a token;
+run them like:
 
 ```sh
 APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 ```
+
+`public_build_no_token` needs no token — run it with `go run ./examples/public_build_no_token`.
 
 | Example | Description |
 | --- | --- |
@@ -223,6 +230,7 @@ APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 | `iterate_store` | Lazily iterate Actors in the Apify Store. |
 | `log_redirection` | Start an Actor and stream its log in real time. |
 | `create_build_run_actor` | Create an Actor, build it, run it, and print the run log. |
+| `public_build_no_token` | Fetch a public Actor's default build with an unauthenticated client (no token). |
 
 ## Documentation
 

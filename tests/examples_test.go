@@ -30,3 +30,4 @@ func TestExampleRunAndLastRunStorages(t *testing.T) { runExample(t, "run_and_las
 func TestExampleIterateStore(t *testing.T)          { runExample(t, "iterate_store") }
 func TestExampleLogRedirection(t *testing.T)        { runExample(t, "log_redirection") }
 func TestExampleCreateBuildRunActor(t *testing.T)   { runExample(t, "create_build_run_actor") }
+func TestExamplePublicBuildNoToken(t *testing.T)    { runExample(t, "public_build_no_token") }

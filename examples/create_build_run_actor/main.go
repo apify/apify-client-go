@@ -9,19 +9,25 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
-	"time"
 
 	apify "github.com/apify/apify-client-go"
+	"github.com/apify/apify-client-go/examples/internal/exampleclient"
 )
 
 func main() {
-	client := apify.NewClient(os.Getenv("APIFY_TOKEN"))
+	client := exampleclient.New()
 	ctx := context.Background()
 
-	name := fmt.Sprintf("go-example-%d", time.Now().Unix())
+	// Actor names are unique per account, so use a random suffix to stay collision-free when
+	// this example runs concurrently (e.g. in CI, or alongside the sibling clients' examples on
+	// the same test account).
+	var suffix [6]byte
+	_, _ = rand.Read(suffix[:])
+	name := "go-example-" + hex.EncodeToString(suffix[:])
 	actorDef := map[string]any{
 		"name":     name,
 		"isPublic": false,

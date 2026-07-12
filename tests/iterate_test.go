@@ -246,6 +246,46 @@ func TestIterateKeyValueStoreKeys(t *testing.T) {
 	}
 }
 
+// TestIterateKeyValueStoreKeysWithLimit covers the keys iterator's total-item cap path: with a
+// Limit smaller than the number of stored keys and a still-smaller per-page chunkSize, the cap
+// must be enforced across pages (not just within one page), yielding exactly Limit keys.
+func TestIterateKeyValueStoreKeysWithLimit(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	store, err := client.KeyValueStores().GetOrCreate(ctx, uniqueName("iter-keys-cap"))
+	if err != nil {
+		t.Fatalf("get-or-create store: %v", err)
+	}
+	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
+	kvs := client.KeyValueStore(store.ID)
+
+	for _, key := range []string{"k1", "k2", "k3", "k4", "k5"} {
+		if err := kvs.SetRecordJSON(ctx, key, map[string]any{"k": key}); err != nil {
+			t.Fatalf("set record %s: %v", key, err)
+		}
+	}
+
+	// Limit=3 with chunkSize=2 forces the cap to span two pages (2 + 1) even though 5 keys exist.
+	const capLimit = 3
+	it := kvs.IterateKeys(apify.ListKeysOptions{Limit: ptr(int64(capLimit))}, ptr(int64(2)))
+	got := 0
+	for {
+		key, err := it.Next(ctx)
+		if err != nil {
+			t.Fatalf("iterate keys: %v", err)
+		}
+		if key == nil {
+			break
+		}
+		got++
+	}
+	if got != capLimit {
+		t.Fatalf("expected exactly %d keys yielded (Limit cap), got %d", capLimit, got)
+	}
+}
+
 func TestIterateActorVersions(t *testing.T) {
 	client := requireClient(t)
 	ctx, cancel := testContext(t)
