@@ -22,12 +22,12 @@ yourself if you want that, e.g. `apify.NewClient(apify.WithToken(os.Getenv("APIF
 Pass additional options for non-default settings (base URL, retries, timeout, user-agent
 suffix, custom HTTP backend).
 
-`WithToken` is optional. Omit it to create an unauthenticated client that can still call
-endpoints requiring no token, such as browsing the public Apify Store:
+`WithToken` is optional. Omit it to create an unauthenticated client that can still call the
+few endpoints that require no token, such as fetching a public Actor build by ID:
 
 ```go
 publicClient := apify.NewClient()
-page, err := publicClient.Store().List(ctx, apify.StoreListOptions{})
+build, ok, err := publicClient.Build(buildID).Get(ctx)
 ```
 
 Account-scoped endpoints and anything that reads or writes your resources require a token.

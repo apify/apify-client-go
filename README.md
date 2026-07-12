@@ -73,9 +73,9 @@ read `APIFY_TOKEN` from the environment only as a convenience in `main`).
 
 `NewClient` takes functional options. Pass `WithToken` for authentication, plus any other
 options for full control. `WithToken` is optional: omit it to create an unauthenticated
-client, which can still call endpoints that do not require a token (for example, browsing the
-public [Apify Store](https://apify.com/store)). Most endpoints — anything account-scoped or
-that reads or writes your resources — require a token.
+client, which can still call the few endpoints that require no token (for example, fetching a
+public Actor build by ID with `client.Build(buildID).Get(ctx)`). Most endpoints — anything
+account-scoped or that reads or writes your resources — require a token.
 
 ```go
 client := apify.NewClient(
