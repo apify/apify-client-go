@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the README, `docs/` pages, and examples to construct the client with
   `apify.NewClient(apify.WithToken(...))`.
 - Documented that `WithToken` is now optional: omitting it yields an unauthenticated client
-  that can still call the few token-free endpoints (e.g. fetching a public Actor build by ID).
+  that can still call the few token-free endpoints (e.g. resolving a public Actor's default
+  build). Added the `examples/public_build_no_token` example (and its `Test examples` smoke
+  test) exercising the unauthenticated path end-to-end.
 
 ## [0.6.0] - 2026-07-10
 

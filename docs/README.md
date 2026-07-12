@@ -23,13 +23,19 @@ Pass additional options for non-default settings (base URL, retries, timeout, us
 suffix, custom HTTP backend).
 
 `WithToken` is optional. Omit it to create an unauthenticated client that can still call the
-few endpoints that require no token, such as fetching a public Actor build by ID:
+few endpoints that require no token. For example, resolving and fetching a public Actor's
+default build needs only the public Actor ID (no build ID and no token):
 
 ```go
 publicClient := apify.NewClient()
-build, ok, err := publicClient.Build(buildID).Get(ctx)
+buildClient, err := publicClient.Actor("apify/hello-world").DefaultBuild(ctx, nil)
+if err != nil {
+	log.Fatal(err)
+}
+build, ok, err := buildClient.Get(ctx)
 ```
 
+A runnable version is in [`examples/public_build_no_token`](../examples/public_build_no_token).
 Account-scoped endpoints and anything that reads or writes your resources require a token.
 
 Methods that fetch a single resource return a `(value, ok, error)` triple: a missing
