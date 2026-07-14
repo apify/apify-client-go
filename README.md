@@ -80,16 +80,27 @@ see [`examples/public_build_no_token`](examples/public_build_no_token)). Most en
 anything account-scoped or that reads or writes your resources — require a token.
 
 ```go
-client := apify.NewClient(
-	apify.WithToken("my-api-token"),
-	apify.WithBaseURL("https://api.apify.com"),       // /v2 is appended automatically
-	apify.WithPublicBaseURL("https://api.apify.com"), // base for signed, shareable URLs
-	apify.WithMaxRetries(8),                          // default 8
-	apify.WithMinDelayBetweenRetries(500*time.Millisecond),
-	apify.WithTimeout(360*time.Second), // default 6 minutes
-	apify.WithUserAgentSuffix("MyTool/1.0"),
-	apify.WithHTTPBackend(apify.NewDefaultHTTPBackend()),
+package main
+
+import (
+	"time"
+
+	apify "github.com/apify/apify-client-go"
 )
+
+func main() {
+	client := apify.NewClient(
+		apify.WithToken("my-api-token"),
+		apify.WithBaseURL("https://api.apify.com"),       // /v2 is appended automatically
+		apify.WithPublicBaseURL("https://api.apify.com"), // base for signed, shareable URLs
+		apify.WithMaxRetries(8),                          // default 8
+		apify.WithMinDelayBetweenRetries(500*time.Millisecond),
+		apify.WithTimeout(360*time.Second), // default 6 minutes
+		apify.WithUserAgentSuffix("MyTool/1.0"),
+		apify.WithHTTPBackend(apify.NewDefaultHTTPBackend()),
+	)
+	_ = client
+}
 ```
 
 | Option | Default | Description |
@@ -226,7 +237,7 @@ APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 | `get_account` | Fetch and print the current account details. |
 | `storages` | Create, write to, and read from a dataset, key-value store, and request queue. |
 | `run_store_actor` | Run a Store Actor, wait for it, and read its default dataset. |
-| `run_and_last_run_storages` | Start a run, then fetch the Actor's last run and its storages. |
+| `run_and_last_run_storages` | Start a run, wait for it to finish, then fetch the Actor's last run and its storages. |
 | `iterate_store` | Lazily iterate Actors in the Apify Store. |
 | `log_redirection` | Start an Actor and stream its log in real time. |
 | `create_build_run_actor` | Create an Actor, build it, run it, and print the run log. |

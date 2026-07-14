@@ -90,7 +90,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `LastRunWithOptions(options LastRunOptions) *RunClient` | Client for the last run, filtered by status and/or origin. |
 | `Builds() *BuildCollectionClient` | This Actor's builds. |
 | `Runs() *RunCollectionClient` | This Actor's runs. |
-| `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Versions. |
+| `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Client for a single Actor version (by version number), or a collection client for listing and creating this Actor's versions. |
 | `Webhooks() *WebhookCollectionClient` | This Actor's webhooks. |
 
 > **Note — two different `Build`s.** `Actor.Build(ctx, versionNumber, ActorBuildOptions)` here
