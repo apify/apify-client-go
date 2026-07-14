@@ -5,6 +5,17 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-07-14
+
+### Changed
+
+- Synced against Apify OpenAPI spec `v2-2026-07-13T092445Z`. The spec changes (added `402`
+  and `408` error responses on the synchronous run and `resurrect` endpoints, and relaxed
+  `required` on the run/build/key-value-store/webhook stats sub-schemas) need no code change:
+  error responses are handled generically and stats sub-documents are not modelled as typed
+  fields.
+- Bumped `APISpecVersion` to `v2-2026-07-13T092445Z` and `ClientVersion` to `0.7.1`.
+
 ## [0.7.0] - 2026-07-12
 
 ### Changed
