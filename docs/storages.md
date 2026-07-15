@@ -300,7 +300,7 @@ API (omit it on create):
 
 Return types:
 
-`ListHead`/`ListAndLockHead` return a `RequestQueueHead`:
+`ListHead` returns a `RequestQueueHead`. (`ListAndLockHead` returns the raw API response as `json.RawMessage` - unmarshal it into your own type, or into `RequestQueueHead` if you want the same shape.)
 
 | Field | Type | Meaning |
 |---|---|---|
