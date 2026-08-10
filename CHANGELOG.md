@@ -15,11 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Synced against Apify OpenAPI spec `v2-2026-08-05T133145Z`. The spec changes (nullable-field
-  additions, a new `ErrorType` enum value, new `402`/`404`/`405`/`408`/`409` error responses on
-  several endpoints, a new `ActorNotice` enum, and `operationId` renames) need no other code
-  change: errors are handled generically and `operationId` is not part of this client's public
-  surface.
+- Synced against Apify OpenAPI spec `v2-2026-08-05T133145Z`.
 - Bumped `APISpecVersion` to `v2-2026-08-05T133145Z` and `ClientVersion` to `0.8.0`.
 - Removed the duplicated AI-disclaimer paragraph from `docs/README.md` and the package doc
   comment in `client.go`; it now appears only in the top-level `README.md`.
