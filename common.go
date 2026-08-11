@@ -2,6 +2,7 @@ package apify
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -40,11 +41,8 @@ func isNotFound(err error) bool {
 	}
 	return apiErr.Type == recordNotFoundType ||
 		apiErr.Type == recordOrTokenNotFoundType ||
-		apiErr.HTTPMethod == http_MethodHead
+		apiErr.HTTPMethod == http.MethodHead
 }
-
-// http_MethodHead avoids importing net/http here just for the constant.
-const http_MethodHead = "HEAD"
 
 // QueryParams is an ordered collection of query parameters that omits absent values and
 // encodes booleans as 1/0, matching the Apify API conventions.

@@ -5,6 +5,18 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-08-11
+
+### Changed
+
+- Internal consistency cleanup: request methods that used raw HTTP-method string literals
+  (`"PUT"`, `"DELETE"`, `"POST"`) now use the standard `net/http` method constants, matching
+  the rest of the client. No public interface change.
+- Replaced the non-idiomatic `http_MethodHead` constant with `http.MethodHead`.
+- Extracted the repeated `"urlSigningSecretKey"` literal (used by the dataset and key-value-
+  store public-URL builders) into a single named constant.
+- Bumped `ClientVersion` to `0.8.1`.
+
 ## [0.8.0] - 2026-08-10
 
 ### Added

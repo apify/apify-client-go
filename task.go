@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 )
 
 // TaskClient is a client for a specific Actor task.
@@ -129,7 +130,7 @@ func (c *TaskClient) UpdateInput(ctx context.Context, input any) (json.RawMessag
 		return nil, err
 	}
 	url := c.ctx.subURL("input")
-	resp, err := c.ctx.http.call(ctx, "PUT", url, data, contentTypeJSON, defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, defaultRequestTimeout)
 	if err != nil {
 		return nil, err
 	}

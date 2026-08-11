@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 )
 
 // ListRequestsOptions configures [RequestQueueClient.ListRequests].
@@ -119,7 +120,7 @@ func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQ
 	if err != nil {
 		return RequestQueueOperationInfo{}, err
 	}
-	resp, err := c.ctx.http.call(ctx, "PUT", url, body, contentTypeJSON, defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, body, contentTypeJSON, defaultRequestTimeout)
 	if err != nil {
 		return RequestQueueOperationInfo{}, err
 	}
@@ -129,7 +130,7 @@ func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQ
 // DeleteRequest deletes a request by ID.
 func (c *RequestQueueClient) DeleteRequest(ctx context.Context, id string) error {
 	url := c.ctx.mergedParams(c.withClientKey(NewQueryParams())).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id)))
-	_, err := c.ctx.http.call(ctx, "DELETE", url, nil, "", defaultRequestTimeout)
+	_, err := c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
 	if err != nil && !isNotFound(err) {
 		return err
 	}
@@ -240,7 +241,7 @@ func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, 
 	params.AddInt("lockSecs", &lockSecs).AddBool("forefront", &forefront)
 	c.withClientKey(params)
 	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
-	resp, err := c.ctx.http.call(ctx, "PUT", url, nil, "", defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, nil, "", defaultRequestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +255,7 @@ func (c *RequestQueueClient) DeleteRequestLock(ctx context.Context, id string, f
 	params.AddBool("forefront", &forefront)
 	c.withClientKey(params)
 	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
-	_, err := c.ctx.http.call(ctx, "DELETE", url, nil, "", defaultRequestTimeout)
+	_, err := c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
 	if err != nil && !isNotFound(err) {
 		return err
 	}

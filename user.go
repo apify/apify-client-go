@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 )
 
 // UserClient is a client for accessing user data (/v2/users/{userId} or /v2/users/me).
@@ -61,6 +62,6 @@ func (c *UserClient) UpdateLimits(ctx context.Context, newLimits any) error {
 		return err
 	}
 	url := c.ctx.subURL("limits")
-	_, err = c.ctx.http.call(ctx, "PUT", url, data, contentTypeJSON, defaultRequestTimeout)
+	_, err = c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, defaultRequestTimeout)
 	return err
 }

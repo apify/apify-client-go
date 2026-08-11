@@ -19,6 +19,10 @@ const (
 	hmacSignatureHexLen = 30
 	// base62Alphabet is the alphabet (lowercase first) used to encode the truncated HMAC.
 	base62Alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	// urlSigningSecretExtraKey is the Extra field name the API uses to expose a private
+	// storage's (dataset or key-value store) HMAC signing secret. Consulted by the
+	// dataset/key-value-store public-URL builders to decide whether a URL needs a signature.
+	urlSigningSecretExtraKey = "urlSigningSecretKey"
 )
 
 // createHmacSignature computes an Apify URL-signing signature, byte-for-byte compatible
