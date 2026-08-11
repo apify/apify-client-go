@@ -5,14 +5,6 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.2] - 2026-08-11
-
-### Fixed
-
-- Corrected the `TaskClient.Unpublish` doc comment, which incorrectly claimed write permission
-  to both the task and its Actor is required; verified against the live API that only write
-  permission to the task itself is needed.
-
 ## [0.8.1] - 2026-08-11
 
 ### Changed
@@ -24,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted the repeated `"urlSigningSecretKey"` literal (used by the dataset and key-value-
   store public-URL builders) into a single named constant.
 - Bumped `ClientVersion` to `0.8.1`.
+
+### Fixed
+
+- Corrected the `TaskClient.Unpublish` doc comment, which incorrectly claimed write permission
+  to both the task and its Actor is required; verified against the live API that only write
+  permission to the task itself is needed.
 
 ## [0.8.0] - 2026-08-10
 
