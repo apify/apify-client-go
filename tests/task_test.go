@@ -74,3 +74,39 @@ func TestTaskCRUDFlow(t *testing.T) {
 		t.Fatalf("runs list: %v", err)
 	}
 }
+
+// TestTaskPublishUnpublish exercises Publish/Unpublish against a task whose Actor
+// (apify/hello-world) is not owned by the test account.
+//
+// Publish requires write permission to both the task and its Actor, so it is expected to fail
+// (400 for the missing PublicConfig, or 403 for the unowned Actor - the server may reject on
+// either ground first). Unpublish only requires write permission to the task itself, so it is
+// expected to succeed even though the Actor is unowned, and leaves IsPublic not-true.
+func TestTaskPublishUnpublish(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	task, err := client.Tasks().Create(ctx, taskDef(uniqueName("task-publish")))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer func() { _ = client.Task(task.ID).Delete(ctx) }()
+	tc := client.Task(task.ID)
+
+	if _, err := tc.Publish(ctx); err == nil {
+		t.Fatal("publish: expected an error for an unowned Actor without PublicConfig, got nil")
+	} else if apiErr, ok := apify.AsAPIError(err); !ok {
+		t.Fatalf("publish: expected an *apify.APIError, got %T: %v", err, err)
+	} else if apiErr.StatusCode != 400 && apiErr.StatusCode != 403 {
+		t.Fatalf("publish: expected status 400 or 403, got %d: %v", apiErr.StatusCode, apiErr)
+	}
+
+	unpublished, err := tc.Unpublish(ctx)
+	if err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	if unpublished.IsPublic != nil && *unpublished.IsPublic {
+		t.Fatalf("unpublish: expected IsPublic to not be true, got %v", *unpublished.IsPublic)
+	}
+}

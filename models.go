@@ -157,6 +157,13 @@ type Task struct {
 	CreatedAt *time.Time `json:"createdAt"`
 	// ModifiedAt is when the task was last modified.
 	ModifiedAt *time.Time `json:"modifiedAt"`
+	// IsPublic reports whether the task is published on its public landing page. It is not part
+	// of the documented Task schema in the OpenAPI spec, but the API returns it in practice
+	// (mirroring the reference JS client); use TaskClient.Publish/Unpublish to change it.
+	IsPublic *bool `json:"isPublic,omitempty"`
+	// PublicConfig is the public-facing display configuration of the task's landing page, set
+	// when the task has been configured for publishing (nil otherwise).
+	PublicConfig *TaskPublicConfig `json:"publicConfig,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -165,6 +172,28 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 	type alias Task
 	known := knownJSONKeys(alias{})
 	return unmarshalWithExtra(data, (*alias)(t), known, &t.Extra)
+}
+
+// TaskPublicConfig is the public-facing display configuration of a task's public landing page.
+//
+// The task is published when PublishedAt is set and unpublished when it is nil. PublishedAt is
+// read-only from the client's perspective; use TaskClient.Publish/Unpublish to change the
+// publication state.
+type TaskPublicConfig struct {
+	// PublishedAt is when the task was published, or nil if it is not published.
+	PublishedAt *time.Time `json:"publishedAt"`
+	// SEOTitle is the title shown in search-engine results for the landing page.
+	SEOTitle *string `json:"seoTitle,omitempty"`
+	// SEODescription is the description shown in search-engine results for the landing page.
+	SEODescription *string `json:"seoDescription,omitempty"`
+	// Categorization is a free-form category label for the landing page.
+	Categorization *string `json:"categorization,omitempty"`
+	// InputSchemaFields lists the input schema field names highlighted on the landing page.
+	InputSchemaFields []string `json:"inputSchemaFields,omitempty"`
+	// DatasetName is the display name used for the task's default dataset on the landing page.
+	DatasetName *string `json:"datasetName,omitempty"`
+	// DatasetView is the name of the dataset view shown on the landing page.
+	DatasetView *string `json:"datasetView,omitempty"`
 }
 
 // Dataset stores structured results from Actor runs.

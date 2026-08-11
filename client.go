@@ -1,9 +1,7 @@
 // Package apify is the official, idiomatic Go client for the Apify API
 // (https://docs.apify.com/api/v2).
 //
-// Official, but experimental — AI-generated and AI-maintained. This is an official Apify
-// client, but it is experimental: it is generated and maintained by AI. Review the code
-// before relying on it in production and report issues on the repository.
+// See the top-level README for the AI-generated/AI-maintained disclaimer.
 //
 // It provides a resource-oriented interface that mirrors the official JavaScript and Rust
 // clients: start from an [ApifyClient], then drill down into resources (Actors, runs,

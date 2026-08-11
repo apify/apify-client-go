@@ -33,6 +33,25 @@ func (c *TaskClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
+// Publish publishes the task on its public landing page by setting IsPublic through Update.
+//
+// The task's Actor must be public and the task must already have its public display
+// configuration (PublicConfig) set up. Requires write permission to both the task and its
+// Actor. Publishing an already published task does nothing.
+func (c *TaskClient) Publish(ctx context.Context) (Task, error) {
+	return c.Update(ctx, map[string]any{"isPublic": true})
+}
+
+// Unpublish unpublishes the task from its public landing page by setting IsPublic through
+// Update.
+//
+// The public display configuration (PublicConfig) is preserved, so the task can be published
+// again without re-entering it. Requires write permission to both the task and its Actor.
+// Unpublishing a task that is not published does nothing.
+func (c *TaskClient) Unpublish(ctx context.Context) (Task, error) {
+	return c.Update(ctx, map[string]any{"isPublic": false})
+}
+
 // TaskStartOptions configures starting a task run ([TaskClient.Start]/[TaskClient.Call]).
 //
 // It mirrors [ActorStartOptions] but omits the fields the task run endpoint does not accept

@@ -22,7 +22,21 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Title` | `string` | Human-readable title shown in the UI. |
 | `CreatedAt` | `*time.Time` | When the task was created. |
 | `ModifiedAt` | `*time.Time` | When the task was last modified. |
+| `IsPublic` | `*bool` | Whether the task is published on its public landing page. Not part of the documented Task schema, but returned by the API in practice; use `Publish`/`Unpublish` to change it. |
+| `PublicConfig` | `*TaskPublicConfig` | Public-facing display configuration of the landing page, set once the task has been configured for publishing. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
+
+### `TaskPublicConfig` fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `PublishedAt` | `*time.Time` | When the task was published, or `nil` if it is not published. |
+| `SEOTitle` | `*string` | Title shown in search-engine results for the landing page. |
+| `SEODescription` | `*string` | Description shown in search-engine results for the landing page. |
+| `Categorization` | `*string` | Free-form category label for the landing page. |
+| `InputSchemaFields` | `[]string` | Input schema field names highlighted on the landing page. |
+| `DatasetName` | `*string` | Display name for the task's default dataset on the landing page. |
+| `DatasetView` | `*string` | Name of the dataset view shown on the landing page. |
 
 ## Single task
 
@@ -31,6 +45,8 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Get(ctx) (Task, bool, error)` | Fetch the task. |
 | `Update(ctx, newFields any) (Task, error)` | Update the task. |
 | `Delete(ctx) error` | Delete the task. |
+| `Publish(ctx) (Task, error)` | Publish the task on its public landing page. |
+| `Unpublish(ctx) (Task, error)` | Unpublish the task from its public landing page. |
 | `Start(ctx, input any, TaskStartOptions) (ActorRun, error)` | Start a run (input overrides stored input). |
 | `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. |
 | `GetInput(ctx) (json.RawMessage, bool, error)` | Fetch the stored input. |
@@ -71,5 +87,27 @@ if err != nil {
 }
 if ok {
 	fmt.Printf("last run: %s (%s)\n", lastRun.ID, lastRun.Status)
+}
+```
+
+`Publish`/`Unpublish` toggle the task's public landing page by updating `IsPublic`; both reuse
+the same `PUT /actor-tasks/{id}` endpoint as `Update`. `IsPublic` is a `*bool` (nil-checked
+before use below) since it is not part of the documented Task schema.
+
+```go
+published, err := client.Task("my-task-id").Publish(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+if published.IsPublic != nil {
+	fmt.Println(*published.IsPublic) // true
+}
+
+unpublished, err := client.Task("my-task-id").Unpublish(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+if unpublished.IsPublic != nil {
+	fmt.Println(*unpublished.IsPublic) // false
 }
 ```

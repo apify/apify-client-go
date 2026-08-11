@@ -5,6 +5,21 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-10
+
+### Added
+
+- `TaskClient.Publish`/`Unpublish` methods (thin wrappers around `Update` that set
+  `isPublic`), and `Task.IsPublic`/`PublicConfig` fields with the new `TaskPublicConfig` type,
+  mirroring the reference JS client.
+
+### Changed
+
+- Synced against Apify OpenAPI spec `v2-2026-08-05T133145Z`.
+- Bumped `APISpecVersion` to `v2-2026-08-05T133145Z` and `ClientVersion` to `0.8.0`.
+- Removed the duplicated AI-disclaimer paragraph from `docs/README.md` and the package doc
+  comment in `client.go`; it now appears only in the top-level `README.md`.
+
 ## [0.7.1] - 2026-07-14
 
 ### Changed
