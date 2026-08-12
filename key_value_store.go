@@ -259,7 +259,7 @@ func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string
 		return "", err
 	}
 	if present {
-		if secret := extractString(store.Extra, "urlSigningSecretKey"); secret != "" {
+		if secret := extractString(store.Extra, urlSigningSecretExtraKey); secret != "" {
 			sig := createHmacSignature(secret, key)
 			params.AddString("signature", &sig)
 		}
@@ -278,7 +278,7 @@ func (c *KeyValueStoreClient) CreateKeysPublicURL(ctx context.Context, expiresIn
 		return "", err
 	}
 	if present {
-		if secret := extractString(store.Extra, "urlSigningSecretKey"); secret != "" {
+		if secret := extractString(store.Extra, urlSigningSecretExtraKey); secret != "" {
 			sig := signStorageContent(secret, store.ID, expiresInSecs)
 			params.AddString("signature", &sig)
 		}

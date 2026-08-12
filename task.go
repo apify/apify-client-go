@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 )
 
 // TaskClient is a client for a specific Actor task.
@@ -46,8 +47,9 @@ func (c *TaskClient) Publish(ctx context.Context) (Task, error) {
 // Update.
 //
 // The public display configuration (PublicConfig) is preserved, so the task can be published
-// again without re-entering it. Requires write permission to both the task and its Actor.
-// Unpublishing a task that is not published does nothing.
+// again without re-entering it. Unlike Publish, Unpublish only requires write permission to
+// the task itself - it succeeds even if the task's Actor is unowned or private. Unpublishing
+// a task that is not published does nothing.
 func (c *TaskClient) Unpublish(ctx context.Context) (Task, error) {
 	return c.Update(ctx, map[string]any{"isPublic": false})
 }
@@ -129,7 +131,7 @@ func (c *TaskClient) UpdateInput(ctx context.Context, input any) (json.RawMessag
 		return nil, err
 	}
 	url := c.ctx.subURL("input")
-	resp, err := c.ctx.http.call(ctx, "PUT", url, data, contentTypeJSON, defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, defaultRequestTimeout)
 	if err != nil {
 		return nil, err
 	}

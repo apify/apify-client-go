@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"net/http"
 	"strconv"
 	"time"
 )
@@ -176,7 +177,7 @@ func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error 
 	body := mustMarshal(map[string]any{"eventName": options.EventName, "count": count})
 	url := c.ctx.subURL("charge")
 	headers := map[string]string{chargeIdempotencyHeader: idempotencyKey}
-	_, err := c.ctx.http.callWithHeaders(ctx, "POST", url, body, contentTypeJSON, headers, defaultRequestTimeout)
+	_, err := c.ctx.http.callWithHeaders(ctx, http.MethodPost, url, body, contentTypeJSON, headers, defaultRequestTimeout)
 	return err
 }
 

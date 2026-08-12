@@ -276,7 +276,7 @@ func (c *DatasetClient) CreateItemsPublicURL(ctx context.Context, options Datase
 		return "", err
 	}
 	if present {
-		if secret := extractString(dataset.Extra, "urlSigningSecretKey"); secret != "" {
+		if secret := extractString(dataset.Extra, urlSigningSecretExtraKey); secret != "" {
 			sig := signStorageContent(secret, dataset.ID, expiresInSecs)
 			params.AddString("signature", &sig)
 		}
