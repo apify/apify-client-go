@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Task `isPublic`/`publicConfig` fields this client already implemented; updated the
   `Task.IsPublic` doc comment and `docs/tasks.md` to no longer describe them as undocumented.
 - Bumped `APISpecVersion` to `v2-2026-08-14T072928Z` and `ClientVersion` to `0.8.2`.
+- Updated `README.md`'s documented `APISpecVersion` example, which was stale by two spec
+  versions.
+
+### Fixed
+
+- Corrected the `TaskClient.Unpublish` doc comment (and the matching integration-test
+  comment): the spec's `PUT /actor-tasks/{id}` description now states that both publishing
+  and unpublishing require write permission to the task's Actor, which this client's comment
+  had (incorrectly, per the previous release's changelog) claimed was not the case for
+  unpublishing.
 
 ## [0.8.1] - 2026-08-11
 

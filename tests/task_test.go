@@ -78,10 +78,13 @@ func TestTaskCRUDFlow(t *testing.T) {
 // TestTaskPublishUnpublish exercises Publish/Unpublish against a task whose Actor
 // (apify/hello-world) is not owned by the test account.
 //
-// Publish requires write permission to both the task and its Actor, so it is expected to fail
-// (400 for the missing PublicConfig, or 403 for the unowned Actor - the server may reject on
-// either ground first). Unpublish only requires write permission to the task itself, so it is
-// expected to succeed even though the Actor is unowned, and leaves IsPublic not-true.
+// Publish (like Unpublish) requires write permission to both the task and its Actor, so it is
+// expected to fail (400 for the missing PublicConfig, or 403 for the unowned Actor - the server
+// may reject on either ground first). Unpublish is expected to succeed here because the task is
+// already unpublished (created with IsPublic unset/false) and the API treats setting isPublic to
+// its current value as a no-op, not because Unpublish has a smaller permission requirement than
+// Publish - it does not create/verify an actually-published state on an unowned Actor, which is
+// not achievable via this API (publishing always requires Actor write permission).
 func TestTaskPublishUnpublish(t *testing.T) {
 	client := requireClient(t)
 	ctx, cancel := testContext(t)
