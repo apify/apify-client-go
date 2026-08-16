@@ -157,9 +157,10 @@ type Task struct {
 	CreatedAt *time.Time `json:"createdAt"`
 	// ModifiedAt is when the task was last modified.
 	ModifiedAt *time.Time `json:"modifiedAt"`
-	// IsPublic reports whether the task is published on its public landing page. It is not part
-	// of the documented Task schema in the OpenAPI spec, but the API returns it in practice
-	// (mirroring the reference JS client); use TaskClient.Publish/Unpublish to change it.
+	// IsPublic reports whether the task is published on its public landing page, derived from
+	// PublicConfig.PublishedAt; use TaskClient.Publish/Unpublish to change it. Kept as *bool
+	// (the OpenAPI schema declares a plain boolean) so a missing field can be distinguished
+	// from false.
 	IsPublic *bool `json:"isPublic,omitempty"`
 	// PublicConfig is the public-facing display configuration of the task's landing page, set
 	// when the task has been configured for publishing (nil otherwise).

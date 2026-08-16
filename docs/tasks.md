@@ -22,7 +22,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Title` | `string` | Human-readable title shown in the UI. |
 | `CreatedAt` | `*time.Time` | When the task was created. |
 | `ModifiedAt` | `*time.Time` | When the task was last modified. |
-| `IsPublic` | `*bool` | Whether the task is published on its public landing page. Not part of the documented Task schema, but returned by the API in practice; use `Publish`/`Unpublish` to change it. |
+| `IsPublic` | `*bool` | Whether the task is published on its public landing page, derived from `PublicConfig.PublishedAt`; use `Publish`/`Unpublish` to change it. |
 | `PublicConfig` | `*TaskPublicConfig` | Public-facing display configuration of the landing page, set once the task has been configured for publishing. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
@@ -92,7 +92,7 @@ if ok {
 
 `Publish`/`Unpublish` toggle the task's public landing page by updating `IsPublic`; both reuse
 the same `PUT /actor-tasks/{id}` endpoint as `Update`. `IsPublic` is a `*bool` (nil-checked
-before use below) since it is not part of the documented Task schema.
+before use below) so a missing field can be distinguished from `false`.
 
 ```go
 published, err := client.Task("my-task-id").Publish(ctx)
