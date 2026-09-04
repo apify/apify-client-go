@@ -8,10 +8,12 @@ import (
 
 func taskDef(name string) map[string]any {
 	return map[string]any{
-		"actId":   "apify/hello-world",
-		"name":    name,
-		"options": map[string]any{"build": "latest", "memoryMbytes": 256, "timeoutSecs": 60},
-		"input":   map[string]any{"message": "hello"},
+		"actId":       "apify/hello-world",
+		"name":        name,
+		"title":       name,
+		"description": "Integration test task for the Go client.",
+		"options":     map[string]any{"build": "latest", "memoryMbytes": 256, "timeoutSecs": 60},
+		"input":       map[string]any{"message": "hello"},
 	}
 }
 
@@ -44,6 +46,9 @@ func TestGetTask(t *testing.T) {
 	if err != nil || !ok || got.ID != task.ID {
 		t.Fatalf("get: ok=%v err=%v", ok, err)
 	}
+	if got.Description != "Integration test task for the Go client." {
+		t.Fatalf("get: unexpected description %q", got.Description)
+	}
 }
 
 func TestTaskCRUDFlow(t *testing.T) {
@@ -67,8 +72,16 @@ func TestTaskCRUDFlow(t *testing.T) {
 	if _, ok, err := tc.GetInput(ctx); err != nil || !ok {
 		t.Fatalf("get input: ok=%v err=%v", ok, err)
 	}
-	if _, err := tc.Update(ctx, map[string]any{"name": uniqueName("task-renamed")}); err != nil {
+	renamed := uniqueName("task-renamed")
+	updated, err := tc.Update(ctx, map[string]any{"name": renamed, "description": "Updated description."})
+	if err != nil {
 		t.Fatalf("update: %v", err)
+	}
+	if updated.Name != renamed {
+		t.Fatalf("update: unexpected name %q", updated.Name)
+	}
+	if updated.Description != "Updated description." {
+		t.Fatalf("update: unexpected description %q", updated.Description)
 	}
 	if _, err := tc.Runs().List(ctx, apify.ListOptions{}, apify.RunListOptions{}); err != nil {
 		t.Fatalf("runs list: %v", err)
