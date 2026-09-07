@@ -20,6 +20,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `UserID` | `string` | ID of the user who owns the task. |
 | `Name` | `string` | Technical name of the task. |
 | `Title` | `string` | Human-readable title shown in the UI. |
+| `Description` | `string` | Human-readable summary shown on the task's public landing page. Required, along with `Title`, to publish the task. |
 | `CreatedAt` | `*time.Time` | When the task was created. |
 | `ModifiedAt` | `*time.Time` | When the task was last modified. |
 | `IsPublic` | `*bool` | Whether the task is published on its public landing page, derived from `PublicConfig.PublishedAt`; use `Publish`/`Unpublish` to change it. |

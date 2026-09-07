@@ -153,6 +153,9 @@ type Task struct {
 	Name string `json:"name"`
 	// Title is the human-readable title shown in the UI.
 	Title string `json:"title"`
+	// Description is the human-readable summary shown on the task's public landing page.
+	// Required, along with Title, to publish the task.
+	Description string `json:"description"`
 	// CreatedAt is when the task was created.
 	CreatedAt *time.Time `json:"createdAt"`
 	// ModifiedAt is when the task was last modified.
