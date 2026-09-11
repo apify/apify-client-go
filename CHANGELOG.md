@@ -5,6 +5,20 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-09-11
+
+### Changed
+
+- Synced against Apify OpenAPI spec `v2-2026-09-10T091137Z`. The only change in scope (spec PR
+  documenting `X-Apify-Pagination-*` response headers on 17 more list endpoints, adding the
+  `X-Apify-Pagination-Desc` header, and documenting the `offset`/`limit`/`desc` query parameters
+  on the webhook dispatches list) needs no code change: this client already reads pagination
+  metadata from the JSON response body (`PaginationList`), which already modelled all of these
+  fields, and it already sends `offset`/`limit`/`desc` as query parameters on every list call
+  regardless of per-endpoint spec documentation.
+- Bumped `APISpecVersion` to `v2-2026-09-10T091137Z` and `ClientVersion` to `0.9.1`.
+- Updated `README.md`'s documented `APISpecVersion` example to match.
+
 ## [0.9.0] - 2026-09-04
 
 ### Added
