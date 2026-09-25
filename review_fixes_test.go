@@ -30,6 +30,9 @@ func TestChargeSendsIdempotencyKey(t *testing.T) {
 	if !strings.Contains(backend.lastBody, `"eventName":"my-event"`) {
 		t.Fatalf("unexpected charge body: %s", backend.lastBody)
 	}
+	if !strings.Contains(backend.lastURL, "/actor-runs/run123/charge") {
+		t.Fatalf("expected charge request against /actor-runs/run123/charge, got %q", backend.lastURL)
+	}
 }
 
 // A caller-supplied idempotency key must be used verbatim.

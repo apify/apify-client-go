@@ -39,6 +39,9 @@ func (c *TaskClient) Delete(ctx context.Context) error {
 // The task's Actor must be public and the task must already have its public display
 // configuration (PublicConfig) set up. Requires write permission to both the task and its
 // Actor. Publishing an already published task does nothing.
+//
+// An Actor can have at most 10 published tasks, and an account at most 100; contact Apify
+// support to raise either limit.
 func (c *TaskClient) Publish(ctx context.Context) (Task, error) {
 	return c.Update(ctx, map[string]any{"isPublic": true})
 }

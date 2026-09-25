@@ -46,7 +46,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Get(ctx) (Task, bool, error)` | Fetch the task. |
 | `Update(ctx, newFields any) (Task, error)` | Update the task. |
 | `Delete(ctx) error` | Delete the task. |
-| `Publish(ctx) (Task, error)` | Publish the task on its public landing page. |
+| `Publish(ctx) (Task, error)` | Publish the task on its public landing page. An Actor can have at most 10 published tasks, and an account at most 100 (contact Apify support to raise either limit). |
 | `Unpublish(ctx) (Task, error)` | Unpublish the task from its public landing page. |
 | `Start(ctx, input any, TaskStartOptions) (ActorRun, error)` | Start a run (input overrides stored input). |
 | `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. |

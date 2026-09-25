@@ -65,7 +65,7 @@ The time filters apply only to Actor- and task-scoped collections.
 |---|---|---|
 | `EventName` | `string` | Name of the event to charge for. **Required.** |
 | `Count` | `*int64` | Number of times to charge the event (defaults to 1 when nil). |
-| `IdempotencyKey` | `string` | Deduplicates the charge across retries; auto-generated when empty, so a retried charge is applied at most once. |
+| `IdempotencyKey` | `string` | Deduplicates the charge across retries; auto-generated when empty, so a retried charge is applied at most once. The API requires this header on every charge and expires the key 3 minutes after the charge. |
 
 > Note: unlike most option structs (whose optional fields are pointer-typed — see
 > [docs/README.md](README.md)), `MetamorphOptions` and the string fields of `RunChargeOptions`
