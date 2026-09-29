@@ -41,7 +41,9 @@ type RunChargeOptions struct {
 	// Count is the number of times to charge the event (defaults to 1).
 	Count *int64
 	// IdempotencyKey deduplicates the charge across retries. If empty, one is auto-generated
-	// as "{runId}-{eventName}-{timestampMillis}-{random}", matching the reference client.
+	// as "{runId}-{eventName}-{timestampMillis}-{random}", matching the reference client. The
+	// API requires this header on every charge request; the key expires 3 minutes after the
+	// charge, so a later request reusing it starts a new charge rather than being deduplicated.
 	IdempotencyKey string
 }
 
@@ -164,7 +166,8 @@ func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) 
 // Only meaningful for runs of pay-per-event Actors.
 //
 // An idempotency key is always sent (auto-generated if not provided), so a charge that is
-// retried by the transport is applied at most once, matching the reference client.
+// retried by the transport is applied at most once, matching the reference client. The API
+// requires this header and expires the key 3 minutes after the charge.
 func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error {
 	count := int64(1)
 	if options.Count != nil {

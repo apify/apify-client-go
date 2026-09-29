@@ -5,6 +5,19 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-09-25
+
+### Changed
+
+- Synced against Apify OpenAPI spec `v2-2026-09-24T114302Z` (documentation-only spec change; no
+  client behavior change).
+- Documented that the `charge` idempotency-key header is required by the API and that the key
+  expires 3 minutes after the charge.
+- Documented the task-publish limits (10 published tasks per Actor, 100 per account; contact
+  Apify support to raise either limit).
+- Bumped `APISpecVersion` to `v2-2026-09-24T114302Z` and `ClientVersion` to `0.9.2`.
+- Updated `README.md`'s documented `APISpecVersion` example to match.
+
 ## [0.9.1] - 2026-09-11
 
 ### Changed
