@@ -40,7 +40,7 @@ func (c *WebhookCollectionClient) Iterate(options ListOptions, chunkSize *int64)
 
 // Create creates a new webhook. webhook is any JSON-serializable webhook definition.
 func (c *WebhookCollectionClient) Create(ctx context.Context, webhook any) (Webhook, error) {
-	return createResource[Webhook](ctx, c.ctx, NewQueryParams(), webhook)
+	return createResource[Webhook](ctx, c.ctx, NewQueryParams(), webhook, c.ctx.shortTimeout())
 }
 
 // WebhookClient is a client for a specific webhook (/v2/webhooks/{webhookId}).
@@ -69,7 +69,7 @@ func (c *WebhookClient) Delete(ctx context.Context) error {
 
 // Test dispatches the webhook immediately and returns the resulting dispatch.
 func (c *WebhookClient) Test(ctx context.Context) (WebhookDispatch, error) {
-	return postWithBody[WebhookDispatch](ctx, c.ctx, "test", NewQueryParams(), nil, "")
+	return postWithBody[WebhookDispatch](ctx, c.ctx, "test", NewQueryParams(), nil, "", c.ctx.mediumTimeout())
 }
 
 // Dispatches returns a client for this webhook's dispatch collection.

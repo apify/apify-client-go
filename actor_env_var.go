@@ -29,7 +29,7 @@ func (c *ActorEnvVarCollectionClient) Iterate() *ListIterator[ActorEnvVar] {
 
 // Create creates a new environment variable.
 func (c *ActorEnvVarCollectionClient) Create(ctx context.Context, envVar ActorEnvVar) (ActorEnvVar, error) {
-	return createResource[ActorEnvVar](ctx, c.ctx, NewQueryParams(), envVar)
+	return createResource[ActorEnvVar](ctx, c.ctx, NewQueryParams(), envVar, c.ctx.shortTimeout())
 }
 
 // ActorEnvVarClient is a client for a single environment variable

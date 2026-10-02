@@ -145,7 +145,8 @@ func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultCon
 	if options.ContentType != nil && *options.ContentType != "" {
 		contentType = *options.ContentType
 	}
-	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentType)
+	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
+	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentType, timeout)
 }
 
 // Call starts the Actor and waits (client-side polling) for it to finish.
@@ -179,7 +180,8 @@ func (c *ActorClient) Build(ctx context.Context, versionNumber string, options A
 		AddString("tag", options.Tag).
 		AddBool("useCache", options.UseCache).
 		AddInt("waitForFinish", options.WaitForFinish)
-	return postWithBody[Build](ctx, c.ctx, "builds", params, nil, contentTypeJSON)
+	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
+	return postWithBody[Build](ctx, c.ctx, "builds", params, nil, contentTypeJSON, timeout)
 }
 
 // DefaultBuild resolves the Actor's default build and returns a client for it.
@@ -190,7 +192,8 @@ func (c *ActorClient) DefaultBuild(ctx context.Context, waitForFinish *int64) (*
 	params := NewQueryParams()
 	params.AddInt("waitForFinish", waitForFinish)
 	url := params.applyToURL(c.ctx.subURL("builds/default"))
-	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
+	timeout := extendForServerWait(c.ctx.shortTimeout(), waitForFinish)
+	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +232,7 @@ func (c *ActorClient) ValidateInputForBuild(ctx context.Context, input any, buil
 		params.AddString("build", &build)
 	}
 	url := params.applyToURL(c.ctx.subURL("validate-input"))
-	resp, err := c.ctx.http.call(ctx, http.MethodPost, url, body, contentTypeJSON, defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPost, url, body, contentTypeJSON, c.ctx.shortTimeout())
 	if err != nil {
 		return nil, err
 	}

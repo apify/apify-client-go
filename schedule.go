@@ -34,7 +34,7 @@ func (c *ScheduleCollectionClient) Iterate(options ListOptions, chunkSize *int64
 
 // Create creates a new schedule. schedule is any JSON-serializable schedule definition.
 func (c *ScheduleCollectionClient) Create(ctx context.Context, schedule any) (Schedule, error) {
-	return createResource[Schedule](ctx, c.ctx, NewQueryParams(), schedule)
+	return createResource[Schedule](ctx, c.ctx, NewQueryParams(), schedule, c.ctx.shortTimeout())
 }
 
 // ScheduleClient is a client for a specific schedule (/v2/schedules/{scheduleId}).
@@ -66,5 +66,5 @@ func (c *ScheduleClient) Delete(ctx context.Context) error {
 // A 404 here always means the schedule itself is gone, so it is returned as an error rather
 // than swallowed.
 func (c *ScheduleClient) GetLog(ctx context.Context) ([]ScheduleInvoked, error) {
-	return getResourceRequired[[]ScheduleInvoked](ctx, c.ctx, "log", NewQueryParams())
+	return getResourceRequired[[]ScheduleInvoked](ctx, c.ctx, "log", NewQueryParams(), c.ctx.mediumTimeout())
 }

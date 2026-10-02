@@ -274,14 +274,9 @@ func toSafeID(id string) (string, error) {
 	return safePathSegment(strings.ReplaceAll(id, "/", "~"))
 }
 
-// encodePathSegment validates and percent-encodes a single URL path segment, so that values
-// interpolated into the path (record keys, request IDs) cannot break out of the segment. See
-// [safePathSegment] for what it rejects and why.
-func encodePathSegment(input string) (string, error) {
-	return safePathSegment(input)
-}
-
-// safePathSegment validates value as a single URL path segment and percent-encodes it.
+// safePathSegment validates value as a single URL path segment and percent-encodes it. Used
+// directly to validate a value interpolated into the path below the resource's own id (a
+// record key, a request id), and by [toSafeID] for the id itself.
 //
 // An empty string or a dot segment ("." or "..") is rejected outright rather than encoded:
 // percent-encoding alone is not enough to stop a path-traversal attempt, because a URL parser

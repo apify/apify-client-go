@@ -86,19 +86,40 @@ type retryConfig struct {
 	maxRetries int
 	// minDelayBetweenRetries is doubled on each subsequent retry (exponential backoff).
 	minDelayBetweenRetries time.Duration
-	// timeout is the overall per-request timeout budget. Each attempt's timeout grows
-	// but is capped here.
-	timeout time.Duration
+	// timeoutMax caps the timeout of any single request attempt. It bounds the growth of a
+	// tier's timeout across retries (see attemptTimeout) and the inter-retry delay alike.
+	timeoutMax time.Duration
 }
+
+// timeoutTiers holds the configurable default request timeouts. Every exported method is
+// assigned the tier that fits the expected duration of its request — short for simple metadata
+// reads/writes, medium for listing/batch/trigger operations, long for downloads, uploads and
+// streaming — matching the reference client's timeout tiers. A caller that needs a different
+// bound for one call already has full control via the context.Context every method takes (see
+// the "Cancellation" section of the README): canceling it, or giving it an earlier deadline via
+// context.WithTimeout, overrides whichever tier the method would otherwise use, since
+// doAttempt's context.WithTimeout always resolves to the earlier of the two deadlines.
+type timeoutTiers struct {
+	short  time.Duration
+	medium time.Duration
+	long   time.Duration
+}
+
+// noRequestTimeout means "no client-imposed timeout for this request" — only the caller's
+// context bounds it. Used for the polling requests behind WaitForFinish/Call, which must not be
+// aborted by a fixed per-request budget while legitimately waiting for a job to finish.
+const noRequestTimeout time.Duration = 0
 
 // httpClient is the orchestrating HTTP client shared by every resource client. It owns
 // the backend, the optional API token, the User-Agent, and the retry/timeout policy, and
 // applies them to every request. It is safe for concurrent use and cheap to copy.
 type httpClient struct {
-	backend   HTTPBackend
-	token     string
-	userAgent string
-	retry     retryConfig
+	backend     HTTPBackend
+	token       string
+	userAgent   string
+	retry       retryConfig
+	tiers       timeoutTiers
+	compressors []requestCompressor
 }
 
 // apiResponse is the parsed result of a single API call: the status, headers and the
@@ -129,7 +150,7 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 	// Compress the body once (not per attempt): it is identical on every retry. contentEncoding
 	// is "" when the body was left uncompressed (too small, already compressed, or compression
 	// did not shrink it).
-	sendBody, contentEncoding := maybeCompressRequestBody(body, contentType)
+	sendBody, contentEncoding := maybeCompressRequestBody(body, contentType, c.compressors)
 
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -164,7 +185,7 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 		if !sleepWithContext(ctx, randomizedDelay(delay)) {
 			return nil, ctx.Err()
 		}
-		delay = minDuration(delay*backoffFactor, c.retry.timeout)
+		delay = minDuration(delay*backoffFactor, c.retry.timeoutMax)
 	}
 
 	return nil, lastErr
@@ -185,7 +206,11 @@ func (c *httpClient) applyAuthHeaders(req *http.Request) {
 // contentEncoding, when non-empty, is set as the Content-Encoding header (the body is already
 // compressed with that encoding by the caller).
 func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []byte, contentType, contentEncoding string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
-	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+	attemptCtx := ctx
+	cancel := func() {}
+	if timeout != noRequestTimeout {
+		attemptCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
 	defer cancel()
 
 	var reader io.Reader
@@ -234,14 +259,35 @@ type requestCompressor struct {
 	compress func(body []byte) ([]byte, error)
 }
 
-// requestCompressors lists the supported request-body codecs in preference order. Brotli is
-// preferred (it typically achieves a better ratio than gzip), and gzip is the fallback — the
-// same brotli-then-gzip preference the reference client uses. Both paths are reachable:
-// maybeCompressRequestBody falls through to gzip whenever brotli errors or fails to shrink the
-// body, and finally to an uncompressed body if neither codec helps.
-var requestCompressors = []requestCompressor{
-	{encoding: contentEncodingBrotli, compress: brotliCompress},
-	{encoding: contentEncodingGzip, compress: gzipCompress},
+// RequestCompression selects which codec compresses request bodies (see [WithRequestCompression]).
+type RequestCompression int
+
+const (
+	// RequestCompressionAuto prefers brotli (typically a better ratio) and falls back to gzip
+	// when brotli errors or fails to shrink the body; this is the default. Matches the
+	// reference client's brotli-then-gzip preference.
+	RequestCompressionAuto RequestCompression = iota
+	// RequestCompressionBrotli always uses brotli; a body it does not shrink is sent
+	// uncompressed rather than falling back to gzip.
+	RequestCompressionBrotli
+	// RequestCompressionGzip always uses gzip; a body it does not shrink is sent uncompressed.
+	RequestCompressionGzip
+)
+
+// compressorsFor returns the codec(s) maybeCompressRequestBody tries, in preference order, for
+// the given [RequestCompression] choice.
+func compressorsFor(algo RequestCompression) []requestCompressor {
+	switch algo {
+	case RequestCompressionBrotli:
+		return []requestCompressor{{encoding: contentEncodingBrotli, compress: brotliCompress}}
+	case RequestCompressionGzip:
+		return []requestCompressor{{encoding: contentEncodingGzip, compress: gzipCompress}}
+	default:
+		return []requestCompressor{
+			{encoding: contentEncodingBrotli, compress: brotliCompress},
+			{encoding: contentEncodingGzip, compress: gzipCompress},
+		}
+	}
 }
 
 // compressBody runs body through the streaming writer built by newWriter and returns the
@@ -274,19 +320,19 @@ func gzipCompress(body []byte) ([]byte, error) {
 // value ("" when the body is sent uncompressed).
 //
 // This mirrors the reference client, which compresses request payloads above a 1 KiB threshold
-// to save upload bandwidth, preferring brotli and falling back to gzip. Compression is
-// best-effort: brotli is tried first, then gzip; if a codec errors or does not actually shrink
-// the body (e.g. an already-compressed payload the content type did not flag), the next codec is
-// tried, and if none help the original body is sent uncompressed rather than failing the
-// request.
-func maybeCompressRequestBody(body []byte, contentType string) ([]byte, string) {
+// to save upload bandwidth. compressors is the configured codec list (see
+// [RequestCompression]/[WithRequestCompression]), tried in order; if a codec errors or does not
+// actually shrink the body (e.g. an already-compressed payload the content type did not flag),
+// the next one is tried, and if none help the original body is sent uncompressed rather than
+// failing the request.
+func maybeCompressRequestBody(body []byte, contentType string, compressors []requestCompressor) ([]byte, string) {
 	if len(body) < minCompressRequestBytes {
 		return body, ""
 	}
 	if !isCompressibleContentType(contentType) {
 		return body, ""
 	}
-	return compressWith(body, requestCompressors)
+	return compressWith(body, compressors)
 }
 
 // Media-type prefixes whose payloads already carry their own compression, so running them
@@ -404,15 +450,20 @@ func compressWith(body []byte, compressors []requestCompressor) ([]byte, string)
 //
 // The first attempt uses the per-endpoint base timeout; each retry doubles it so a
 // slow-but-progressing connection gets more time, while never exceeding the overall budget.
+// base == noRequestTimeout is returned unchanged: such a request grows no timeout of its own
+// across retries, relying solely on the caller's context.
 func (c *httpClient) attemptTimeout(base time.Duration, attempt int) time.Duration {
+	if base == noRequestTimeout {
+		return noRequestTimeout
+	}
 	scaled := base
 	for i := 1; i < attempt; i++ {
 		scaled *= 2
-		if scaled >= c.retry.timeout {
-			return c.retry.timeout
+		if scaled >= c.retry.timeoutMax {
+			return c.retry.timeoutMax
 		}
 	}
-	return minDuration(scaled, c.retry.timeout)
+	return minDuration(scaled, c.retry.timeoutMax)
 }
 
 // isStatusRetryable reports whether a non-success status should be retried. We retry 429

@@ -100,7 +100,7 @@ func (c *RunClient) Get(ctx context.Context) (ActorRun, bool, error) {
 func (c *RunClient) GetWithWait(ctx context.Context, waitForFinishSecs *int64) (ActorRun, bool, error) {
 	params := NewQueryParams()
 	params.AddInt("waitForFinish", waitForFinishSecs)
-	return getResource[ActorRun](ctx, c.ctx, "", params)
+	return getResourceWithServerWait[ActorRun](ctx, c.ctx, params, waitForFinishSecs)
 }
 
 // Update updates the run with the given fields and returns the updated object.
@@ -120,7 +120,7 @@ func (c *RunClient) Delete(ctx context.Context) error {
 func (c *RunClient) Abort(ctx context.Context, gracefully *bool) (ActorRun, error) {
 	params := NewQueryParams()
 	params.AddBool("gracefully", gracefully)
-	return postWithBody[ActorRun](ctx, c.ctx, "abort", params, nil, "")
+	return postWithBody[ActorRun](ctx, c.ctx, "abort", params, nil, "", c.ctx.mediumTimeout())
 }
 
 // MetamorphOptions configures [RunClient.Metamorph].
@@ -169,19 +169,19 @@ func (c *RunClient) metamorphWithBody(ctx context.Context, targetActorID string,
 	if contentType == "" {
 		contentType = defaultContentType
 	}
-	return postWithBody[ActorRun](ctx, c.ctx, "metamorph", params, body, contentType)
+	return postWithBody[ActorRun](ctx, c.ctx, "metamorph", params, body, contentType, c.ctx.mediumTimeout())
 }
 
 // Reboot reboots the run (restarts its container while keeping the same run).
 func (c *RunClient) Reboot(ctx context.Context) (ActorRun, error) {
-	return postWithBody[ActorRun](ctx, c.ctx, "reboot", NewQueryParams(), nil, "")
+	return postWithBody[ActorRun](ctx, c.ctx, "reboot", NewQueryParams(), nil, "", c.ctx.mediumTimeout())
 }
 
 // Resurrect resurrects a finished run, starting it again from the beginning.
 func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) (ActorRun, error) {
 	params := NewQueryParams()
 	options.apply(params)
-	return postWithBody[ActorRun](ctx, c.ctx, "resurrect", params, nil, "")
+	return postWithBody[ActorRun](ctx, c.ctx, "resurrect", params, nil, "", c.ctx.mediumTimeout())
 }
 
 // Charge charges for a pay-per-event Actor run: it records occurrences of a named event.
@@ -202,7 +202,7 @@ func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error 
 	body := mustMarshal(map[string]any{"eventName": options.EventName, "count": count})
 	url := c.ctx.subURL("charge")
 	headers := map[string]string{chargeIdempotencyHeader: idempotencyKey}
-	_, err := c.ctx.http.callWithHeaders(ctx, http.MethodPost, url, body, contentTypeJSON, headers, defaultRequestTimeout)
+	_, err := c.ctx.http.callWithHeaders(ctx, http.MethodPost, url, body, contentTypeJSON, headers, c.ctx.shortTimeout())
 	return err
 }
 

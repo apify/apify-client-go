@@ -211,6 +211,13 @@ func TestPathTraversalRejected(t *testing.T) {
 			_, _, err := client.RequestQueue("q1").GetRequest(context.Background(), "..")
 			return err
 		}},
+		{"prolong request lock", func() error {
+			_, err := client.RequestQueue("q1").ProlongRequestLock(context.Background(), "..", 30, false)
+			return err
+		}},
+		{"delete request lock", func() error {
+			return client.RequestQueue("q1").DeleteRequestLock(context.Background(), "..", false)
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -221,6 +228,25 @@ func TestPathTraversalRejected(t *testing.T) {
 	}
 	if backend.calls != 0 {
 		t.Fatalf("a dot-segment id must be rejected before any API call, got %d calls", backend.calls)
+	}
+}
+
+// Every RequestQueueClient method that sends a request — including the ones that bypass the
+// shared base.go CRUD helpers (ProlongRequestLock, DeleteRequestLock) — must fail fast on a
+// queue built with an invalid id, instead of sending a request built from it.
+func TestRequestQueueLockMethodsFailFastOnInvalidQueueID(t *testing.T) {
+	backend := &mockBackend{responses: okData()}
+	client := testClient(backend, 0)
+	queue := client.RequestQueue("..")
+
+	if _, err := queue.ProlongRequestLock(context.Background(), "req1", 30, false); err == nil {
+		t.Fatal("expected ProlongRequestLock to fail fast on an invalid queue id")
+	}
+	if err := queue.DeleteRequestLock(context.Background(), "req1", false); err == nil {
+		t.Fatal("expected DeleteRequestLock to fail fast on an invalid queue id")
+	}
+	if backend.calls != 0 {
+		t.Fatalf("an invalid queue id must be rejected before any API call, got %d calls", backend.calls)
 	}
 }
 
@@ -486,6 +512,158 @@ func TestIterateDatasetItemsUsesScannedCount(t *testing.T) {
 	}
 	if backend.calls != 2 {
 		t.Fatalf("expected exactly 2 page fetches, got %d", backend.calls)
+	}
+}
+
+// extendForServerWait extends the base timeout by the requested server-side wait (capped at
+// maxWaitForFinishHoldSecs), matching the reference client's timeoutForWaitForFinish.
+func TestExtendForServerWait(t *testing.T) {
+	cases := []struct {
+		name             string
+		base             time.Duration
+		waitForFinishSec *int64
+		want             time.Duration
+	}{
+		{"nil wait leaves base unchanged", 5 * time.Second, nil, 5 * time.Second},
+		{"zero wait leaves base unchanged", 5 * time.Second, Ptr(int64(0)), 5 * time.Second},
+		{"negative wait leaves base unchanged", 5 * time.Second, Ptr(int64(-1)), 5 * time.Second},
+		{"wait under the cap adds its full duration", 5 * time.Second, Ptr(int64(30)), 35 * time.Second},
+		{"wait over the cap is capped at 60s", 5 * time.Second, Ptr(int64(999)), 65 * time.Second},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := extendForServerWait(c.base, c.waitForFinishSec); got != c.want {
+				t.Errorf("extendForServerWait(%v, %v) = %v, want %v", c.base, c.waitForFinishSec, got, c.want)
+			}
+		})
+	}
+}
+
+// blockingBackend is an HTTPBackend that blocks until the request's context is done, then
+// returns the context's error. It simulates a slow/unresponsive server for exercising
+// client-side timeout behavior deterministically (no real network or sleep-based flakiness).
+type blockingBackend struct{}
+
+func (blockingBackend) Do(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+// A metadata call (Get, which uses the "short" tier) must be aborted by the client once the
+// short tier elapses, even though the caller's own context has no deadline of its own.
+func TestShortTierTimesOutMetadataCall(t *testing.T) {
+	client := NewClient(
+		WithToken("t"),
+		WithHTTPBackend(blockingBackend{}),
+		WithMaxRetries(0),
+		WithTimeoutShort(30*time.Millisecond),
+	)
+
+	start := time.Now()
+	_, _, err := client.Actor("some-actor").Get(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected a timeout error from a backend that never responds")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("expected the short tier (30ms) to abort the request quickly, took %v", elapsed)
+	}
+}
+
+// WaitForFinish's polling request must NOT be bounded by the short tier (it uses
+// noRequestTimeout): with an unresponsive backend, it is the caller's own context deadline that
+// ends the call, not a tiny configured short tier.
+func TestWaitForFinishPollIgnoresShortTier(t *testing.T) {
+	client := NewClient(
+		WithToken("t"),
+		WithHTTPBackend(blockingBackend{}),
+		WithMaxRetries(0),
+		WithTimeoutShort(10*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := client.Run("run1").WaitForFinish(ctx, Ptr(int64(1)))
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error once the caller's context deadline is reached")
+	}
+	// If the 10ms short tier were (wrongly) applied to the poll, this would return almost
+	// instantly instead of waiting for the ~150ms caller deadline.
+	if elapsed < 100*time.Millisecond {
+		t.Fatalf("expected the poll to run until the caller's context deadline (~150ms), returned after %v", elapsed)
+	}
+}
+
+// BatchAddRequests must reject an oversized request before sending anything: earlier batches
+// before the oversized one must not go out.
+func TestBatchAddRequestsRejectsOversizedRequestBeforeSendingAnything(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":{"processedRequests":[],"unprocessedRequests":[]}}`)}
+	client := testClient(backend, 0)
+
+	requests := make([]RequestQueueRequest, 30) // more than one batch's worth
+	for i := range requests {
+		requests[i] = RequestQueueRequest{URL: "https://example.com"}
+	}
+	// A URL alone this long exceeds payloadSizeLimitBytes, so this one request can never fit a
+	// batch of its own.
+	requests[29].URL = "https://example.com/" + strings.Repeat("a", payloadSizeLimitBytes)
+
+	_, err := client.RequestQueue("q1").BatchAddRequests(context.Background(), requests, false)
+	if err == nil {
+		t.Fatal("expected an error for an oversized request")
+	}
+	if !strings.Contains(err.Error(), "index 29") {
+		t.Fatalf("expected the error to name the request's index (29), got: %v", err)
+	}
+	if backend.calls != 0 {
+		t.Fatalf("an oversized request must be rejected before any batch is sent, got %d calls", backend.calls)
+	}
+}
+
+// BatchAddRequests must split a batch early when the next request would push it over the byte
+// limit, even though both fit the 25-request count limit.
+func TestBatchAddRequestsSplitsByByteSize(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":{"processedRequests":[],"unprocessedRequests":[]}}`)}
+	client := testClient(backend, 0)
+
+	// Two requests whose combined JSON exceeds the payload limit, but each fits alone.
+	big := strings.Repeat("a", payloadSizeLimitBytes/2)
+	requests := []RequestQueueRequest{
+		{URL: "https://example.com/" + big},
+		{URL: "https://example.com/" + big},
+	}
+
+	result, err := client.RequestQueue("q1").BatchAddRequests(context.Background(), requests, false)
+	if err != nil {
+		t.Fatalf("batch add: %v", err)
+	}
+	_ = result
+	if backend.calls != 2 {
+		t.Fatalf("expected the two oversized-together requests to split into 2 batches, got %d calls", backend.calls)
+	}
+}
+
+// BatchAddRequests sends each batch's body as a single JSON array assembled from the requests'
+// pre-serialized JSON, not a re-marshaled slice.
+func TestBatchAddRequestsSendsJSONArrayBody(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":{"processedRequests":[],"unprocessedRequests":[]}}`)}
+	client := testClient(backend, 0)
+
+	requests := []RequestQueueRequest{{URL: "https://example.com/a"}, {URL: "https://example.com/b"}}
+	if _, err := client.RequestQueue("q1").BatchAddRequests(context.Background(), requests, false); err != nil {
+		t.Fatalf("batch add: %v", err)
+	}
+	var decoded []RequestQueueRequest
+	if err := json.Unmarshal([]byte(backend.lastBody), &decoded); err != nil {
+		t.Fatalf("batch body is not a valid JSON array: %v (body: %s)", err, backend.lastBody)
+	}
+	if len(decoded) != 2 || decoded[0].URL != requests[0].URL || decoded[1].URL != requests[1].URL {
+		t.Fatalf("unexpected decoded batch body: %+v", decoded)
 	}
 }
 

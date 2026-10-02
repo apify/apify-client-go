@@ -67,12 +67,12 @@ func (c *BuildClient) Get(ctx context.Context) (Build, bool, error) {
 func (c *BuildClient) GetWithWait(ctx context.Context, waitForFinishSecs *int64) (Build, bool, error) {
 	params := NewQueryParams()
 	params.AddInt("waitForFinish", waitForFinishSecs)
-	return getResource[Build](ctx, c.ctx, "", params)
+	return getResourceWithServerWait[Build](ctx, c.ctx, params, waitForFinishSecs)
 }
 
 // Abort aborts the build and returns its updated state.
 func (c *BuildClient) Abort(ctx context.Context) (Build, error) {
-	return postWithBody[Build](ctx, c.ctx, "abort", NewQueryParams(), nil, "")
+	return postWithBody[Build](ctx, c.ctx, "abort", NewQueryParams(), nil, "", c.ctx.shortTimeout())
 }
 
 // Delete deletes the build.

@@ -22,9 +22,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the reference client's `InvalidRequestError`/`UnauthorizedError`/.../`ServerError` subclasses
   (Go has no exception hierarchy to mirror them with).
 - `ScheduleInvoked`, the typed entry of `ScheduleClient.GetLog`'s invocation log.
+- `WithTimeoutShort`/`WithTimeoutMedium`/`WithTimeoutLong`/`WithTimeoutMax`: configurable
+  per-operation default request timeouts (5s/30s/360s/360s), replacing a flat 360s timeout for
+  every call. Every method is assigned the tier matching its expected duration (metadata
+  reads/writes are `short`, listing/batch/trigger calls are `medium`, downloads/uploads/
+  streaming are `long`); the polling behind `WaitForFinish`/`Call` runs with no client-imposed
+  timeout, and a `waitForFinishSecs`/`WaitForFinish` parameter extends its tier to cover the
+  requested server-side hold. `WithTimeout` is kept as an alias for `WithTimeoutMax`. Matches
+  the reference client's timeout tiers; its parallel per-call `timeoutSecs`/`signal` options are
+  not ported, since every method here already takes a `context.Context`, which composes with a
+  tier's timeout to the same effect.
+- `WithRequestCompression`: choose the request-body compression codec (`RequestCompressionAuto`
+  — the existing brotli-then-gzip default —, `RequestCompressionBrotli`, or
+  `RequestCompressionGzip`). Matches the reference client's `compression` constructor option.
 
 ### Fixed
 
+- `RequestQueueClient.BatchAddRequests` now measures the whole input before sending anything,
+  splitting into batches that respect both the API's 25-request limit and its (effective, after
+  a small safety margin) 9 MiB payload-size limit — matching the public `@apify/consts`
+  `MAX_PAYLOAD_SIZE_BYTES`. Previously it only chunked by count, so a batch of up to 25 large
+  requests could exceed the server's payload limit as a single oversized request. A request too
+  large for a batch of its own now fails the whole call before any batch is sent (naming the
+  request's index), instead of after every batch before it has already gone out. Matches the
+  reference client's `splitIntoJsonArrayBatches`, minus its automatic retry of a batch's
+  `unprocessedRequests`.
 - A caller-supplied resource ID, record key or request ID that is empty or a dot segment
   (`.`/`..`) is now rejected with an error instead of being embedded verbatim in the request
   path: a URL parser or intermediate proxy can resolve such a segment after this client has
@@ -69,9 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bumped `APISpecVersion` to `v2-2026-10-01T153946Z`. The rest of the spec delta (relaxed
-  rate-limiting documentation and a dropped "contact support" note on task-publish limits) is
-  prose only and needs no code change.
+- Bumped `APISpecVersion` to `v2-2026-10-01T153946Z`.
 - Bumped `ClientVersion` to `0.10.0`.
 - Updated `README.md`'s documented `APISpecVersion` example to match.
 

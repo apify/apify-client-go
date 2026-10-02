@@ -101,7 +101,8 @@ func (c *TaskClient) Start(ctx context.Context, input any, options TaskStartOpti
 	if err != nil {
 		return ActorRun{}, err
 	}
-	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentTypeJSON)
+	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
+	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentTypeJSON, timeout)
 }
 
 // Call starts the task and waits (client-side polling) for it to finish. waitSecs bounds the
@@ -119,7 +120,7 @@ func (c *TaskClient) Call(ctx context.Context, input any, options TaskStartOptio
 // A 404 here always means the task itself is gone, so it is returned as an error rather than
 // swallowed.
 func (c *TaskClient) GetInput(ctx context.Context) (json.RawMessage, error) {
-	resp, err := getRawRequired(ctx, c.ctx, "input", NewQueryParams())
+	resp, err := getRawRequired(ctx, c.ctx, "input", NewQueryParams(), c.ctx.shortTimeout())
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func (c *TaskClient) UpdateInput(ctx context.Context, input any) (json.RawMessag
 		return nil, err
 	}
 	url := c.ctx.subURL("input")
-	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, c.ctx.shortTimeout())
 	if err != nil {
 		return nil, err
 	}

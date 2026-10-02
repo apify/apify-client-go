@@ -48,7 +48,7 @@ func (c *LogClient) Get(ctx context.Context) (string, bool, error) {
 func (c *LogClient) GetWithOptions(ctx context.Context, options LogOptions) (string, bool, error) {
 	params := NewQueryParams()
 	options.apply(params)
-	resp, err := getRawRequired(ctx, c.ctx, "", params)
+	resp, err := getRawRequired(ctx, c.ctx, "", params, c.ctx.longTimeout())
 	if err != nil {
 		if c.ctx.hasOwnID && isNotFound(err) {
 			return "", false, nil

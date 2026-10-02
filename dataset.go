@@ -163,7 +163,7 @@ func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options Data
 	params := NewQueryParams()
 	options.apply(params)
 	url := params.applyToURL(c.ctx.subURL("items"))
-	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", c.ctx.longTimeout())
 	if err != nil {
 		return result, err
 	}
@@ -232,7 +232,7 @@ func (c *DatasetClient) DownloadItems(ctx context.Context, format DownloadItemsF
 	params.AddString("format", &fmtStr)
 	options.apply(params)
 	url := params.applyToURL(c.ctx.subURL("items"))
-	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", c.ctx.longTimeout())
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (c *DatasetClient) PushItems(ctx context.Context, items any) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.ctx.http.call(ctx, http.MethodPost, c.ctx.subURL("items"), body, contentTypeJSONCharset, defaultRequestTimeout)
+	_, err = c.ctx.http.call(ctx, http.MethodPost, c.ctx.subURL("items"), body, contentTypeJSONCharset, c.ctx.mediumTimeout())
 	return err
 }
 
@@ -256,7 +256,7 @@ func (c *DatasetClient) PushItems(ctx context.Context, items any) error {
 // it), so it is returned as an error rather than swallowed: unlike Get, there is no
 // presence-reporting bool.
 func (c *DatasetClient) GetStatistics(ctx context.Context) (json.RawMessage, error) {
-	resp, err := getRawRequired(ctx, c.ctx, "statistics", NewQueryParams())
+	resp, err := getRawRequired(ctx, c.ctx, "statistics", NewQueryParams(), c.ctx.shortTimeout())
 	if err != nil {
 		return nil, err
 	}

@@ -55,5 +55,5 @@ func (c *ActorCollectionClient) Iterate(options ActorListOptions, chunkSize *int
 
 // Create creates a new Actor. actor is any JSON-serializable Actor definition.
 func (c *ActorCollectionClient) Create(ctx context.Context, actor any) (Actor, error) {
-	return createResource[Actor](ctx, c.ctx, NewQueryParams(), actor)
+	return createResource[Actor](ctx, c.ctx, NewQueryParams(), actor, c.ctx.mediumTimeout())
 }
