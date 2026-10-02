@@ -20,7 +20,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `UserID` | `string` | ID of the user who owns the task. |
 | `Name` | `string` | Technical name of the task. |
 | `Title` | `string` | Human-readable title shown in the UI. |
-| `Description` | `string` | Human-readable summary shown on the task's public landing page. Required, along with `Title`, to publish the task. |
+| `Description` | `*string` | Human-readable summary shown on the task's public landing page. Required, along with `Title`, to publish the task. `nil` if not set. |
 | `CreatedAt` | `*time.Time` | When the task was created. |
 | `ModifiedAt` | `*time.Time` | When the task was last modified. |
 | `IsPublic` | `*bool` | Whether the task is published on its public landing page, derived from `PublicConfig.PublishedAt`; use `Publish`/`Unpublish` to change it. |
@@ -50,7 +50,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Unpublish(ctx) (Task, error)` | Unpublish the task from its public landing page. |
 | `Start(ctx, input any, TaskStartOptions) (ActorRun, error)` | Start a run (input overrides stored input). |
 | `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. |
-| `GetInput(ctx) (json.RawMessage, bool, error)` | Fetch the stored input. |
+| `GetInput(ctx) (json.RawMessage, error)` | Fetch the stored input. |
 | `UpdateInput(ctx, input any) (json.RawMessage, error)` | Replace the stored input. |
 | `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |
 | `LastRunWithOptions(options LastRunOptions) *RunClient` | Client for the last run, filtered by status and/or origin. |

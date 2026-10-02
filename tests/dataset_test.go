@@ -88,8 +88,16 @@ func TestDatasetCRUDFlow(t *testing.T) {
 		t.Fatalf("public url: %q err=%v", url, err)
 	}
 
-	if _, _, err := dataset.GetStatistics(ctx); err != nil {
+	if _, err := dataset.GetStatistics(ctx); err != nil {
 		t.Fatalf("statistics: %v", err)
+	}
+
+	formatURL, err := dataset.CreateItemsPublicURLWithFormat(ctx, apify.DatasetListItemsOptions{}, nil, apify.FormatCSV)
+	if err != nil || formatURL == "" {
+		t.Fatalf("public url with format: %q err=%v", formatURL, err)
+	}
+	if !strings.Contains(formatURL, "format=csv") {
+		t.Fatalf("expected format=csv in url, got %q", formatURL)
 	}
 
 	updated, err := dataset.Update(ctx, map[string]any{"name": uniqueName("ds-renamed")})

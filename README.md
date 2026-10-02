@@ -141,8 +141,13 @@ variable the JavaScript reference client reads); if it is set to a non-empty val
 
 API errors are returned as `*APIError`. Recover it from any returned `error` with
 `apify.AsAPIError(err) (*APIError, bool)` — the boolean is `false` when the error is not an API
-error (e.g. a network or context error). `get`/`delete` on a missing resource is *not* an error:
-the methods report absence via a boolean (`ok`) instead.
+error (e.g. a network or context error).
+
+`get`/`delete` addressing a resource by its own ID is *not* an error on a 404: the methods
+report absence via a boolean (`ok`) instead. A client reached through a fixed sub-path with no
+ID of its own, such as `client.Run(id).Dataset()`, cannot tell its own 404 apart from the
+parent's — there the error always propagates instead. See [docs/runs.md](docs/runs.md) for the
+affected accessors.
 
 `*APIError` exposes:
 
@@ -154,6 +159,11 @@ the methods report absence via a boolean (`ok`) instead.
 | `Attempt` | `int` | 1-based number of the API call attempt that produced this error. |
 | `HTTPMethod` | `string` | HTTP method of the failing call (e.g. `"GET"`, `"POST"`). |
 | `Path` | `string` | Request path of the endpoint (URL excluding origin). |
+
+It also exposes `IsInvalidRequest()`, `IsUnauthorized()`, `IsForbidden()`, `IsNotFound()`,
+`IsConflict()`, `IsRateLimited()` and `IsServerError()` — status-classification predicates, the
+idiomatic equivalent of the reference clients' `InvalidRequestError`/`NotFoundError`/...
+subclasses, since Go has no exception hierarchy to mirror them with.
 
 ```go
 user, ok, err := client.Me().Get(ctx)
@@ -167,6 +177,13 @@ if !ok {
 	log.Fatal("user not found")
 }
 ```
+
+### Cancellation
+
+The reference JavaScript client accepts an `AbortSignal` option on most methods so a caller can
+cancel an in-flight request. Every method here already takes a `context.Context`: cancel it (or
+let a `context.WithTimeout`/`context.WithDeadline` elapse) to stop the underlying request the
+same way, with no separate option needed.
 
 ## Custom HTTP transport
 
@@ -202,7 +219,7 @@ func main() {
 
 - `apify.ClientVersion` — the semantic version of this library.
 - `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-09-24T114302Z`).
+  (`v2-2026-10-01T153946Z`).
 
 ### Releasing
 

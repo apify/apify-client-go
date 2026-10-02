@@ -29,7 +29,15 @@ Schedules start Actor or task runs at specified times. Access the schedule colle
 | `Get(ctx) (Schedule, bool, error)` | Fetch the schedule. |
 | `Update(ctx, newFields any) (Schedule, error)` | Update the schedule. |
 | `Delete(ctx) error` | Delete the schedule. |
-| `GetLog(ctx) (string, bool, error)` | The schedule's invocation log. |
+| `GetLog(ctx) ([]ScheduleInvoked, error)` | The schedule's invocation log, one entry per invocation. |
+
+`ScheduleInvoked`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Message` | `string` | Describes the invocation outcome. |
+| `Level` | `string` | Log level (e.g. `"INFO"`, `"ERROR"`). |
+| `CreatedAt` | `*time.Time` | When the invocation was logged. |
 
 `Create`/`Update` take a free-form definition (`any`) that is serialized to JSON, so the
 schedule's fields are passed as a map. The key fields are `name`, `cronExpression`, `isEnabled`,

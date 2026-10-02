@@ -61,14 +61,10 @@ func (c *ScheduleClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// GetLog fetches the schedule's invocation log as text, or (\"\", false, nil) if absent.
-func (c *ScheduleClient) GetLog(ctx context.Context) (string, bool, error) {
-	resp, err := getRaw(ctx, c.ctx, "log", NewQueryParams())
-	if err != nil {
-		return "", false, err
-	}
-	if resp == nil {
-		return "", false, nil
-	}
-	return string(resp.body), true, nil
+// GetLog fetches the schedule's invocation log, one entry per invocation.
+//
+// A 404 here always means the schedule itself is gone, so it is returned as an error rather
+// than swallowed.
+func (c *ScheduleClient) GetLog(ctx context.Context) ([]ScheduleInvoked, error) {
+	return getResourceRequired[[]ScheduleInvoked](ctx, c.ctx, "log", NewQueryParams())
 }

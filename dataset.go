@@ -177,6 +177,13 @@ func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options Data
 	result.Total = headerInt(resp.header, "X-Apify-Pagination-Total", count)
 	result.Offset = headerInt(resp.header, "X-Apify-Pagination-Offset", 0)
 	result.Limit = headerInt(resp.header, "X-Apify-Pagination-Limit", count)
+	// The API applies Offset/Limit to the dataset's rows before Clean/SkipEmpty/SkipHidden/
+	// Unwind reshape them, so Count (items returned) can land on either side of the rows
+	// scanned. X-Apify-Pagination-Count reports the scanned number; IterateDatasetItems
+	// advances and stops by it instead of Count, so a filter can't make it re-scan rows a
+	// previous page already covered, and Unwind can't make it skip rows. Falls back to Count
+	// when the header is missing.
+	result.scanned = headerInt(resp.header, "X-Apify-Pagination-Count", count)
 	if options.Desc != nil {
 		result.Desc = *options.Desc
 	}
@@ -243,24 +250,21 @@ func (c *DatasetClient) PushItems(ctx context.Context, items any) error {
 	return err
 }
 
-// GetStatistics returns statistical information about the dataset, or (nil, false, nil) if
-// unavailable.
-func (c *DatasetClient) GetStatistics(ctx context.Context) (json.RawMessage, bool, error) {
-	resp, err := getRaw(ctx, c.ctx, "statistics", NewQueryParams())
+// GetStatistics returns statistical information about the dataset.
+//
+// A 404 here always means the dataset itself is gone (the same way a plain Get would report
+// it), so it is returned as an error rather than swallowed: unlike Get, there is no
+// presence-reporting bool.
+func (c *DatasetClient) GetStatistics(ctx context.Context) (json.RawMessage, error) {
+	resp, err := getRawRequired(ctx, c.ctx, "statistics", NewQueryParams())
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if resp == nil {
-		return nil, false, nil
-	}
-	data, err := parseDataEnvelope[json.RawMessage](resp.body)
-	if err != nil {
-		return nil, false, err
-	}
-	return data, true, nil
+	return parseDataEnvelope[json.RawMessage](resp.body)
 }
 
-// CreateItemsPublicURL builds a public URL for downloading this dataset's items.
+// CreateItemsPublicURL builds a public URL for downloading this dataset's items, served as
+// JSON. To request another export format, use [DatasetClient.CreateItemsPublicURLWithFormat].
 //
 // It mirrors the reference client's createItemsPublicUrl: it fetches the dataset, and if the
 // dataset exposes a URL-signing secret key (i.e. it is private), appends an HMAC-SHA256
@@ -268,8 +272,20 @@ func (c *DatasetClient) GetStatistics(ctx context.Context) (json.RawMessage, boo
 // the validity of a signed URL (nil for non-expiring). The URL is built from the configured
 // public base URL.
 func (c *DatasetClient) CreateItemsPublicURL(ctx context.Context, options DatasetListItemsOptions, expiresInSecs *int64) (string, error) {
+	return c.CreateItemsPublicURLWithFormat(ctx, options, expiresInSecs, "")
+}
+
+// CreateItemsPublicURLWithFormat is like [DatasetClient.CreateItemsPublicURL], but lets the
+// caller choose the format the items are served in (JSON, CSV, XLSX, ...) via a `format` query
+// parameter on the generated URL. An empty format defaults to "json", matching the endpoint's
+// own default.
+func (c *DatasetClient) CreateItemsPublicURLWithFormat(ctx context.Context, options DatasetListItemsOptions, expiresInSecs *int64, format DownloadItemsFormat) (string, error) {
 	params := NewQueryParams()
 	options.apply(params)
+	if format != "" {
+		fmtStr := string(format)
+		params.AddString("format", &fmtStr)
+	}
 
 	dataset, present, err := c.Get(ctx)
 	if err != nil {

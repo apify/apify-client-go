@@ -114,16 +114,16 @@ func (c *TaskClient) Call(ctx context.Context, input any, options TaskStartOptio
 	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
 }
 
-// GetInput fetches the task's stored input, or (nil, false, nil) if none is set.
-func (c *TaskClient) GetInput(ctx context.Context) (json.RawMessage, bool, error) {
-	resp, err := getRaw(ctx, c.ctx, "input", NewQueryParams())
+// GetInput fetches the task's stored input.
+//
+// A 404 here always means the task itself is gone, so it is returned as an error rather than
+// swallowed.
+func (c *TaskClient) GetInput(ctx context.Context) (json.RawMessage, error) {
+	resp, err := getRawRequired(ctx, c.ctx, "input", NewQueryParams())
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if resp == nil {
-		return nil, false, nil
-	}
-	return resp.body, true, nil
+	return resp.body, nil
 }
 
 // UpdateInput replaces the task's stored input and returns the updated input.

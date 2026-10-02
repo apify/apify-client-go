@@ -84,15 +84,17 @@ func WithToken(token string) Option {
 	return func(c *clientConfig) { c.token = token }
 }
 
-// WithBaseURL overrides the base URL of the API. The /v2 suffix is appended automatically.
+// WithBaseURL overrides the base URL of the API, with or without the /v2 version path — it is
+// appended automatically when not already the URL's final path segment, so passing a URL that
+// already ends in /v2 (e.g. one read back from [ApifyClient.APIBaseURL]) does not double it up.
 // Defaults to https://api.apify.com.
 func WithBaseURL(baseURL string) Option {
 	return func(c *clientConfig) { c.baseURL = baseURL }
 }
 
 // WithPublicBaseURL overrides the base URL used when building public, shareable resource
-// URLs (e.g. a signed dataset-items URL). Defaults to the API base URL. The /v2 suffix is
-// appended automatically.
+// URLs (e.g. a signed dataset-items URL). Defaults to the API base URL. Like [WithBaseURL], the
+// /v2 version path is appended automatically only when not already present.
 func WithPublicBaseURL(publicBaseURL string) Option {
 	return func(c *clientConfig) { c.publicBaseURL = publicBaseURL }
 }
@@ -178,14 +180,48 @@ func NewClient(opts ...Option) *ApifyClient {
 		},
 	}
 
-	baseURL := strings.TrimRight(cfg.baseURL, "/") + "/v2"
+	baseURL := toAPIBaseURL(cfg.baseURL)
 	publicSource := cfg.publicBaseURL
 	if publicSource == "" {
 		publicSource = cfg.baseURL
 	}
-	publicBaseURL := strings.TrimRight(publicSource, "/") + "/v2"
+	publicBaseURL := toAPIBaseURL(publicSource)
 
 	return &ApifyClient{http: hc, baseURL: baseURL, publicBaseURL: publicBaseURL}
+}
+
+// apiVersionPath is Apify's API version path segment, appended to a configured base URL unless
+// it is already present there (see [toAPIBaseURL]).
+const apiVersionPath = "/v2"
+
+// toAPIBaseURL appends apiVersionPath to url unless it is already the final path segment,
+// matching the reference client's toApiBaseUrl.
+//
+// A trailing slash (or several) is trimmed first, so "https://host/v2/" and "https://host/v2//"
+// both normalize to "https://host/v2" rather than growing a double slash. The check looks only
+// at the URL's path, not at the string as a whole: "https://v2" has no path ("v2" is the host),
+// so it still becomes "https://v2/v2" even though the raw string ends in "v2".
+func toAPIBaseURL(rawURL string) string {
+	authority, path := splitAuthority(rawURL)
+	path = strings.TrimRight(path, "/")
+	if strings.HasSuffix(path, apiVersionPath) {
+		return authority + path
+	}
+	return authority + path + apiVersionPath
+}
+
+// splitAuthority splits a URL into its authority (scheme://host[:port], or the whole string if
+// there is no path) and its path (starting with "/", or empty if there is none).
+func splitAuthority(rawURL string) (authority, path string) {
+	searchFrom := 0
+	if i := strings.Index(rawURL, "://"); i >= 0 {
+		searchFrom = i + len("://")
+	}
+	if rel := strings.IndexByte(rawURL[searchFrom:], '/'); rel >= 0 {
+		idx := searchFrom + rel
+		return rawURL[:idx], rawURL[idx:]
+	}
+	return rawURL, ""
 }
 
 // UserAgent returns the User-Agent header value this client sends.

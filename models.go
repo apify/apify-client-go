@@ -126,6 +126,10 @@ type Build struct {
 	FinishedAt *time.Time `json:"finishedAt"`
 	// BuildNumber is the human-readable build number (e.g. "0.1.2").
 	BuildNumber string `json:"buildNumber"`
+	// ImageDigest is the digest of the built Docker image manifest (without the "sha256:"
+	// prefix); compare two builds' digests to see if their image contents differ. Nil if not
+	// yet available (e.g. the build has not finished, or predates the API recording it).
+	ImageDigest *string `json:"imageDigest,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -154,8 +158,9 @@ type Task struct {
 	// Title is the human-readable title shown in the UI.
 	Title string `json:"title"`
 	// Description is the human-readable summary shown on the task's public landing page.
-	// Required, along with Title, to publish the task.
-	Description string `json:"description"`
+	// Required, along with Title, to publish the task. Nullable/optional per the OpenAPI
+	// specification, so nil distinguishes "not set" from an empty string.
+	Description *string `json:"description,omitempty"`
 	// CreatedAt is when the task was created.
 	CreatedAt *time.Time `json:"createdAt"`
 	// ModifiedAt is when the task was last modified.
@@ -381,6 +386,17 @@ func (s *Schedule) UnmarshalJSON(data []byte) error {
 	type alias Schedule
 	known := knownJSONKeys(alias{})
 	return unmarshalWithExtra(data, (*alias)(s), known, &s.Extra)
+}
+
+// ScheduleInvoked is a single entry of a schedule's invocation log, as returned by
+// [ScheduleClient.GetLog].
+type ScheduleInvoked struct {
+	// Message describes the invocation outcome.
+	Message string `json:"message"`
+	// Level is the log level (e.g. "INFO", "ERROR").
+	Level string `json:"level"`
+	// CreatedAt is when the invocation was logged.
+	CreatedAt *time.Time `json:"createdAt"`
 }
 
 // Webhook notifies an external service when specific events occur.

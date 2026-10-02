@@ -62,13 +62,6 @@ func encodeWebhooks(webhooks []any) *string {
 	return &encoded
 }
 
-func (o ActorStartOptions) contentTypeOrDefault() string {
-	if o.ContentType != nil && *o.ContentType != "" {
-		return *o.ContentType
-	}
-	return contentTypeJSON
-}
-
 // ActorBuildOptions configures [ActorClient.Build].
 type ActorBuildOptions struct {
 	// BetaPackages, if true, uses beta versions of Apify packages.
@@ -121,15 +114,38 @@ func (c *ActorClient) Delete(ctx context.Context) error {
 
 // Start starts the Actor and returns immediately with the created run.
 //
-// input is any JSON-serializable value (or nil for no input).
+// input is any JSON-serializable value (or nil for no input). To send a non-JSON input (e.g. a
+// ZIP archive) as raw bytes instead, use [ActorClient.StartRaw].
 func (c *ActorClient) Start(ctx context.Context, input any, options ActorStartOptions) (ActorRun, error) {
-	params := NewQueryParams()
-	options.apply(params)
 	body, err := marshalInput(input)
 	if err != nil {
 		return ActorRun{}, err
 	}
-	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, options.contentTypeOrDefault())
+	return c.startWithBody(ctx, body, contentTypeJSON, options)
+}
+
+// StartRaw starts the Actor with a raw request body instead of a JSON-serializable value.
+//
+// Use this for a non-JSON input, e.g. a ZIP archive paired with
+// options.ContentType = Ptr("application/zip"); the bytes are sent exactly as given, with no
+// JSON serialization. For an object or array input, use [ActorClient.Start] instead, which
+// handles the serialization. Mirrors the reference client, whose Actor input accepts a plain
+// object, an array of them, or raw bytes.
+func (c *ActorClient) StartRaw(ctx context.Context, input []byte, options ActorStartOptions) (ActorRun, error) {
+	return c.startWithBody(ctx, input, "application/octet-stream", options)
+}
+
+// startWithBody is the shared implementation of Start and StartRaw: it applies the run-start
+// options as query parameters and posts the given body, falling back to defaultContentType only
+// when the caller did not set options.ContentType.
+func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultContentType string, options ActorStartOptions) (ActorRun, error) {
+	params := NewQueryParams()
+	options.apply(params)
+	contentType := defaultContentType
+	if options.ContentType != nil && *options.ContentType != "" {
+		contentType = *options.ContentType
+	}
+	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentType)
 }
 
 // Call starts the Actor and waits (client-side polling) for it to finish.
@@ -142,6 +158,16 @@ func (c *ActorClient) Call(ctx context.Context, input any, options ActorStartOpt
 		return ActorRun{}, err
 	}
 	// Use the root client's run client so polling targets the canonical run route.
+	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
+}
+
+// CallRaw starts the Actor with a raw request body ([ActorClient.StartRaw]) and waits for it to
+// finish, exactly like [ActorClient.Call] but for a non-JSON input.
+func (c *ActorClient) CallRaw(ctx context.Context, input []byte, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
+	run, err := c.StartRaw(ctx, input, options)
+	if err != nil {
+		return ActorRun{}, err
+	}
 	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
 }
 

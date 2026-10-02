@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -132,20 +133,41 @@ type MetamorphOptions struct {
 
 // Metamorph transforms the run into a run of another Actor with a new input.
 //
-// targetActorID is the Actor to metamorph into. input is the new input (nil for none).
+// targetActorID is the Actor to metamorph into. input is the new input (nil for none). To send
+// a non-JSON input as raw bytes instead, use [RunClient.MetamorphRaw].
 func (c *RunClient) Metamorph(ctx context.Context, targetActorID string, input any, options MetamorphOptions) (ActorRun, error) {
-	params := NewQueryParams()
-	params.AddString("targetActorId", &targetActorID)
-	if options.Build != "" {
-		params.AddString("build", &options.Build)
-	}
 	body, err := marshalInput(input)
 	if err != nil {
 		return ActorRun{}, err
 	}
+	return c.metamorphWithBody(ctx, targetActorID, body, contentTypeJSON, options)
+}
+
+// MetamorphRaw transforms the run into a run of another Actor (metamorph) with a raw request
+// body instead of a JSON-serializable value.
+//
+// The bytes are sent exactly as given, with no JSON serialization — pair this with
+// options.ContentType for a non-JSON input. For an object or array input, use
+// [RunClient.Metamorph] instead.
+func (c *RunClient) MetamorphRaw(ctx context.Context, targetActorID string, input []byte, options MetamorphOptions) (ActorRun, error) {
+	return c.metamorphWithBody(ctx, targetActorID, input, "application/octet-stream", options)
+}
+
+// metamorphWithBody is the shared implementation of Metamorph and MetamorphRaw.
+func (c *RunClient) metamorphWithBody(ctx context.Context, targetActorID string, body []byte, defaultContentType string, options MetamorphOptions) (ActorRun, error) {
+	// The target Actor id is sent in the "username~name" form, matching every other Actor id
+	// this client embeds in a request (e.g. the Actor() accessor), not the raw "username/name" a
+	// caller may have passed. Unlike a path segment, a query parameter value needs no further
+	// escaping here: the query encoder applies that when the URL is built.
+	safeTargetActorID := strings.ReplaceAll(targetActorID, "/", "~")
+	params := NewQueryParams()
+	params.AddString("targetActorId", &safeTargetActorID)
+	if options.Build != "" {
+		params.AddString("build", &options.Build)
+	}
 	contentType := options.ContentType
 	if contentType == "" {
-		contentType = contentTypeJSON
+		contentType = defaultContentType
 	}
 	return postWithBody[ActorRun](ctx, c.ctx, "metamorph", params, body, contentType)
 }

@@ -31,6 +31,7 @@ The time filters apply only to Actor- and task-scoped collections.
 | `Delete(ctx) error` | Delete the run. |
 | `Abort(ctx, gracefully *bool) (ActorRun, error)` | Abort the run. Pass `nil` to use the server default (immediate), or a pointer to `true`/`false` to abort gracefully/immediately. |
 | `Metamorph(ctx, targetActorID string, input any, MetamorphOptions) (ActorRun, error)` | Metamorph into another Actor. |
+| `MetamorphRaw(ctx, targetActorID string, input []byte, MetamorphOptions) (ActorRun, error)` | Like `Metamorph`, but sends `input` as a raw request body (no JSON serialization), paired with `MetamorphOptions.ContentType`. |
 | `Reboot(ctx) (ActorRun, error)` | Reboot the run. |
 | `Resurrect(ctx, RunResurrectOptions) (ActorRun, error)` | Resurrect a finished run. |
 | `Charge(ctx, RunChargeOptions) error` | Charge a pay-per-event run (sends an idempotency key). |
@@ -40,6 +41,13 @@ The time filters apply only to Actor- and task-scoped collections.
 | `RequestQueue() *RequestQueueClient` | The run's default request queue. |
 | `Log() *LogClient` | The run's log. |
 | `GetStreamedLog(ctx) (io.ReadCloser, error)` | Live stream of the run's raw log (log redirection). |
+
+> **Missing resources.** `Dataset()`/`KeyValueStore()`/`RequestQueue()`/`Log()` address a
+> sub-resource with no ID of its own, so a 404 from `Get`/`Delete`/`Log().Get`/`Log().Stream`
+> on the client they return can mean either the run or the default sub-resource is missing —
+> the response does not say which, so the error propagates instead of resolving to "absent".
+> `KeyValueStore().GetRecord`/`RecordExists` and `RequestQueue().GetRequest` are unaffected:
+> there a 404 unambiguously means the record/request itself is missing.
 
 `RunResurrectOptions` (all fields optional):
 
@@ -57,7 +65,7 @@ The time filters apply only to Actor- and task-scoped collections.
 | Field | Type | Meaning |
 |---|---|---|
 | `Build` | `string` | Pin the target Actor's build (empty for default). |
-| `ContentType` | `string` | Content type of the input body (default `application/json`). |
+| `ContentType` | `string` | Content type of the input body. Defaults to `application/json` for `Metamorph`, or `application/octet-stream` for `MetamorphRaw`, when empty. |
 
 `RunChargeOptions`:
 

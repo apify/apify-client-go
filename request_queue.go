@@ -102,7 +102,11 @@ func (c *RequestQueueClient) AddRequest(ctx context.Context, request RequestQueu
 
 // GetRequest fetches a request by ID, or (nil, false, nil) if it does not exist.
 func (c *RequestQueueClient) GetRequest(ctx context.Context, id string) (*RequestQueueRequest, bool, error) {
-	req, present, err := getResource[RequestQueueRequest](ctx, c.ctx, "requests/"+encodePathSegment(id), NewQueryParams())
+	safeID, err := encodePathSegment(id)
+	if err != nil {
+		return nil, false, err
+	}
+	req, present, err := getResourceAlways[RequestQueueRequest](ctx, c.ctx, "requests/"+safeID, NewQueryParams())
 	if err != nil || !present {
 		return nil, present, err
 	}
@@ -112,10 +116,17 @@ func (c *RequestQueueClient) GetRequest(ctx context.Context, id string) (*Reques
 // UpdateRequest updates an existing request (identified by its ID field) and returns the
 // operation info. If forefront is true, the request is moved to the front of the queue.
 func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error) {
+	if c.ctx.idErr != nil {
+		return RequestQueueOperationInfo{}, c.ctx.idErr
+	}
+	safeID, err := encodePathSegment(request.ID)
+	if err != nil {
+		return RequestQueueOperationInfo{}, err
+	}
 	params := NewQueryParams()
 	params.AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(request.ID)))
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + safeID))
 	body, err := json.Marshal(request)
 	if err != nil {
 		return RequestQueueOperationInfo{}, err
@@ -129,8 +140,15 @@ func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQ
 
 // DeleteRequest deletes a request by ID.
 func (c *RequestQueueClient) DeleteRequest(ctx context.Context, id string) error {
-	url := c.ctx.mergedParams(c.withClientKey(NewQueryParams())).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id)))
-	_, err := c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
+	if c.ctx.idErr != nil {
+		return c.ctx.idErr
+	}
+	safeID, err := encodePathSegment(id)
+	if err != nil {
+		return err
+	}
+	url := c.ctx.mergedParams(c.withClientKey(NewQueryParams())).applyToURL(c.ctx.subURL("requests/" + safeID))
+	_, err = c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
 	if err != nil && !isNotFound(err) {
 		return err
 	}
@@ -237,10 +255,14 @@ func (c *RequestQueueClient) ListRequests(ctx context.Context, options ListReque
 // ProlongRequestLock extends the lock on a request by lockSecs seconds. If forefront is
 // true, the request is moved to the front when its lock expires. Returns the raw response.
 func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, lockSecs int64, forefront bool) (json.RawMessage, error) {
+	safeID, err := encodePathSegment(id)
+	if err != nil {
+		return nil, err
+	}
 	params := NewQueryParams()
 	params.AddInt("lockSecs", &lockSecs).AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + safeID + "/lock"))
 	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, nil, "", defaultRequestTimeout)
 	if err != nil {
 		return nil, err
@@ -251,11 +273,15 @@ func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, 
 // DeleteRequestLock releases the lock on a request. If forefront is true, the request is
 // moved to the front of the queue.
 func (c *RequestQueueClient) DeleteRequestLock(ctx context.Context, id string, forefront bool) error {
+	safeID, err := encodePathSegment(id)
+	if err != nil {
+		return err
+	}
 	params := NewQueryParams()
 	params.AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
-	_, err := c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + safeID + "/lock"))
+	_, err = c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
 	if err != nil && !isNotFound(err) {
 		return err
 	}

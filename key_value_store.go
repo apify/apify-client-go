@@ -194,7 +194,11 @@ func (it *KeyValueStoreKeysIterator) chunkVal() int64 {
 
 // RecordExists reports whether a record with the given key exists.
 func (c *KeyValueStoreClient) RecordExists(ctx context.Context, key string) (bool, error) {
-	return headExists(ctx, c.ctx, "records/"+encodePathSegment(key), NewQueryParams())
+	safeKey, err := encodePathSegment(key)
+	if err != nil {
+		return false, err
+	}
+	return headExists(ctx, c.ctx, "records/"+safeKey, NewQueryParams())
 }
 
 // GetRecord fetches a record by key, or (nil, false, nil) if it does not exist. The value
@@ -212,9 +216,13 @@ func ptrBool(b bool) *bool { return &b }
 
 // GetRecordWithOptions fetches a record with explicit options (attachment, signature).
 func (c *KeyValueStoreClient) GetRecordWithOptions(ctx context.Context, key string, options GetRecordOptions) (*KeyValueStoreRecord, bool, error) {
+	safeKey, err := encodePathSegment(key)
+	if err != nil {
+		return nil, false, err
+	}
 	params := NewQueryParams()
 	options.apply(params)
-	resp, err := getRaw(ctx, c.ctx, "records/"+encodePathSegment(key), params)
+	resp, err := getRaw(ctx, c.ctx, "records/"+safeKey, params)
 	if err != nil {
 		return nil, false, err
 	}
@@ -230,7 +238,11 @@ func (c *KeyValueStoreClient) GetRecordWithOptions(ctx context.Context, key stri
 
 // SetRecordRaw stores a record with raw bytes and the given content type.
 func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, value []byte, contentType string) error {
-	return putRaw(ctx, c.ctx, "records/"+encodePathSegment(key), NewQueryParams(), value, contentType)
+	safeKey, err := encodePathSegment(key)
+	if err != nil {
+		return err
+	}
+	return putRaw(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType)
 }
 
 // SetRecordJSON stores a record holding the JSON serialization of value.
@@ -244,7 +256,11 @@ func (c *KeyValueStoreClient) SetRecordJSON(ctx context.Context, key string, val
 
 // DeleteRecord deletes a record by key.
 func (c *KeyValueStoreClient) DeleteRecord(ctx context.Context, key string) error {
-	return deleteResource(ctx, c.ctx, "records/"+encodePathSegment(key))
+	safeKey, err := encodePathSegment(key)
+	if err != nil {
+		return err
+	}
+	return deleteResourceAlways(ctx, c.ctx, "records/"+safeKey)
 }
 
 // GetRecordPublicURL builds a public URL for fetching the given record.
@@ -253,6 +269,10 @@ func (c *KeyValueStoreClient) DeleteRecord(ctx context.Context, key string) erro
 // URL-signing secret key (i.e. it is private), appends an HMAC-SHA256 signature so the URL
 // grants access without an API token. The URL is built from the configured public base URL.
 func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string) (string, error) {
+	safeKey, err := encodePathSegment(key)
+	if err != nil {
+		return "", err
+	}
 	params := NewQueryParams()
 	store, present, err := c.Get(ctx)
 	if err != nil {
@@ -264,7 +284,7 @@ func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string
 			params.AddString("signature", &sig)
 		}
 	}
-	return params.applyToURL(c.ctx.publicURL("records/" + encodePathSegment(key))), nil
+	return params.applyToURL(c.ctx.publicURL("records/" + safeKey)), nil
 }
 
 // CreateKeysPublicURL builds a public URL for listing this store's keys.

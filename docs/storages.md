@@ -21,8 +21,9 @@ Single dataset: `client.Dataset(id)`:
 | `IterateItems(DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage]` | Lazy iterator over items (`Limit` caps total, `chunkSize` is page size); `IterateDatasetItems[T]` decodes into your type. |
 | `PushItems(ctx, items any) error` | Append one item or a slice of items. |
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
-| `GetStatistics(ctx) (json.RawMessage, bool, error)` | Dataset statistics. |
-| `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL. |
+| `GetStatistics(ctx) (json.RawMessage, error)` | Dataset statistics. |
+| `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL, served as `json`. |
+| `CreateItemsPublicURLWithFormat(ctx, DatasetListItemsOptions, expiresInSecs *int64, DownloadItemsFormat) (string, error)` | Like `CreateItemsPublicURL`, but lets the URL serve another export format (CSV, XLSX, ...). An empty format defaults to `json`. |
 
 The `Dataset` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
 

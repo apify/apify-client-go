@@ -48,19 +48,34 @@ type resourceContext struct {
 	apiOrigin string
 	// publicOrigin is the origin used to build public, shareable URLs (defaults to apiOrigin).
 	publicOrigin string
+	// hasOwnID is true when this resource is addressed by its own id (constructed via
+	// newSingleContext). It is false for a resource reached through a fixed sub-path with no id
+	// of its own (e.g. a run's default dataset, via newCollectionContext): there, a 404 cannot
+	// be told apart from the parent being missing, so it must not be swallowed as "absent".
+	hasOwnID bool
+	// idErr, if non-nil, is a validation error discovered while building this resource's URL
+	// (an empty or path-traversing id). It is returned by the first request this context
+	// attempts, instead of silently sending a malformed request.
+	idErr error
 }
 
 // newCollectionContext creates a context for a collection endpoint: {base}/{resourcePath}.
 func newCollectionContext(hc *httpClient, baseURL, resourcePath string) *resourceContext {
-	return newResourceContext(hc, baseURL+"/"+resourcePath, baseURL)
+	return newResourceContext(hc, baseURL+"/"+resourcePath, baseURL, false, nil)
 }
 
 // newSingleContext creates a context for a single resource: {base}/{resourcePath}/{safeID}.
+//
+// id is validated and percent-encoded (see safePathSegment); an invalid id (empty, or a dot
+// segment) does not fail here; synchronously since every resource getter in this package
+// returns a client struct directly rather than an error. Instead, the resource context
+// remembers the error and every CRUD call this client later attempts fails fast with it.
 func newSingleContext(hc *httpClient, baseURL, resourcePath, id string) *resourceContext {
-	return newResourceContext(hc, baseURL+"/"+resourcePath+"/"+toSafeID(id), baseURL)
+	safeID, err := toSafeID(id)
+	return newResourceContext(hc, baseURL+"/"+resourcePath+"/"+safeID, baseURL, true, err)
 }
 
-func newResourceContext(hc *httpClient, url, baseURL string) *resourceContext {
+func newResourceContext(hc *httpClient, url, baseURL string, hasOwnID bool, idErr error) *resourceContext {
 	origin := originOf(baseURL)
 	return &resourceContext{
 		http:         hc,
@@ -68,6 +83,8 @@ func newResourceContext(hc *httpClient, url, baseURL string) *resourceContext {
 		baseParams:   NewQueryParams(),
 		apiOrigin:    origin,
 		publicOrigin: origin,
+		hasOwnID:     hasOwnID,
+		idErr:        idErr,
 	}
 }
 
@@ -119,9 +136,30 @@ func originOf(rawURL string) string {
 	return scheme + rest
 }
 
-// getResource performs a GET that unwraps the data envelope; a not-found maps to (zero,
-// false, nil). The bool reports presence.
+// getResource performs a GET addressing this client's own resource (subPath "" for the
+// resource itself, or a fixed sub-path such as a singleton the resource owns) and unwraps the
+// data envelope. A not-found maps to (zero, false, nil) only when the client has its own id
+// (c.hasOwnID): there, the 404 unambiguously means this resource is gone. A client reached
+// through a fixed sub-path with no id of its own (e.g. a run's default dataset) cannot tell its
+// own 404 apart from the parent's, so the error always propagates instead. Mirrors the
+// reference client's catchNotFoundForResourceOrThrow. For a 404 that is unambiguous regardless
+// of how the client was reached (e.g. a lookup by key or request id), use [getResourceAlways].
 func getResource[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (T, bool, error) {
+	var zero T
+	result, err := getResourceRequired[T](ctx, c, subPath, params)
+	if err != nil {
+		if c.hasOwnID && isNotFound(err) {
+			return zero, false, nil
+		}
+		return zero, false, err
+	}
+	return result, true, nil
+}
+
+// getResourceAlways performs a GET that unwraps the data envelope; a not-found always maps to
+// (zero, false, nil), regardless of c.hasOwnID. Used for a lookup that is unambiguous no matter
+// how the parent client was reached, such as a request-queue request by id.
+func getResourceAlways[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (T, bool, error) {
 	var zero T
 	result, err := getResourceRequired[T](ctx, c, subPath, params)
 	if err != nil {
@@ -133,9 +171,15 @@ func getResource[T any](ctx context.Context, c *resourceContext, subPath string,
 	return result, true, nil
 }
 
-// getResourceRequired performs a GET that unwraps the data envelope and propagates errors.
+// getResourceRequired performs a GET that unwraps the data envelope and propagates every error,
+// including a 404. Used both where a 404 is never ambiguous (list, batch and lookup endpoints)
+// and, since [DatasetClient.GetStatistics]/[ScheduleClient.GetLog]/[TaskClient.GetInput], where
+// it always means the parent resource is gone.
 func getResourceRequired[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (T, error) {
 	var zero T
+	if c.idErr != nil {
+		return zero, c.idErr
+	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 	resp, err := c.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
 	if err != nil {
@@ -147,6 +191,9 @@ func getResourceRequired[T any](ctx context.Context, c *resourceContext, subPath
 // updateResource performs a PUT with a JSON body, unwrapping the data envelope.
 func updateResource[T any](ctx context.Context, c *resourceContext, subPath string, body any) (T, error) {
 	var zero T
+	if c.idErr != nil {
+		return zero, c.idErr
+	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return zero, err
@@ -159,8 +206,29 @@ func updateResource[T any](ctx context.Context, c *resourceContext, subPath stri
 	return parseDataEnvelope[T](resp.body)
 }
 
-// deleteResource performs a DELETE; a not-found is treated as a successful no-op.
+// deleteResource performs a DELETE addressing this client's own resource. A not-found is
+// treated as a successful no-op only when the client has its own id (c.hasOwnID); otherwise the
+// error propagates. See [getResource] for why. For a delete that is unambiguous regardless of
+// how the parent client was reached (e.g. deleting a key-value-store record by key), use
+// [deleteResourceAlways].
 func deleteResource(ctx context.Context, c *resourceContext, subPath string) error {
+	if c.idErr != nil {
+		return c.idErr
+	}
+	url := c.mergedParams(NewQueryParams()).applyToURL(c.subURL(subPath))
+	_, err := c.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
+	if err != nil && (!c.hasOwnID || !isNotFound(err)) {
+		return err
+	}
+	return nil
+}
+
+// deleteResourceAlways performs a DELETE; a not-found is always treated as a successful no-op,
+// regardless of c.hasOwnID.
+func deleteResourceAlways(ctx context.Context, c *resourceContext, subPath string) error {
+	if c.idErr != nil {
+		return c.idErr
+	}
 	url := c.mergedParams(NewQueryParams()).applyToURL(c.subURL(subPath))
 	_, err := c.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
 	if err != nil && !isNotFound(err) {
@@ -177,6 +245,9 @@ func listResource[T any](ctx context.Context, c *resourceContext, subPath string
 // createResource performs a POST with a JSON body, unwrapping the data envelope.
 func createResource[T any](ctx context.Context, c *resourceContext, params *QueryParams, body any) (T, error) {
 	var zero T
+	if c.idErr != nil {
+		return zero, c.idErr
+	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return zero, err
@@ -193,6 +264,9 @@ func createResource[T any](ctx context.Context, c *resourceContext, params *Quer
 // (POST {collection}?name=...), unwrapping the data envelope.
 func getOrCreateNamed[T any](ctx context.Context, c *resourceContext, name string) (T, error) {
 	var zero T
+	if c.idErr != nil {
+		return zero, c.idErr
+	}
 	params := NewQueryParams()
 	if name != "" {
 		params.AddString("name", &name)
@@ -209,6 +283,9 @@ func getOrCreateNamed[T any](ctx context.Context, c *resourceContext, name strin
 // data envelope. Used where the input is arbitrary user JSON (actor.start, run.metamorph).
 func postWithBody[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType string) (T, error) {
 	var zero T
+	if c.idErr != nil {
+		return zero, c.idErr
+	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 	resp, err := c.http.call(ctx, http.MethodPost, url, body, contentType, defaultRequestTimeout)
 	if err != nil {
@@ -221,6 +298,9 @@ func postWithBody[T any](ctx context.Context, c *resourceContext, subPath string
 // unwrapping the data envelope.
 func deleteWithBody[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body any) (T, error) {
 	var zero T
+	if c.idErr != nil {
+		return zero, c.idErr
+	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		return zero, err
@@ -234,10 +314,11 @@ func deleteWithBody[T any](ctx context.Context, c *resourceContext, subPath stri
 }
 
 // getRaw performs a GET returning the raw response (no data envelope). A not-found maps to
-// (nil, nil). Used for logs and key-value-store record values.
+// (nil, nil), regardless of c.hasOwnID: used only where that is unambiguous, such as a
+// key-value-store record lookup by key. For a fixed sub-path where a 404 always means the
+// parent resource is gone (e.g. dataset statistics), use [getRawRequired] instead.
 func getRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (*apiResponse, error) {
-	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
-	resp, err := c.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
+	resp, err := getRawRequired(ctx, c, subPath, params)
 	if err != nil {
 		if isNotFound(err) {
 			return nil, nil
@@ -247,8 +328,22 @@ func getRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 	return resp, nil
 }
 
-// headExists performs a HEAD request, returning whether the resource exists.
+// getRawRequired performs a GET returning the raw response (no data envelope) and propagates
+// every error, including a 404.
+func getRawRequired(ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (*apiResponse, error) {
+	if c.idErr != nil {
+		return nil, c.idErr
+	}
+	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
+	return c.http.call(ctx, http.MethodGet, url, nil, "", defaultRequestTimeout)
+}
+
+// headExists performs a HEAD request, returning whether the resource exists. A not-found always
+// maps to (false, nil): used only for an unambiguous lookup (a key-value-store record by key).
 func headExists(ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (bool, error) {
+	if c.idErr != nil {
+		return false, c.idErr
+	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 	_, err := c.http.call(ctx, http.MethodHead, url, nil, "", defaultRequestTimeout)
 	if err != nil {
@@ -262,6 +357,9 @@ func headExists(ctx context.Context, c *resourceContext, subPath string, params 
 
 // putRaw performs a PUT with raw bytes and a content type (used for KVS record uploads).
 func putRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType string) error {
+	if c.idErr != nil {
+		return c.idErr
+	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 	_, err := c.http.call(ctx, http.MethodPut, url, body, contentType, defaultRequestTimeout)
 	return err

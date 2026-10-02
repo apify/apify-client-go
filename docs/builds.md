@@ -47,6 +47,7 @@ The `Build` value returned by the build methods carries the build's metadata:
 | `StartedAt` | `*time.Time` | When the build started. |
 | `FinishedAt` | `*time.Time` | When the build finished (`nil` while still building). |
 | `BuildNumber` | `string` | Human-readable build number (e.g. `"0.1.2"`). |
+| `ImageDigest` | `*string` | Digest of the built Docker image manifest (without the `sha256:` prefix); compare two builds' digests to see if their image contents differ. `nil` if not yet available. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 `Build.IsTerminal()` reports whether a build has finished.

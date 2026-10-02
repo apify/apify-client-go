@@ -2,7 +2,8 @@ package apify
 
 import (
 	"encoding/json"
-	"net/http"
+	"errors"
+	"fmt"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -21,27 +22,20 @@ func parseDataEnvelope[T any](body []byte) (T, error) {
 	return env.Data, err
 }
 
-// Error type strings the API returns for missing resources.
-const (
-	recordNotFoundType        = "record-not-found"
-	recordOrTokenNotFoundType = "record-or-token-not-found"
-	notFoundStatusCode        = 404
-)
+const notFoundStatusCode = 404
 
-// isNotFound reports whether err represents a "resource not found" API error, mirroring
-// the reference clients' catchNotFoundOrThrow: a get/delete/head on a missing resource
-// should resolve to "absent" rather than raise.
+// isNotFound reports whether err is an API error with a 404 status, mirroring the reference
+// clients' NotFoundError: a get/delete/head on a missing resource should resolve to "absent"
+// rather than raise. Any 404 counts, regardless of its machine-readable `type` — the reference
+// clients used to swallow only the "record-not-found"/"record-or-token-not-found" types, but
+// that let an unrelated 404 (e.g. a typo'd sub-path) pass silently for "not found" too, so v3
+// dropped the type check.
 func isNotFound(err error) bool {
 	apiErr, ok := AsAPIError(err)
 	if !ok {
 		return false
 	}
-	if apiErr.StatusCode != notFoundStatusCode {
-		return false
-	}
-	return apiErr.Type == recordNotFoundType ||
-		apiErr.Type == recordOrTokenNotFoundType ||
-		apiErr.HTTPMethod == http.MethodHead
+	return apiErr.StatusCode == notFoundStatusCode
 }
 
 // QueryParams is an ordered collection of query parameters that omits absent values and
@@ -205,6 +199,14 @@ type PaginationList[T any] struct {
 	Desc bool `json:"desc"`
 	// Items are the items of this page.
 	Items []T `json:"items"`
+	// scanned is the number of underlying rows the API scanned to produce this page, if the
+	// endpoint reports one distinct from Count (currently only dataset items, via the
+	// X-Apify-Pagination-Count header). Zero means "not reported"; [ListIterator] then falls
+	// back to Count, which is correct for every endpoint that does not reshape its rows.
+	//
+	// Unexported and so never (un)marshaled: it is paging plumbing for ListIterator, not part
+	// of this type's public, JSON-mirroring shape.
+	scanned int64
 }
 
 // osTokenOverrides maps Go's runtime.GOOS values to the platform names the reference Apify JS
@@ -265,14 +267,33 @@ func goVersion() string {
 	return strings.TrimPrefix(runtime.Version(), "go")
 }
 
-// toSafeID encodes a resource id so it is safe to embed in a URL path. Apify uses the
-// `username~resourcename` form, so the first `/` of an id is replaced with `~`.
-func toSafeID(id string) string {
-	return strings.Replace(id, "/", "~", 1)
+// toSafeID rewrites a resource id into the `username~resourcename` form Apify's URLs use
+// (every `/` becomes `~`, matching the reference client's replaceAll) and validates the result
+// as a URL path segment. See [safePathSegment] for what that rejects and why.
+func toSafeID(id string) (string, error) {
+	return safePathSegment(strings.ReplaceAll(id, "/", "~"))
 }
 
-// encodePathSegment percent-encodes a single URL path segment, so that values
-// interpolated into the path (record keys, request IDs) cannot break out of the segment.
-func encodePathSegment(input string) string {
-	return url.PathEscape(input)
+// encodePathSegment validates and percent-encodes a single URL path segment, so that values
+// interpolated into the path (record keys, request IDs) cannot break out of the segment. See
+// [safePathSegment] for what it rejects and why.
+func encodePathSegment(input string) (string, error) {
+	return safePathSegment(input)
+}
+
+// safePathSegment validates value as a single URL path segment and percent-encodes it.
+//
+// An empty string or a dot segment ("." or "..") is rejected outright rather than encoded:
+// percent-encoding alone is not enough to stop a path-traversal attempt, because a URL parser
+// (or an intermediate proxy) can decode and resolve dot segments after this client has built
+// the request path, collapsing e.g. "records/%2E%2E" to the parent endpoint exactly like a
+// literal "records/..". Mirrors the reference client's toPathSegment.
+func safePathSegment(value string) (string, error) {
+	if value == "" {
+		return "", errors.New("resource id must not be empty")
+	}
+	if value == "." || value == ".." {
+		return "", fmt.Errorf("resource id must not be a dot segment, got %q", value)
+	}
+	return url.PathEscape(value), nil
 }

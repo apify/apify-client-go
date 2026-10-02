@@ -127,8 +127,9 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 	path := extractPath(url)
 
 	// Compress the body once (not per attempt): it is identical on every retry. contentEncoding
-	// is "" when the body was left uncompressed (too small, or compression did not shrink it).
-	sendBody, contentEncoding := maybeCompressRequestBody(body)
+	// is "" when the body was left uncompressed (too small, already compressed, or compression
+	// did not shrink it).
+	sendBody, contentEncoding := maybeCompressRequestBody(body, contentType)
 
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -268,19 +269,118 @@ func gzipCompress(body []byte) ([]byte, error) {
 	return compressBody(body, func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) })
 }
 
-// maybeCompressRequestBody compresses body when it is large enough to be worth it, returning
-// the bytes to send and the Content-Encoding value ("" when the body is sent uncompressed).
+// maybeCompressRequestBody compresses body when it is large enough to be worth it and its
+// content type is not already compressed, returning the bytes to send and the Content-Encoding
+// value ("" when the body is sent uncompressed).
 //
 // This mirrors the reference client, which compresses request payloads above a 1 KiB threshold
 // to save upload bandwidth, preferring brotli and falling back to gzip. Compression is
 // best-effort: brotli is tried first, then gzip; if a codec errors or does not actually shrink
-// the body (e.g. an already-compressed payload), the next codec is tried, and if none help the
-// original body is sent uncompressed rather than failing the request.
-func maybeCompressRequestBody(body []byte) ([]byte, string) {
+// the body (e.g. an already-compressed payload the content type did not flag), the next codec is
+// tried, and if none help the original body is sent uncompressed rather than failing the
+// request.
+func maybeCompressRequestBody(body []byte, contentType string) ([]byte, string) {
 	if len(body) < minCompressRequestBytes {
 		return body, ""
 	}
+	if !isCompressibleContentType(contentType) {
+		return body, ""
+	}
 	return compressWith(body, requestCompressors)
+}
+
+// Media-type prefixes whose payloads already carry their own compression, so running them
+// through brotli/gzip burns CPU and memory for a result that is usually no smaller — and the
+// request also keeps the intended Content-Type, rather than becoming an unreadable
+// Content-Encoding: br blob the destination may not expect for these formats. Matches the
+// reference client's ALREADY_COMPRESSED_MEDIA_TYPE_PREFIXES.
+var alreadyCompressedContentTypePrefixes = []string{"audio/", "image/", "video/"}
+
+// Exact media types (outside the prefixes above) whose payloads already carry their own
+// compression. Matches the reference client's ALREADY_COMPRESSED_MEDIA_TYPES.
+var alreadyCompressedContentTypes = map[string]bool{
+	"application/epub+zip":                    true,
+	"application/gzip":                        true,
+	"application/java-archive":                true,
+	"application/vnd.android.package-archive": true,
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation": true,
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":   true,
+	"application/vnd.rar":          true,
+	"application/x-7z-compressed":  true,
+	"application/x-bzip":           true,
+	"application/x-bzip2":          true,
+	"application/x-gzip":           true,
+	"application/x-rar-compressed": true,
+	"application/x-xz":             true,
+	"application/x-zip-compressed": true,
+	"application/zip":              true,
+	"application/zstd":             true,
+	"font/woff":                    true,
+	"font/woff2":                   true,
+}
+
+// Uncompressed media types that sit under an already-compressed prefix above, so compressing
+// them still pays off. Matches the reference client's COMPRESSIBLE_MEDIA_TYPES.
+var compressibleContentTypes = map[string]bool{
+	"audio/aiff":                true,
+	"audio/basic":               true,
+	"audio/l16":                 true,
+	"audio/l24":                 true,
+	"audio/midi":                true,
+	"audio/vnd.wave":            true,
+	"audio/wav":                 true,
+	"audio/wave":                true,
+	"audio/x-aiff":              true,
+	"audio/x-wav":               true,
+	"image/bmp":                 true,
+	"image/tiff":                true,
+	"image/vnd.adobe.photoshop": true,
+	"image/vnd.microsoft.icon":  true,
+	"image/x-icon":              true,
+	"image/x-ms-bmp":            true,
+}
+
+// Structured-syntax suffixes that mark a media type as text even under an already-compressed
+// prefix (e.g. image/svg+xml). Matches the reference client's COMPRESSIBLE_MEDIA_TYPE_SUFFIXES.
+var compressibleContentTypeSuffixes = []string{"+json", "+xml"}
+
+// isCompressibleContentType decides whether a request body with the given Content-Type is
+// worth compressing.
+//
+// Images, audio, video and archives already carry their own compression: running them through
+// brotli or gzip burns CPU, holds a second full copy of the body in memory, and usually produces
+// output no smaller than the input (sometimes larger). A format that is raw despite such a media
+// type, e.g. image/bmp or audio/wav, is still compressed. An empty Content-Type is assumed
+// compressible. Matches the reference client's isCompressibleContentType.
+func isCompressibleContentType(contentType string) bool {
+	if contentType == "" {
+		return true
+	}
+	// Content-Type is case-insensitive and may carry parameters, e.g. "text/plain; charset=utf-8".
+	mediaType := contentType
+	if i := strings.IndexByte(mediaType, ';'); i >= 0 {
+		mediaType = mediaType[:i]
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+
+	if compressibleContentTypes[mediaType] {
+		return true
+	}
+	for _, suffix := range compressibleContentTypeSuffixes {
+		if strings.HasSuffix(mediaType, suffix) {
+			return true
+		}
+	}
+	if alreadyCompressedContentTypes[mediaType] {
+		return false
+	}
+	for _, prefix := range alreadyCompressedContentTypePrefixes {
+		if strings.HasPrefix(mediaType, prefix) {
+			return false
+		}
+	}
+	return true
 }
 
 // compressWith applies the given codecs in order and returns the first result that is smaller
