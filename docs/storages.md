@@ -21,8 +21,9 @@ Single dataset: `client.Dataset(id)`:
 | `IterateItems(DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage]` | Lazy iterator over items (`Limit` caps total, `chunkSize` is page size); `IterateDatasetItems[T]` decodes into your type. |
 | `PushItems(ctx, items any) error` | Append one item or a slice of items. |
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
-| `GetStatistics(ctx) (json.RawMessage, bool, error)` | Dataset statistics. |
-| `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL. |
+| `GetStatistics(ctx) (json.RawMessage, error)` | Dataset statistics. |
+| `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL, served as `json`. |
+| `CreateItemsPublicURLWithFormat(ctx, DatasetListItemsOptions, expiresInSecs *int64, DownloadItemsFormat) (string, error)` | Like `CreateItemsPublicURL`, but lets the URL serve another export format (CSV, XLSX, ...). An empty format defaults to `json`. |
 
 The `Dataset` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
 
@@ -257,7 +258,7 @@ Single queue: `client.RequestQueue(id)`:
 | `DeleteRequest(ctx, id) error` | Delete a request. |
 | `ListRequests(ctx, ListRequestsOptions) (json.RawMessage, error)` | Paginated list. Returns the raw API response (`{ "items": [...], "nextCursor": ... }`); unmarshal into your own type, or use `PaginateRequests` for typed iteration. |
 | `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
-| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests (auto-chunked at 25/call). |
+| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests, auto-split into batches that respect the API's 25-request and (effective) 9 MiB payload-size limits. Fails before sending anything if any single request is too large for a batch of its own. Unlike the reference client, does not itself retry a batch's `UnprocessedRequests` — inspect the result and retry those explicitly if needed. |
 | `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
 | `ListAndLockHead(ctx, lockSecs int64, limit *int64) (json.RawMessage, error)` | Fetch the head of the queue and lock the returned requests for `lockSecs` seconds. Returns the raw API response. |
 | `ProlongRequestLock(ctx, id string, lockSecs int64, forefront bool) (json.RawMessage, error)` | Extend the lock on a request by `lockSecs` seconds; `forefront` controls re-queue position when the lock expires. |

@@ -69,7 +69,7 @@ func TestScheduleCRUDFlow(t *testing.T) {
 	if updated.CronExpression != "0 12 * * *" {
 		t.Fatalf("cron not updated: %+v", updated)
 	}
-	if _, _, err := schedule.GetLog(ctx); err != nil {
+	if _, err := schedule.GetLog(ctx); err != nil {
 		t.Fatalf("get log: %v", err)
 	}
 }

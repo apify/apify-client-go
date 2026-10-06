@@ -46,8 +46,8 @@ func TestGetTask(t *testing.T) {
 	if err != nil || !ok || got.ID != task.ID {
 		t.Fatalf("get: ok=%v err=%v", ok, err)
 	}
-	if got.Description != "Integration test task for the Go client." {
-		t.Fatalf("get: unexpected description %q", got.Description)
+	if got.Description == nil || *got.Description != "Integration test task for the Go client." {
+		t.Fatalf("get: unexpected description %v", got.Description)
 	}
 }
 
@@ -69,8 +69,8 @@ func TestTaskCRUDFlow(t *testing.T) {
 	if _, err := tc.UpdateInput(ctx, map[string]any{"message": "updated"}); err != nil {
 		t.Fatalf("update input: %v", err)
 	}
-	if _, ok, err := tc.GetInput(ctx); err != nil || !ok {
-		t.Fatalf("get input: ok=%v err=%v", ok, err)
+	if _, err := tc.GetInput(ctx); err != nil {
+		t.Fatalf("get input: %v", err)
 	}
 	renamed := uniqueName("task-renamed")
 	updated, err := tc.Update(ctx, map[string]any{"name": renamed, "description": "Updated description."})
@@ -80,8 +80,8 @@ func TestTaskCRUDFlow(t *testing.T) {
 	if updated.Name != renamed {
 		t.Fatalf("update: unexpected name %q", updated.Name)
 	}
-	if updated.Description != "Updated description." {
-		t.Fatalf("update: unexpected description %q", updated.Description)
+	if updated.Description == nil || *updated.Description != "Updated description." {
+		t.Fatalf("update: unexpected description %v", updated.Description)
 	}
 	if _, err := tc.Runs().List(ctx, apify.ListOptions{}, apify.RunListOptions{}); err != nil {
 		t.Fatalf("runs list: %v", err)

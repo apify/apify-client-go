@@ -5,6 +5,96 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-10-02
+
+### Added
+
+- `Build.ImageDigest`, matching the spec's newly-documented build field (also present on the
+  reference JS client's `Build`).
+- `ActorClient.StartRaw`/`CallRaw` and `RunClient.MetamorphRaw`: send a raw-bytes input (e.g. a
+  ZIP archive, paired with `options.ContentType`) instead of a JSON-serializable value, matching
+  the reference client's Actor input now accepting raw bytes in addition to an object or array.
+- `DatasetClient.CreateItemsPublicURLWithFormat`, matching the reference client's new `format`
+  option on `createItemsPublicUrl`: builds the shareable items URL for an export format other
+  than the default `json`.
+- `APIError.IsInvalidRequest`/`IsUnauthorized`/`IsForbidden`/`IsNotFound`/`IsConflict`/
+  `IsRateLimited`/`IsServerError`: status-classification predicates, the idiomatic equivalent of
+  the reference client's `InvalidRequestError`/`UnauthorizedError`/.../`ServerError` subclasses
+  (Go has no exception hierarchy to mirror them with).
+- `ScheduleInvoked`, the typed entry of `ScheduleClient.GetLog`'s invocation log.
+- `WithTimeoutShort`/`WithTimeoutMedium`/`WithTimeoutLong`/`WithTimeoutMax`: configurable
+  per-operation default request timeouts (5s/30s/360s/360s), replacing a flat 360s timeout for
+  every call. Every method is assigned the tier matching its expected duration (metadata
+  reads/writes are `short`, listing/batch/trigger calls are `medium`, downloads/uploads/
+  streaming are `long`); the polling behind `WaitForFinish`/`Call` runs with no client-imposed
+  timeout, and a `waitForFinishSecs`/`WaitForFinish` parameter extends its tier to cover the
+  requested server-side hold. `WithTimeout` is kept as an alias for `WithTimeoutMax`. Matches
+  the reference client's timeout tiers; its parallel per-call `timeoutSecs`/`signal` options are
+  not ported, since every method here already takes a `context.Context`, which composes with a
+  tier's timeout to the same effect.
+- `WithRequestCompression`: choose the request-body compression codec (`RequestCompressionAuto`
+  — the existing brotli-then-gzip default —, `RequestCompressionBrotli`, or
+  `RequestCompressionGzip`). Matches the reference client's `compression` constructor option.
+
+### Fixed
+
+- `RequestQueueClient.BatchAddRequests` now measures the whole input before sending anything,
+  splitting into batches that respect both the API's 25-request limit and its (effective, after
+  a small safety margin) 9 MiB payload-size limit — matching the public `@apify/consts`
+  `MAX_PAYLOAD_SIZE_BYTES`. Previously it only chunked by count, so a batch of up to 25 large
+  requests could exceed the server's payload limit as a single oversized request. A request too
+  large for a batch of its own now fails the whole call before any batch is sent (naming the
+  request's index), instead of after every batch before it has already gone out. Matches the
+  reference client's `splitIntoJsonArrayBatches`, minus its automatic retry of a batch's
+  `unprocessedRequests`.
+- A caller-supplied resource ID, record key or request ID that is empty or a dot segment
+  (`.`/`..`) is now rejected with an error instead of being embedded verbatim in the request
+  path: a URL parser or intermediate proxy can resolve such a segment after this client has
+  built the path, letting it escape to a different endpoint. Matches the reference client's
+  `toPathSegment`.
+- `get`/`delete` on a resource reached through a fixed sub-path with no ID of its own (e.g.
+  `RunClient.Dataset()`, `RunClient.Log()`, `BuildClient.Log()`) now returns an error on a 404
+  instead of silently resolving to "absent": the response cannot tell the run/build apart from
+  the sub-resource as what is missing. A lookup by key or request ID (`GetRecord`, `GetRequest`,
+  `RecordExists`) is unaffected, since there a 404 unambiguously means the record/request is
+  missing. Matches the reference client's `catchNotFoundForResourceOrThrow`.
+- `DatasetClient.GetStatistics`, `TaskClient.GetInput` and `ScheduleClient.GetLog` now return an
+  error on a 404 instead of a `false`/empty "absent" result, since it always means the parent
+  resource is gone. Their signatures drop the presence bool accordingly.
+- `ScheduleClient.GetLog` now parses the invocation log into `[]ScheduleInvoked` (matching the
+  endpoint's actual JSON response) instead of returning the raw response body as text.
+- `get`/`delete` on a resource by its own ID now swallow a 404 of any `type`, matching the
+  reference client's `NotFoundError`; previously only the `record-not-found`/
+  `record-or-token-not-found` types were swallowed, so an unrelated 404 could pass as "not
+  found" too.
+- `Task.Description` is now `*string` (nullable/optional per the specification) instead of
+  `string`, so a response omitting it is no longer indistinguishable from an explicit empty
+  description.
+- `WithBaseURL`/`WithPublicBaseURL` no longer double up the `/v2` version path when the given
+  URL already ends in it (e.g. one read back from `ApifyClient.APIBaseURL`); matches the
+  reference client's `toApiBaseUrl` fix.
+- Request bodies are no longer compressed when their content type already carries its own
+  compression (images, audio, video, common archive formats): compressing them again burned CPU
+  for a result usually no smaller, sometimes larger. Mainly relevant to a raw-bytes Actor input
+  sent via the new `StartRaw`/`CallRaw`/`MetamorphRaw`. Matches the reference client's
+  `isCompressibleContentType`.
+- `RunClient.Metamorph`/`MetamorphRaw` now send the target Actor ID in the `username~name` form
+  (replacing `/` with `~`), matching every other Actor ID this client embeds in a request;
+  previously a `username/name` target ID was sent percent-encoded verbatim as the
+  `targetActorId` query parameter.
+- `IterateDatasetItems`/`IterateItems` now advance and stop by the number of rows the API
+  scanned (`X-Apify-Pagination-Count`) instead of the number of items a page returned: a `Clean`/
+  `SkipEmpty`/`SkipHidden` filter could make the next page re-read rows the previous one already
+  covered, `Unwind` could make it skip rows, and a page emptied entirely by a filter ended the
+  iteration early even though rows remained. Every other collection's `Iterate` is unaffected,
+  since the two numbers are the same there. Matches the reference client's fix.
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-10-01T153946Z`.
+- Bumped `ClientVersion` to `0.10.0`.
+- Updated `README.md`'s documented `APISpecVersion` example to match.
+
 ## [0.9.2] - 2026-09-25
 
 ### Changed

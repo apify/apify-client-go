@@ -34,7 +34,7 @@ func (c *ActorVersionCollectionClient) Iterate(options ListOptions, chunkSize *i
 
 // Create creates a new Actor version. version is any JSON-serializable version definition.
 func (c *ActorVersionCollectionClient) Create(ctx context.Context, version any) (ActorVersion, error) {
-	return createResource[ActorVersion](ctx, c.ctx, NewQueryParams(), version)
+	return createResource[ActorVersion](ctx, c.ctx, NewQueryParams(), version, c.ctx.shortTimeout())
 }
 
 // ActorVersionClient is a client for a specific Actor version

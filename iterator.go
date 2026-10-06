@@ -61,8 +61,16 @@ func (it *ListIterator[T]) Next(ctx context.Context) (*T, error) {
 // loadPage loads the next page into the buffer, following the same offset/limit/chunkSize
 // arithmetic as the reference client's _listPaginated: the first page requests
 // min(limit, chunkSize) items; the total cap is then bounded by the reported total, and each
-// subsequent page requests min(remaining, chunkSize) items. Iteration ends when a page comes
-// back empty or the remaining cap reaches zero.
+// subsequent page requests min(remaining, chunkSize) items. Iteration ends when a page scans no
+// more rows or the remaining cap reaches zero.
+//
+// Advancing the offset and the remaining cap uses the number of rows the page's fetch scanned
+// (page.scanned, falling back to the item count when a page does not report one), not the
+// number of items it returned. For most endpoints the two are the same; dataset items can
+// differ, since clean/skipEmpty/skipHidden/unwind reshape the rows after Offset/Limit have
+// already been applied to them (see ListDatasetItems). Using the returned count there would
+// re-scan rows a filter dropped, skip rows unwind multiplied, or stop in front of rows a filter
+// hid from an otherwise-empty page.
 func (it *ListIterator[T]) loadPage(ctx context.Context) error {
 	var limitParam int64
 	if !it.started {
@@ -76,9 +84,13 @@ func (it *ListIterator[T]) loadPage(ctx context.Context) error {
 		return err
 	}
 	n := int64(len(page.Items))
+	scanned := page.scanned
+	if scanned == 0 {
+		scanned = n
+	}
 	it.buffer = page.Items
 	it.pos = 0
-	it.offset += n
+	it.offset += scanned
 
 	if !it.started {
 		it.started = true
@@ -94,12 +106,12 @@ func (it *ListIterator[T]) loadPage(ctx context.Context) error {
 		if l := it.limitVal(); l > 0 && l < capItems {
 			capItems = l
 		}
-		it.remaining = capItems - n
+		it.remaining = capItems - scanned
 	} else {
-		it.remaining -= n
+		it.remaining -= scanned
 	}
 
-	if n == 0 || it.remaining <= 0 {
+	if scanned == 0 || it.remaining <= 0 {
 		it.exhausted = true
 	}
 	return nil

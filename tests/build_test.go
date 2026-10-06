@@ -46,9 +46,14 @@ func TestBuildActorFlow(t *testing.T) {
 		t.Fatalf("build did not finish: status=%q", finished.Status)
 	}
 
-	if _, ok, err := client.Build(build.ID).Get(ctx); err != nil || !ok {
+	fetched, ok, err := client.Build(build.ID).Get(ctx)
+	if err != nil || !ok {
 		t.Fatalf("get build: ok=%v err=%v", ok, err)
 	}
+	// ImageDigest is populated once the image manifest is available; a finished build on a real
+	// registry should have one, but we only assert the field deserializes without error (not
+	// that it is non-nil), since availability timing is outside this test's control.
+	_ = fetched.ImageDigest
 	if _, _, err := client.Build(build.ID).Log().Get(ctx); err != nil {
 		t.Fatalf("build log: %v", err)
 	}

@@ -34,5 +34,5 @@ func (c *TaskCollectionClient) Iterate(options ListOptions, chunkSize *int64) *L
 
 // Create creates a new task. task is any JSON-serializable task definition.
 func (c *TaskCollectionClient) Create(ctx context.Context, task any) (Task, error) {
-	return createResource[Task](ctx, c.ctx, NewQueryParams(), task)
+	return createResource[Task](ctx, c.ctx, NewQueryParams(), task, c.ctx.mediumTimeout())
 }

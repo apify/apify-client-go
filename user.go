@@ -41,7 +41,7 @@ func (c *UserClient) MonthlyUsage(ctx context.Context) (json.RawMessage, error) 
 	if !c.isMe {
 		return nil, errNotMe
 	}
-	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", NewQueryParams())
+	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", NewQueryParams(), c.ctx.shortTimeout())
 }
 
 // Limits fetches the current account's resource limits. Only available for "me".
@@ -49,7 +49,7 @@ func (c *UserClient) Limits(ctx context.Context) (json.RawMessage, error) {
 	if !c.isMe {
 		return nil, errNotMe
 	}
-	return getResourceRequired[json.RawMessage](ctx, c.ctx, "limits", NewQueryParams())
+	return getResourceRequired[json.RawMessage](ctx, c.ctx, "limits", NewQueryParams(), c.ctx.shortTimeout())
 }
 
 // UpdateLimits updates the current account's resource limits. Only available for "me".
@@ -62,6 +62,6 @@ func (c *UserClient) UpdateLimits(ctx context.Context, newLimits any) error {
 		return err
 	}
 	url := c.ctx.subURL("limits")
-	_, err = c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, defaultRequestTimeout)
+	_, err = c.ctx.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, c.ctx.shortTimeout())
 	return err
 }

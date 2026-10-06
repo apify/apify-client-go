@@ -1,6 +1,7 @@
 package apify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -84,7 +85,7 @@ func (c *RequestQueueClient) ListHead(ctx context.Context, limit *int64) (Reques
 	params := NewQueryParams()
 	params.AddInt("limit", limit)
 	c.withClientKey(params)
-	return getResourceRequired[RequestQueueHead](ctx, c.ctx, "head", params)
+	return getResourceRequired[RequestQueueHead](ctx, c.ctx, "head", params, c.ctx.shortTimeout())
 }
 
 // AddRequest adds a request to the queue. If forefront is true, the request is added to the
@@ -97,12 +98,16 @@ func (c *RequestQueueClient) AddRequest(ctx context.Context, request RequestQueu
 	if err != nil {
 		return RequestQueueOperationInfo{}, err
 	}
-	return postWithBody[RequestQueueOperationInfo](ctx, c.ctx, "requests", params, body, contentTypeJSON)
+	return postWithBody[RequestQueueOperationInfo](ctx, c.ctx, "requests", params, body, contentTypeJSON, c.ctx.shortTimeout())
 }
 
 // GetRequest fetches a request by ID, or (nil, false, nil) if it does not exist.
 func (c *RequestQueueClient) GetRequest(ctx context.Context, id string) (*RequestQueueRequest, bool, error) {
-	req, present, err := getResource[RequestQueueRequest](ctx, c.ctx, "requests/"+encodePathSegment(id), NewQueryParams())
+	safeID, err := safePathSegment(id)
+	if err != nil {
+		return nil, false, err
+	}
+	req, present, err := getResourceAlways[RequestQueueRequest](ctx, c.ctx, "requests/"+safeID, NewQueryParams())
 	if err != nil || !present {
 		return nil, present, err
 	}
@@ -112,15 +117,22 @@ func (c *RequestQueueClient) GetRequest(ctx context.Context, id string) (*Reques
 // UpdateRequest updates an existing request (identified by its ID field) and returns the
 // operation info. If forefront is true, the request is moved to the front of the queue.
 func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQueueRequest, forefront bool) (RequestQueueOperationInfo, error) {
+	if c.ctx.idErr != nil {
+		return RequestQueueOperationInfo{}, c.ctx.idErr
+	}
+	safeID, err := safePathSegment(request.ID)
+	if err != nil {
+		return RequestQueueOperationInfo{}, err
+	}
 	params := NewQueryParams()
 	params.AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(request.ID)))
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + safeID))
 	body, err := json.Marshal(request)
 	if err != nil {
 		return RequestQueueOperationInfo{}, err
 	}
-	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, body, contentTypeJSON, defaultRequestTimeout)
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, body, contentTypeJSON, c.ctx.mediumTimeout())
 	if err != nil {
 		return RequestQueueOperationInfo{}, err
 	}
@@ -129,8 +141,15 @@ func (c *RequestQueueClient) UpdateRequest(ctx context.Context, request RequestQ
 
 // DeleteRequest deletes a request by ID.
 func (c *RequestQueueClient) DeleteRequest(ctx context.Context, id string) error {
-	url := c.ctx.mergedParams(c.withClientKey(NewQueryParams())).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id)))
-	_, err := c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
+	if c.ctx.idErr != nil {
+		return c.ctx.idErr
+	}
+	safeID, err := safePathSegment(id)
+	if err != nil {
+		return err
+	}
+	url := c.ctx.mergedParams(c.withClientKey(NewQueryParams())).applyToURL(c.ctx.subURL("requests/" + safeID))
+	_, err = c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", c.ctx.shortTimeout())
 	if err != nil && !isNotFound(err) {
 		return err
 	}
@@ -143,12 +162,22 @@ func (c *RequestQueueClient) ListAndLockHead(ctx context.Context, lockSecs int64
 	params := NewQueryParams()
 	params.AddInt("lockSecs", &lockSecs).AddInt("limit", limit)
 	c.withClientKey(params)
-	return postWithBody[json.RawMessage](ctx, c.ctx, "head/lock", params, nil, "")
+	return postWithBody[json.RawMessage](ctx, c.ctx, "head/lock", params, nil, "", c.ctx.mediumTimeout())
 }
 
 // maxRequestsPerBatchOperation is the API limit on requests per batch call. Larger inputs
 // are split into chunks of this size, matching the reference client.
 const maxRequestsPerBatchOperation = 25
+
+// maxPayloadSizeBytes is the API's maximum request body size for a batch-requests call,
+// matching the published @apify/consts MAX_PAYLOAD_SIZE_BYTES (9 MiB; apify/apify-shared-js).
+const maxPayloadSizeBytes = 9437184
+
+// payloadSizeLimitBytes shaves a small safety margin off maxPayloadSizeBytes (0.01%, matching
+// the reference client's SAFETY_BUFFER_PERCENT), so a batch this client assembles stays under
+// the server's limit even accounting for any rounding differences between the two.
+// 9437184 * 0.0001 = 943.7184, rounded up to 944; 9437184 - 944 = 9436240.
+const payloadSizeLimitBytes = maxPayloadSizeBytes - 944
 
 // BatchAddResult is the typed result of [RequestQueueClient.BatchAddRequests]: the requests
 // the API accepted and the ones it could not process.
@@ -159,20 +188,90 @@ type BatchAddResult struct {
 	UnprocessedRequests []RequestQueueRequest `json:"unprocessedRequests"`
 }
 
+// serializedRequest is a request to add, serialized once up front: json is what the body of
+// its batch is assembled from (so sending it never re-marshals the request), and original is
+// what the result bookkeeping needs.
+type serializedRequest struct {
+	original RequestQueueRequest
+	json     []byte
+}
+
+// serializeRequestsForBatch serializes every request once and checks each one against
+// payloadSizeLimitBytes before any request is sent, so an oversized request fails the whole
+// call up front instead of after the batches before it have already gone out.
+func serializeRequestsForBatch(requests []RequestQueueRequest) ([]serializedRequest, error) {
+	serialized := make([]serializedRequest, len(requests))
+	for i, r := range requests {
+		data, err := json.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		// +2 bytes for the enclosing brackets, which even a batch of one request carries.
+		if len(data)+2 > payloadSizeLimitBytes {
+			return nil, fmt.Errorf("RequestQueueClient.BatchAddRequests: the request at index %d exceeds the maximum allowed size (%d bytes)", i, payloadSizeLimitBytes)
+		}
+		serialized[i] = serializedRequest{original: r, json: data}
+	}
+	return serialized, nil
+}
+
+// splitIntoBatches groups serialized requests into consecutive batches of at most maxCount
+// requests, each fitting a JSON array body (items joined by commas between brackets) of at
+// most maxBytes bytes. A request too large for a batch of its own is rejected beforehand by
+// serializeRequestsForBatch, so every request here fits.
+func splitIntoBatches(serialized []serializedRequest, maxCount int, maxBytes int) [][]serializedRequest {
+	var batches [][]serializedRequest
+	var batch []serializedRequest
+	byteLen := 1 // the opening bracket
+	for _, s := range serialized {
+		// Each item adds its own bytes plus one for the following comma or closing bracket.
+		if len(batch) > 0 && (len(batch) >= maxCount || byteLen+len(s.json)+1 > maxBytes) {
+			batches = append(batches, batch)
+			batch = nil
+			byteLen = 1
+		}
+		batch = append(batch, s)
+		byteLen += len(s.json) + 1
+	}
+	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+	return batches
+}
+
+// joinAsJSONArray joins the requests' pre-serialized JSON into a single JSON array body, so
+// sending a batch never re-marshals the requests it contains.
+func joinAsJSONArray(batch []serializedRequest) []byte {
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i, s := range batch {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(s.json)
+	}
+	buf.WriteByte(']')
+	return buf.Bytes()
+}
+
 // BatchAddRequests adds multiple requests to the queue. If forefront is true, they are added
 // to the front of the queue.
 //
-// The input is automatically split into chunks of at most 25 requests (the API limit), and
-// the per-chunk results are merged into a single [BatchAddResult]. Each chunk is still
-// subject to the client's standard retry policy.
+// The input is serialized once and split into batches that respect both the API's 25-request
+// and (effective, after a small safety margin) 9 MiB payload-size limits; the whole call fails
+// before anything is sent if any single request is too large for a batch of its own. The
+// per-batch results are merged into a single [BatchAddResult]. Each batch is still subject to
+// the client's standard retry policy, but unlike the reference client this does not itself
+// retry a batch's unprocessed requests — inspect [BatchAddResult.UnprocessedRequests] and retry
+// those explicitly if needed.
 func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []RequestQueueRequest, forefront bool) (BatchAddResult, error) {
 	var merged BatchAddResult
-	for start := 0; start < len(requests); start += maxRequestsPerBatchOperation {
-		end := start + maxRequestsPerBatchOperation
-		if end > len(requests) {
-			end = len(requests)
-		}
-		chunkResult, err := c.batchAddChunk(ctx, requests[start:end], forefront)
+	serialized, err := serializeRequestsForBatch(requests)
+	if err != nil {
+		return merged, err
+	}
+	for _, batch := range splitIntoBatches(serialized, maxRequestsPerBatchOperation, payloadSizeLimitBytes) {
+		chunkResult, err := c.batchAddChunk(ctx, batch, forefront)
 		if err != nil {
 			return merged, err
 		}
@@ -182,16 +281,13 @@ func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []Re
 	return merged, nil
 }
 
-// batchAddChunk sends a single batch (<= 25 requests) and parses the typed result.
-func (c *RequestQueueClient) batchAddChunk(ctx context.Context, requests []RequestQueueRequest, forefront bool) (BatchAddResult, error) {
+// batchAddChunk sends a single, pre-serialized and pre-sized batch and parses the typed result.
+func (c *RequestQueueClient) batchAddChunk(ctx context.Context, batch []serializedRequest, forefront bool) (BatchAddResult, error) {
 	params := NewQueryParams()
 	params.AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	body, err := json.Marshal(requests)
-	if err != nil {
-		return BatchAddResult{}, err
-	}
-	return postWithBody[BatchAddResult](ctx, c.ctx, "requests/batch", params, body, contentTypeJSON)
+	body := joinAsJSONArray(batch)
+	return postWithBody[BatchAddResult](ctx, c.ctx, "requests/batch", params, body, contentTypeJSON, c.ctx.mediumTimeout())
 }
 
 // BatchDeleteRequests deletes multiple requests in a single call. Each entry identifies a
@@ -231,17 +327,24 @@ func (c *RequestQueueClient) ListRequests(ctx context.Context, options ListReque
 	params := NewQueryParams()
 	options.apply(params)
 	c.withClientKey(params)
-	return getResourceRequired[json.RawMessage](ctx, c.ctx, "requests", params)
+	return getResourceRequired[json.RawMessage](ctx, c.ctx, "requests", params, c.ctx.mediumTimeout())
 }
 
 // ProlongRequestLock extends the lock on a request by lockSecs seconds. If forefront is
 // true, the request is moved to the front when its lock expires. Returns the raw response.
 func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, lockSecs int64, forefront bool) (json.RawMessage, error) {
+	if c.ctx.idErr != nil {
+		return nil, c.ctx.idErr
+	}
+	safeID, err := safePathSegment(id)
+	if err != nil {
+		return nil, err
+	}
 	params := NewQueryParams()
 	params.AddInt("lockSecs", &lockSecs).AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
-	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, nil, "", defaultRequestTimeout)
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + safeID + "/lock"))
+	resp, err := c.ctx.http.call(ctx, http.MethodPut, url, nil, "", c.ctx.mediumTimeout())
 	if err != nil {
 		return nil, err
 	}
@@ -251,11 +354,18 @@ func (c *RequestQueueClient) ProlongRequestLock(ctx context.Context, id string, 
 // DeleteRequestLock releases the lock on a request. If forefront is true, the request is
 // moved to the front of the queue.
 func (c *RequestQueueClient) DeleteRequestLock(ctx context.Context, id string, forefront bool) error {
+	if c.ctx.idErr != nil {
+		return c.ctx.idErr
+	}
+	safeID, err := safePathSegment(id)
+	if err != nil {
+		return err
+	}
 	params := NewQueryParams()
 	params.AddBool("forefront", &forefront)
 	c.withClientKey(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + encodePathSegment(id) + "/lock"))
-	_, err := c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", defaultRequestTimeout)
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("requests/" + safeID + "/lock"))
+	_, err = c.ctx.http.call(ctx, http.MethodDelete, url, nil, "", c.ctx.shortTimeout())
 	if err != nil && !isNotFound(err) {
 		return err
 	}
@@ -266,7 +376,7 @@ func (c *RequestQueueClient) DeleteRequestLock(ctx context.Context, id string, f
 // raw response.
 func (c *RequestQueueClient) UnlockRequests(ctx context.Context) (json.RawMessage, error) {
 	params := c.withClientKey(NewQueryParams())
-	return postWithBody[json.RawMessage](ctx, c.ctx, "requests/unlock", params, nil, "")
+	return postWithBody[json.RawMessage](ctx, c.ctx, "requests/unlock", params, nil, "", c.ctx.longTimeout())
 }
 
 // PaginateRequests returns a lazy iterator over all requests in the queue, fetching pages
@@ -318,7 +428,7 @@ func (it *RequestQueueRequestsIterator) fetchPage(ctx context.Context) error {
 	}
 	it.client.withClientKey(params)
 
-	raw, err := getResourceRequired[requestsPage](ctx, it.client.ctx, "requests", params)
+	raw, err := getResourceRequired[requestsPage](ctx, it.client.ctx, "requests", params, it.client.ctx.mediumTimeout())
 	if err != nil {
 		return err
 	}

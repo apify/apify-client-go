@@ -125,3 +125,29 @@ func TestBaseURLOverrideAppendsV2(t *testing.T) {
 		t.Fatalf("unexpected base URL: %q", client.APIBaseURL())
 	}
 }
+
+// WithBaseURL appends /v2 when missing, but does not double it when the caller already
+// included it (e.g. a URL read back from APIBaseURL and passed to a new client) — mirrors the
+// reference client's toApiBaseUrl test matrix exactly, so the two clients agree on every case,
+// including the "https://v2" host-vs-path edge case.
+func TestBaseURLAppendsV2Idempotently(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"https://example.com", "https://example.com/v2"},
+		{"https://example.com/", "https://example.com/v2"},
+		{"https://example.com/v2", "https://example.com/v2"},
+		{"https://example.com/v2/", "https://example.com/v2"},
+		{"https://example.com/v2//", "https://example.com/v2"},
+		{"https://example.com/proxy/v2", "https://example.com/proxy/v2"},
+		{"https://example.com/apiv2", "https://example.com/apiv2/v2"},
+		{"https://v2", "https://v2/v2"},
+	}
+	for _, c := range cases {
+		client := NewClient(WithToken("t"), WithBaseURL(c.input))
+		if got := client.APIBaseURL(); got != c.expected {
+			t.Errorf("WithBaseURL(%q): got %q, want %q", c.input, got, c.expected)
+		}
+	}
+}

@@ -29,6 +29,51 @@ type APIError struct {
 	Data map[string]any
 }
 
+// HTTP status codes classified by the Is* predicates below.
+const (
+	statusInvalidRequest = 400
+	statusUnauthorized   = 401
+	statusForbidden      = 403
+	statusConflict       = 409
+	statusRateLimited    = 429
+	statusServerErrorMin = 500
+)
+
+// IsInvalidRequest reports whether this is an HTTP 400 Bad Request, typically because the
+// request failed validation.
+//
+// The reference clients throw a distinct InvalidRequestError subclass for this status; since Go
+// has no exception hierarchy to mirror, these Is* predicates are the idiomatic equivalent
+// classification on the one APIError type.
+func (e *APIError) IsInvalidRequest() bool { return e.StatusCode == statusInvalidRequest }
+
+// IsUnauthorized reports whether this is an HTTP 401 Unauthorized: the token is missing or
+// invalid.
+func (e *APIError) IsUnauthorized() bool { return e.StatusCode == statusUnauthorized }
+
+// IsForbidden reports whether this is an HTTP 403 Forbidden: the token lacks permission for the
+// operation.
+func (e *APIError) IsForbidden() bool { return e.StatusCode == statusForbidden }
+
+// IsNotFound reports whether this is an HTTP 404 Not Found.
+//
+// Most Get-style methods already map a 404 to a false "present" bool rather than an error (see
+// e.g. [ActorClient.Get]), so this is mainly useful for methods that return other errors
+// directly, e.g. [ActorClient.Start] with a nonexistent Actor ID.
+func (e *APIError) IsNotFound() bool { return e.StatusCode == notFoundStatusCode }
+
+// IsConflict reports whether this is an HTTP 409 Conflict.
+func (e *APIError) IsConflict() bool { return e.StatusCode == statusConflict }
+
+// IsRateLimited reports whether this is an HTTP 429 Too Many Requests. The client already
+// retries these internally (see [WithMaxRetries]), so this surfaces only once retries are
+// exhausted.
+func (e *APIError) IsRateLimited() bool { return e.StatusCode == statusRateLimited }
+
+// IsServerError reports whether this is an HTTP 5xx status. Like IsRateLimited, the client
+// already retries these internally, so this surfaces only once retries are exhausted.
+func (e *APIError) IsServerError() bool { return e.StatusCode >= statusServerErrorMin }
+
 // Error implements the error interface.
 func (e *APIError) Error() string {
 	errType := e.Type

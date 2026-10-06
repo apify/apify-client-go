@@ -29,9 +29,10 @@ type mockBackend struct {
 }
 
 type mockResponse struct {
-	status int
-	body   string
-	err    error
+	status  int
+	body    string
+	err     error
+	headers http.Header // response headers; nil means none
 }
 
 func (m *mockBackend) Do(req *http.Request) (*http.Response, error) {
@@ -54,9 +55,13 @@ func (m *mockBackend) Do(req *http.Request) (*http.Response, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
+	header := r.headers
+	if header == nil {
+		header = http.Header{}
+	}
 	return &http.Response{
 		StatusCode: r.status,
-		Header:     http.Header{},
+		Header:     header,
 		Body:       io.NopCloser(bytes.NewReader([]byte(r.body))),
 	}, nil
 }
@@ -238,20 +243,20 @@ func unbrotli(t *testing.T, data []byte) []byte {
 func TestMaybeCompressRequestBody(t *testing.T) {
 	// Below the threshold: sent verbatim, no encoding.
 	small := []byte("small payload")
-	out, enc := maybeCompressRequestBody(small)
+	out, enc := maybeCompressRequestBody(small, "", compressorsFor(RequestCompressionAuto))
 	if enc != "" || !bytes.Equal(out, small) {
 		t.Fatalf("small body must not be compressed, got enc=%q", enc)
 	}
 
 	// A nil body stays nil (GET requests have no body).
-	out, enc = maybeCompressRequestBody(nil)
+	out, enc = maybeCompressRequestBody(nil, "", compressorsFor(RequestCompressionAuto))
 	if enc != "" || out != nil {
 		t.Fatalf("nil body must stay nil, got enc=%q out=%v", enc, out)
 	}
 
 	// Above the threshold and compressible: brotli is preferred, and it round-trips to the original.
 	large := []byte(strings.Repeat("compress me ", 200)) // ~2400 bytes, highly repetitive
-	out, enc = maybeCompressRequestBody(large)
+	out, enc = maybeCompressRequestBody(large, "", compressorsFor(RequestCompressionAuto))
 	if enc != contentEncodingBrotli {
 		t.Fatalf("large compressible body must prefer brotli, got enc=%q", enc)
 	}
@@ -269,12 +274,100 @@ func TestMaybeCompressRequestBody(t *testing.T) {
 	if _, err := rng.Read(incompressible); err != nil {
 		t.Fatalf("failed to build random payload: %v", err)
 	}
-	out, enc = maybeCompressRequestBody(incompressible)
+	out, enc = maybeCompressRequestBody(incompressible, "", compressorsFor(RequestCompressionAuto))
 	if enc != "" {
 		t.Fatalf("incompressible body must be sent uncompressed, got enc=%q", enc)
 	}
 	if !bytes.Equal(out, incompressible) {
 		t.Fatal("incompressible body must be returned unchanged")
+	}
+}
+
+// A large body whose Content-Type already carries its own compression (e.g. a ZIP archive) is
+// sent uncompressed: compressing it again would burn CPU for little to no size reduction.
+func TestMaybeCompressRequestBody_AlreadyCompressedContentType(t *testing.T) {
+	large := []byte(strings.Repeat("compress me ", 200))
+
+	out, enc := maybeCompressRequestBody(large, "application/zip", compressorsFor(RequestCompressionAuto))
+	if enc != "" {
+		t.Fatalf("an already-compressed content type must not be compressed, got enc=%q", enc)
+	}
+	if !bytes.Equal(out, large) {
+		t.Fatal("an already-compressed body must be sent verbatim")
+	}
+}
+
+// image/bmp sits under the already-compressed "image/" prefix but is itself raw, uncompressed
+// data, so it is still compressed. Exercises the exact-media-type exception list.
+func TestMaybeCompressRequestBody_CompressibleExceptionUnderPrefix(t *testing.T) {
+	large := []byte(strings.Repeat("compress me ", 200))
+
+	out, enc := maybeCompressRequestBody(large, "image/bmp; charset=binary", compressorsFor(RequestCompressionAuto))
+	if enc != contentEncodingBrotli {
+		t.Fatalf("image/bmp is raw despite the image/ prefix and should still be compressed, got enc=%q", enc)
+	}
+	if len(out) >= len(large) {
+		t.Fatalf("compressed body should be smaller: %d >= %d", len(out), len(large))
+	}
+}
+
+// WithRequestCompression(RequestCompressionGzip) must use gzip only, even for a body brotli
+// would otherwise have compressed first.
+func TestWithRequestCompressionGzipOnly(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":{}}`)}
+	client := NewClient(
+		WithToken("t"),
+		WithHTTPBackend(backend),
+		WithMaxRetries(0),
+		WithRequestCompression(RequestCompressionGzip),
+	)
+
+	large := []byte(strings.Repeat("compress me ", 200))
+	if _, err := client.Actor("some-actor").Update(context.Background(), map[string]any{"v": string(large)}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != contentEncodingGzip {
+		t.Fatalf("expected gzip-only compression, got Content-Encoding %q", got)
+	}
+}
+
+// The default RequestCompressionAuto still prefers brotli, matching existing behavior.
+func TestDefaultRequestCompressionPrefersBrotli(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":{}}`)}
+	client := testClient(backend, 0)
+
+	large := []byte(strings.Repeat("compress me ", 200))
+	if _, err := client.Actor("some-actor").Update(context.Background(), map[string]any{"v": string(large)}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != contentEncodingBrotli {
+		t.Fatalf("expected brotli by default, got Content-Encoding %q", got)
+	}
+}
+
+func TestIsCompressibleContentType(t *testing.T) {
+	cases := []struct {
+		contentType string
+		want        bool
+	}{
+		{"", true},
+		{"application/json", true},
+		{"application/json; charset=utf-8", true},
+		{"image/svg+xml", true},
+		{"image/png", false},
+		{"IMAGE/PNG", false},
+		{"audio/mpeg", false},
+		{"video/mp4", false},
+		{"application/zip", false},
+		{"application/octet-stream", true},
+		{"image/bmp", true},
+		{"audio/wav", true},
+		{"font/woff2", false},
+	}
+	for _, c := range cases {
+		if got := isCompressibleContentType(c.contentType); got != c.want {
+			t.Errorf("isCompressibleContentType(%q) = %v, want %v", c.contentType, got, c.want)
+		}
 	}
 }
 

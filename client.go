@@ -46,8 +46,12 @@ const (
 	defaultMaxRetries = 8
 	// defaultMinDelayBetweenRetries is the default minimum delay between retries.
 	defaultMinDelayBetweenRetries = 500 * time.Millisecond
-	// defaultTimeout is the default overall per-request timeout (6 minutes).
-	defaultTimeout = 360 * time.Second
+	// Default durations of the timeout tiers, matching the reference client's
+	// DEFAULT_TIMEOUT_SHORT_SECS/MEDIUM/LONG/MAX.
+	defaultTimeoutShort  = 5 * time.Second
+	defaultTimeoutMedium = 30 * time.Second
+	defaultTimeoutLong   = 360 * time.Second
+	defaultTimeoutMax    = 360 * time.Second
 	// meUserPlaceholder addresses the current user (/users/me).
 	meUserPlaceholder = "me"
 )
@@ -70,10 +74,14 @@ type clientConfig struct {
 	publicBaseURL          string
 	maxRetries             int
 	minDelayBetweenRetries time.Duration
-	timeout                time.Duration
+	timeoutShort           time.Duration
+	timeoutMedium          time.Duration
+	timeoutLong            time.Duration
+	timeoutMax             time.Duration
 	userAgentSuffix        string
 	backend                HTTPBackend
 	isAtHomeFn             func() bool
+	requestCompression     RequestCompression
 }
 
 // Option configures an [ApifyClient]. Pass options to [NewClient].
@@ -84,15 +92,17 @@ func WithToken(token string) Option {
 	return func(c *clientConfig) { c.token = token }
 }
 
-// WithBaseURL overrides the base URL of the API. The /v2 suffix is appended automatically.
+// WithBaseURL overrides the base URL of the API, with or without the /v2 version path — it is
+// appended automatically when not already the URL's final path segment, so passing a URL that
+// already ends in /v2 (e.g. one read back from [ApifyClient.APIBaseURL]) does not double it up.
 // Defaults to https://api.apify.com.
 func WithBaseURL(baseURL string) Option {
 	return func(c *clientConfig) { c.baseURL = baseURL }
 }
 
 // WithPublicBaseURL overrides the base URL used when building public, shareable resource
-// URLs (e.g. a signed dataset-items URL). Defaults to the API base URL. The /v2 suffix is
-// appended automatically.
+// URLs (e.g. a signed dataset-items URL). Defaults to the API base URL. Like [WithBaseURL], the
+// /v2 version path is appended automatically only when not already present.
 func WithPublicBaseURL(publicBaseURL string) Option {
 	return func(c *clientConfig) { c.publicBaseURL = publicBaseURL }
 }
@@ -107,14 +117,54 @@ func WithMinDelayBetweenRetries(d time.Duration) Option {
 	return func(c *clientConfig) { c.minDelayBetweenRetries = d }
 }
 
-// WithTimeout sets the overall per-request timeout (default 360s).
+// WithTimeout caps the timeout of any single request attempt (default 360s), same as
+// [WithTimeoutMax]. It bounds the growth of a tier's timeout across retries, and a tier
+// configured above the cap is capped too. Kept as an alias for the single-timeout option this
+// client had before timeout tiers ([WithTimeoutShort]/[WithTimeoutMedium]/[WithTimeoutLong]);
+// an existing caller of WithTimeout keeps every request capped at the same value as before,
+// while gaining the lower tier defaults below that cap (5s/30s/360s) in place of the previous
+// flat 360s for every request.
 func WithTimeout(d time.Duration) Option {
-	return func(c *clientConfig) { c.timeout = d }
+	return WithTimeoutMax(d)
+}
+
+// WithTimeoutShort sets the duration of the "short" timeout tier (default 5s), used for simple
+// metadata reads and writes (Get, Update, Delete). See the "Cancellation" section of the README
+// for how a single call can use a different timeout.
+func WithTimeoutShort(d time.Duration) Option {
+	return func(c *clientConfig) { c.timeoutShort = d }
+}
+
+// WithTimeoutMedium sets the duration of the "medium" timeout tier (default 30s), used for
+// listing, batch and trigger operations (List, Create, Start, BatchAddRequests).
+func WithTimeoutMedium(d time.Duration) Option {
+	return func(c *clientConfig) { c.timeoutMedium = d }
+}
+
+// WithTimeoutLong sets the duration of the "long" timeout tier (default 360s), used for
+// downloads, uploads and streaming (ListItems, SetRecord, Log().Get()).
+func WithTimeoutLong(d time.Duration) Option {
+	return func(c *clientConfig) { c.timeoutLong = d }
+}
+
+// WithTimeoutMax caps the timeout of any single request attempt (default 360s). It bounds the
+// growth of a tier's timeout across retries, and a tier configured above the cap is capped too,
+// so raise it whenever a tier needs to exceed 360s.
+func WithTimeoutMax(d time.Duration) Option {
+	return func(c *clientConfig) { c.timeoutMax = d }
 }
 
 // WithUserAgentSuffix appends a custom suffix to the User-Agent header.
 func WithUserAgentSuffix(suffix string) Option {
 	return func(c *clientConfig) { c.userAgentSuffix = suffix }
+}
+
+// WithRequestCompression selects which codec compresses request bodies (default
+// [RequestCompressionAuto]: brotli, falling back to gzip). A caller that wants a specific
+// codec, with no fallback to the other one, can pass [RequestCompressionBrotli] or
+// [RequestCompressionGzip].
+func WithRequestCompression(algo RequestCompression) Option {
+	return func(c *clientConfig) { c.requestCompression = algo }
 }
 
 // WithHTTPBackend replaces the default HTTP backend with a custom implementation. This is
@@ -153,7 +203,10 @@ func NewClient(opts ...Option) *ApifyClient {
 		baseURL:                defaultBaseURL,
 		maxRetries:             defaultMaxRetries,
 		minDelayBetweenRetries: defaultMinDelayBetweenRetries,
-		timeout:                defaultTimeout,
+		timeoutShort:           defaultTimeoutShort,
+		timeoutMedium:          defaultTimeoutMedium,
+		timeoutLong:            defaultTimeoutLong,
+		timeoutMax:             defaultTimeoutMax,
 		isAtHomeFn:             defaultIsAtHome,
 	}
 	for _, opt := range opts {
@@ -174,18 +227,60 @@ func NewClient(opts ...Option) *ApifyClient {
 		retry: retryConfig{
 			maxRetries:             cfg.maxRetries,
 			minDelayBetweenRetries: cfg.minDelayBetweenRetries,
-			timeout:                cfg.timeout,
+			timeoutMax:             cfg.timeoutMax,
 		},
+		// A tier configured above timeoutMax is capped at it, same as the reference client,
+		// so WithTimeoutMax always bounds every request regardless of its tier.
+		tiers: timeoutTiers{
+			short:  minDuration(cfg.timeoutShort, cfg.timeoutMax),
+			medium: minDuration(cfg.timeoutMedium, cfg.timeoutMax),
+			long:   minDuration(cfg.timeoutLong, cfg.timeoutMax),
+		},
+		compressors: compressorsFor(cfg.requestCompression),
 	}
 
-	baseURL := strings.TrimRight(cfg.baseURL, "/") + "/v2"
+	baseURL := toAPIBaseURL(cfg.baseURL)
 	publicSource := cfg.publicBaseURL
 	if publicSource == "" {
 		publicSource = cfg.baseURL
 	}
-	publicBaseURL := strings.TrimRight(publicSource, "/") + "/v2"
+	publicBaseURL := toAPIBaseURL(publicSource)
 
 	return &ApifyClient{http: hc, baseURL: baseURL, publicBaseURL: publicBaseURL}
+}
+
+// apiVersionPath is Apify's API version path segment, appended to a configured base URL unless
+// it is already present there (see [toAPIBaseURL]).
+const apiVersionPath = "/v2"
+
+// toAPIBaseURL appends apiVersionPath to url unless it is already the final path segment,
+// matching the reference client's toApiBaseUrl.
+//
+// A trailing slash (or several) is trimmed first, so "https://host/v2/" and "https://host/v2//"
+// both normalize to "https://host/v2" rather than growing a double slash. The check looks only
+// at the URL's path, not at the string as a whole: "https://v2" has no path ("v2" is the host),
+// so it still becomes "https://v2/v2" even though the raw string ends in "v2".
+func toAPIBaseURL(rawURL string) string {
+	authority, path := splitAuthority(rawURL)
+	path = strings.TrimRight(path, "/")
+	if strings.HasSuffix(path, apiVersionPath) {
+		return authority + path
+	}
+	return authority + path + apiVersionPath
+}
+
+// splitAuthority splits a URL into its authority (scheme://host[:port], or the whole string if
+// there is no path) and its path (starting with "/", or empty if there is none).
+func splitAuthority(rawURL string) (authority, path string) {
+	searchFrom := 0
+	if i := strings.Index(rawURL, "://"); i >= 0 {
+		searchFrom = i + len("://")
+	}
+	if rel := strings.IndexByte(rawURL[searchFrom:], '/'); rel >= 0 {
+		idx := searchFrom + rel
+		return rawURL[:idx], rawURL[idx:]
+	}
+	return rawURL, ""
 }
 
 // UserAgent returns the User-Agent header value this client sends.

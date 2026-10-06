@@ -95,7 +95,10 @@ func main() {
 		apify.WithPublicBaseURL("https://api.apify.com"), // base for signed, shareable URLs
 		apify.WithMaxRetries(8),                          // default 8
 		apify.WithMinDelayBetweenRetries(500*time.Millisecond),
-		apify.WithTimeout(360*time.Second), // default 6 minutes
+		apify.WithTimeoutShort(5*time.Second),   // metadata reads/writes; default 5s
+		apify.WithTimeoutMedium(30*time.Second), // listing/batch/trigger calls; default 30s
+		apify.WithTimeoutLong(360*time.Second),  // downloads/uploads/streaming; default 360s
+		apify.WithTimeoutMax(360*time.Second),   // caps any single request attempt; default 360s
 		apify.WithUserAgentSuffix("MyTool/1.0"),
 		apify.WithHTTPBackend(apify.NewDefaultHTTPBackend()),
 	)
@@ -106,13 +109,49 @@ func main() {
 | Option | Default | Description |
 | --- | --- | --- |
 | `WithToken` | — | API token, sent as a `Bearer` token. Optional; omit for an unauthenticated client limited to endpoints that need no token. |
-| `WithBaseURL` | `https://api.apify.com` | API base URL; `/v2` is appended automatically. |
-| `WithPublicBaseURL` | API base URL | Base URL used for building public, shareable URLs. |
+| `WithBaseURL` | `https://api.apify.com` | API base URL, with or without the `/v2` version path — it is appended automatically unless already present. |
+| `WithPublicBaseURL` | API base URL | Base URL used for building public, shareable URLs. Same `/v2` handling as `WithBaseURL`. |
 | `WithMaxRetries` | `8` | Maximum retries for failed requests. |
 | `WithMinDelayBetweenRetries` | `500ms` | Minimum delay between retries (doubled each retry). |
-| `WithTimeout` | `360s` | Overall per-request timeout. |
+| `WithTimeoutShort` | `5s` | Duration of the "short" timeout tier — simple metadata reads/writes (`Get`, `Update`, `Delete`). See [Timeouts](#timeouts). |
+| `WithTimeoutMedium` | `30s` | Duration of the "medium" tier — listing, batch and trigger operations (`List`, `Create`, `Start`, `BatchAddRequests`). |
+| `WithTimeoutLong` | `360s` | Duration of the "long" tier — downloads, uploads and streaming (`ListItems`, `SetRecord`, `Log().Get()`). |
+| `WithTimeoutMax` | `360s` | Caps the timeout of any single request attempt; a tier configured above it is capped too. `WithTimeout` is an alias for this option, kept for callers of the single-timeout API this client had before tiers. |
+| `WithRequestCompression` | `RequestCompressionAuto` | Codec for request-body compression: `RequestCompressionAuto` (brotli, falling back to gzip), `RequestCompressionBrotli`, or `RequestCompressionGzip`. See [Request compression](#request-compression). |
 | `WithUserAgentSuffix` | — | Suffix appended to the `User-Agent` header. |
 | `WithHTTPBackend` | `DefaultHTTPBackend` | Replaceable HTTP transport. |
+
+### Timeouts
+
+Every request the client sends is assigned one of three timeout tiers, matching the kind of
+operation its method performs — `short` for a metadata read/write, `medium` for a listing,
+batch or trigger call, `long` for a download, upload or streaming call — except the polling
+requests behind `WaitForFinish`/`Call`, which run with no client-imposed timeout of their own
+(the pure time budget `waitSecs`/`timeoutSecs` already bounds the overall wait). The duration of
+each tier is configured on the client (see the table above); a timeout still grows with each
+retry, capped at `WithTimeoutMax`.
+
+A single call that needs a different bound already has full control via the
+`context.Context` every method takes: canceling it, or giving it an earlier deadline with
+`context.WithTimeout`, overrides whichever tier the method would otherwise use (the client's
+internal per-attempt deadline is always the *later* of the two to apply — i.e.
+`context.WithTimeout` composes with whichever is sooner).
+
+A method with a `waitForFinishSecs`/`WaitForFinish` parameter that asks the API to hold the
+response (e.g. `RunClient.GetWithWait`, `ActorClient.Start`'s `WaitForFinish` option) extends
+its tier's timeout by the requested wait (capped at 60s, the server's own hold limit), so the
+request is not aborted client-side while the server is correctly honoring it.
+
+### Request compression
+
+Request bodies of 1 KiB or more are compressed before sending, to save upload bandwidth. By
+default (`RequestCompressionAuto`) the client prefers brotli and falls back to gzip when brotli
+errors or does not shrink the body; `WithRequestCompression(RequestCompressionBrotli)` or
+`WithRequestCompression(RequestCompressionGzip)` pins it to one codec, with no fallback to the
+other (a body that codec does not shrink is still sent uncompressed rather than failing).
+Compression is also skipped outright for a body whose content type already carries its own
+compression — images, audio, video, and common archive/office formats (e.g. `.zip`, `.docx`);
+a raw format that happens to share such a media type, like `image/bmp`, is still compressed.
 
 The `User-Agent` header reports an `isAtHome` flag indicating whether the client runs on the
 Apify platform. It is driven solely by the `APIFY_IS_AT_HOME` environment variable (the same
@@ -141,8 +180,13 @@ variable the JavaScript reference client reads); if it is set to a non-empty val
 
 API errors are returned as `*APIError`. Recover it from any returned `error` with
 `apify.AsAPIError(err) (*APIError, bool)` — the boolean is `false` when the error is not an API
-error (e.g. a network or context error). `get`/`delete` on a missing resource is *not* an error:
-the methods report absence via a boolean (`ok`) instead.
+error (e.g. a network or context error).
+
+`get`/`delete` addressing a resource by its own ID is *not* an error on a 404: the methods
+report absence via a boolean (`ok`) instead. A client reached through a fixed sub-path with no
+ID of its own, such as `client.Run(id).Dataset()`, cannot tell its own 404 apart from the
+parent's — there the error always propagates instead. See [docs/runs.md](docs/runs.md) for the
+affected accessors.
 
 `*APIError` exposes:
 
@@ -154,6 +198,11 @@ the methods report absence via a boolean (`ok`) instead.
 | `Attempt` | `int` | 1-based number of the API call attempt that produced this error. |
 | `HTTPMethod` | `string` | HTTP method of the failing call (e.g. `"GET"`, `"POST"`). |
 | `Path` | `string` | Request path of the endpoint (URL excluding origin). |
+
+It also exposes `IsInvalidRequest()`, `IsUnauthorized()`, `IsForbidden()`, `IsNotFound()`,
+`IsConflict()`, `IsRateLimited()` and `IsServerError()` — status-classification predicates, the
+idiomatic equivalent of the reference clients' `InvalidRequestError`/`NotFoundError`/...
+subclasses, since Go has no exception hierarchy to mirror them with.
 
 ```go
 user, ok, err := client.Me().Get(ctx)
@@ -167,6 +216,13 @@ if !ok {
 	log.Fatal("user not found")
 }
 ```
+
+### Cancellation
+
+The reference JavaScript client accepts an `AbortSignal` option on most methods so a caller can
+cancel an in-flight request. Every method here already takes a `context.Context`: cancel it (or
+let a `context.WithTimeout`/`context.WithDeadline` elapse) to stop the underlying request the
+same way, with no separate option needed.
 
 ## Custom HTTP transport
 
@@ -202,7 +258,7 @@ func main() {
 
 - `apify.ClientVersion` — the semantic version of this library.
 - `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-09-24T114302Z`).
+  (`v2-2026-10-01T153946Z`).
 
 ### Releasing
 
