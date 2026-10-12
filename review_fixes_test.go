@@ -190,6 +190,29 @@ func TestWaitForFinishResetsGracePeriodOnSuccessfulPoll(t *testing.T) {
 	}
 }
 
+// If the run was seen once and then answers 404 for the rest of a short wait budget (the budget
+// elapsing well inside the 3s grace period, not because of it), WaitForFinish must report
+// not-found rather than returning the stale last-known state: present is cleared on every 404,
+// matching the reference client resetting its job to undefined on every 404.
+func TestWaitForFinishReturnsNotFoundWhenBudgetExhaustedWhileCurrently404(t *testing.T) {
+	runningResp := mockResponse{status: 200, body: `{"data":{"id":"r1","status":"RUNNING"}}`}
+	notFoundResp := mockResponse{status: 404, body: `{"error":{"type":"record-not-found","message":"missing"}}`}
+	// Only the first poll succeeds; every poll after that 404s, clamped by mockBackend for as
+	// long as the (sub-3s) budget keeps the loop going.
+	backend := &mockBackend{responses: []mockResponse{runningResp, notFoundResp}}
+	client := testClient(backend, 0)
+
+	oneSec := int64(1)
+	_, err := client.Run("r1").WaitForFinish(context.Background(), &oneSec)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || !apiErr.IsNotFound() {
+		t.Fatalf("expected a not-found *APIError (not the stale RUNNING run), got %v", err)
+	}
+	if backend.calls < 2 {
+		t.Fatalf("expected at least 2 polls (the success, then at least one 404), got %d", backend.calls)
+	}
+}
+
 // An INDEFINITE WaitForFinish (nil waitSecs) against a permanent 404 must NOT hang forever:
 // it polls through 404s on a pure time bound, so a cancelled context unblocks it promptly.
 // This is the regression test for the waitForFinish hang bug.

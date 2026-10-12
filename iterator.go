@@ -29,14 +29,13 @@ type ListIterator[T any] struct {
 	// fetches exactly once and never asks for a second page, instead of paging to an empty one.
 	unpaginated bool
 
-	buffer      []T
-	pos         int
-	startOffset int64 // offset the caller asked iteration to start from (0 when unset)
-	offset      int64
-	remaining   int64 // items still allowed to be yielded after the current buffer; valid once started and hasLimit
-	hasLimit    bool  // whether limit was set, i.e. whether remaining is meaningful (see loadPage)
-	started     bool
-	exhausted   bool
+	buffer    []T
+	pos       int
+	offset    int64 // current page offset, seeded from the caller's starting offset (0 when unset)
+	remaining int64 // items still allowed to be yielded after the current buffer; valid once started and hasLimit
+	hasLimit  bool  // whether limit was set, i.e. whether remaining is meaningful (see loadPage)
+	started   bool
+	exhausted bool
 }
 
 // newListIterator builds a ListIterator from a page-fetch closure, the total-item cap (limit),
@@ -44,7 +43,7 @@ type ListIterator[T any] struct {
 // when unset). It is the constructor behind every offset-paginated collection's Iterate helper,
 // keeping the paging logic in one place (DRY).
 func newListIterator[T any](limit, chunkSize *int64, startOffset int64, fetch func(ctx context.Context, offset, limit int64) (PaginationList[T], error)) *ListIterator[T] {
-	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize, startOffset: startOffset, offset: startOffset}
+	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize, offset: startOffset}
 }
 
 // newUnpaginatedIterator builds a ListIterator for an endpoint that ignores offset/limit and

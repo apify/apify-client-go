@@ -476,7 +476,11 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 			}
 		} else {
 			// A transient 404 is not immediately fatal: keep polling, but only for up to
-			// maxWaitForMissingJob of continuous 404s.
+			// maxWaitForMissingJob of continuous 404s. present is cleared so that, if the budget
+			// runs out while currently 404 (even if the resource was seen earlier), the final
+			// check below reports not-found rather than a stale last-known state — matching the
+			// reference client, which resets its job to undefined on every 404.
+			present = false
 			if notFoundSince.IsZero() {
 				notFoundSince = time.Now()
 			}
@@ -497,13 +501,14 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 	}
 
 	if present {
-		// Budget exhausted but the resource was seen at least once: return its latest state
-		// (e.g. still running). Mirrors the reference client returning the last fetched job.
+		// Budget exhausted but the latest poll succeeded: return its state (e.g. still running).
+		// Mirrors the reference client returning the last fetched job.
 		return resource, nil
 	}
 
-	// The resource never became available within the wait budget; notFoundErr is always set at
-	// this point, since `present` can only be false after at least one swallowed 404.
+	// The budget ran out while the resource was absent (currently 404, whether or not it was
+	// seen earlier): notFoundErr is always set at this point, since present can only be false
+	// after at least one swallowed 404.
 	return zero, notFoundErr
 }
 
