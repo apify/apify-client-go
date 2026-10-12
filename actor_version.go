@@ -19,16 +19,14 @@ func (c *ActorVersionCollectionClient) List(ctx context.Context, options ListOpt
 	return listResource[ActorVersion](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over the Actor's versions matching the options, fetching
-// pages on demand. The options' Limit caps the total number of versions yielded (unset means
-// all); the per-page size is chunkSize (nil for the server default). Mirrors the reference
-// client's iterable list().
+// Iterate returns a lazy iterator over the Actor's versions. The versions endpoint ignores
+// offset/limit/desc (per the OpenAPI specification, it always returns every version in one
+// response), so options and chunkSize are accepted only for interface symmetry with the other
+// collections' Iterate and have no effect; the iterator drains a single page. Mirrors the
+// reference client's versions().list(), which likewise exposes no pagination options.
 func (c *ActorVersionCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[ActorVersion] {
-	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[ActorVersion], error) {
-		opts := options
-		opts.Offset = &offset
-		opts.Limit = pageLimitPtr(limit)
-		return c.List(ctx, opts)
+	return newUnpaginatedIterator(func(ctx context.Context) (PaginationList[ActorVersion], error) {
+		return c.List(ctx, options)
 	})
 }
 

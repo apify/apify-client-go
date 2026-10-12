@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -121,8 +122,8 @@ func notFound() []mockResponse {
 }
 
 // A bounded WaitForFinish against a resource that stays 404 must terminate when the budget
-// is exhausted and return a descriptive error (not the raw 404), matching the reference
-// client's "Waiting for run to finish failed" behaviour.
+// is exhausted and return the 404 as an *APIError (not a successful result), matching the
+// reference client's waitForFinish() now rejecting with a NotFoundError.
 func TestWaitForFinishBoundedReturnsDescriptiveErrorOn404(t *testing.T) {
 	backend := &mockBackend{responses: notFound()}
 	client := testClient(backend, 0)
@@ -130,14 +131,62 @@ func TestWaitForFinishBoundedReturnsDescriptiveErrorOn404(t *testing.T) {
 	zeroSecs := int64(0)
 	_, err := client.Run("r1").WaitForFinish(context.Background(), &zeroSecs)
 	if err == nil {
-		t.Fatal("expected a descriptive error when the run never becomes available")
+		t.Fatal("expected an error when the run never becomes available")
 	}
-	if !strings.Contains(err.Error(), "waiting for run to finish failed") {
-		t.Fatalf("expected descriptive wait error, got %q", err.Error())
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || !apiErr.IsNotFound() {
+		t.Fatalf("expected a not-found *APIError, got %v (%T)", err, err)
 	}
 	// 404 must not be retried by the transport, and the budget=0 path does exactly one fetch.
 	if backend.calls != 1 {
 		t.Fatalf("expected exactly 1 fetch for a zero-budget wait, got %d", backend.calls)
+	}
+}
+
+// WaitForFinish must give up on a run/build that keeps answering 404 once that has gone on for
+// longer than the 404 grace period (3s), well before the overall wait budget — matching the
+// reference client, which otherwise polled a missing job for its default budget of >11 days.
+func TestWaitForFinishGivesUpAfterGracePeriodOnPersistent404(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	generousSecs := int64(30)
+	start := time.Now()
+	_, err := client.Run("r1").WaitForFinish(context.Background(), &generousSecs)
+	elapsed := time.Since(start)
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || !apiErr.IsNotFound() {
+		t.Fatalf("expected a not-found *APIError, got %v (%T)", err, err)
+	}
+	// Must stop around the 3s grace period, nowhere near the 30s budget.
+	if elapsed < maxWaitForMissingJob || elapsed > maxWaitForMissingJob+2*time.Second {
+		t.Fatalf("expected to give up around the %s grace period, took %s", maxWaitForMissingJob, elapsed)
+	}
+}
+
+// A successful poll in between resets the 404 grace period, so a run/build that goes
+// 404 -> briefly visible -> 404 again is not penalized for the earlier 404 streak.
+func TestWaitForFinishResetsGracePeriodOnSuccessfulPoll(t *testing.T) {
+	notFoundResp := mockResponse{status: 404, body: `{"error":{"type":"record-not-found","message":"missing"}}`}
+	runningResp := mockResponse{status: 200, body: `{"data":{"id":"r1","status":"RUNNING"}}`}
+	succeededResp := mockResponse{status: 200, body: `{"data":{"id":"r1","status":"SUCCEEDED"}}`}
+	backend := &mockBackend{responses: []mockResponse{
+		notFoundResp, notFoundResp, notFoundResp, runningResp,
+		notFoundResp, notFoundResp, notFoundResp, succeededResp,
+	}}
+	client := testClient(backend, 0)
+
+	generousSecs := int64(30)
+	run, err := client.Run("r1").WaitForFinish(context.Background(), &generousSecs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if run.Status != "SUCCEEDED" {
+		t.Fatalf("expected the final SUCCEEDED run, got status %q", run.Status)
+	}
+	if backend.calls != 8 {
+		t.Fatalf("expected exactly 8 polls (both 404 streaks fully consumed), got %d", backend.calls)
 	}
 }
 
@@ -492,6 +541,9 @@ func TestIterateDatasetItemsUsesScannedCount(t *testing.T) {
 		{status: 200, body: `[]`, headers: pageHeaders(10, 0, 5, 5)},
 		// Page 2: scanned the remaining 5 rows (offset 5-9), all kept.
 		{status: 200, body: `[1,2,3,4,5]`, headers: pageHeaders(10, 5, 5, 5)},
+		// Page 3: no Limit was set, so the iterator does not stop after page 2's 5 items; it
+		// needs this trailing empty page (scanned 0) to confirm there is nothing left.
+		{status: 200, body: `[]`, headers: pageHeaders(10, 10, 5, 0)},
 	}}
 	client := testClient(backend, 0)
 
@@ -508,10 +560,10 @@ func TestIterateDatasetItemsUsesScannedCount(t *testing.T) {
 		items = append(items, *item)
 	}
 	if len(items) != 5 {
-		t.Fatalf("expected 5 items across both pages, got %d", len(items))
+		t.Fatalf("expected 5 items across both non-empty pages, got %d", len(items))
 	}
-	if backend.calls != 2 {
-		t.Fatalf("expected exactly 2 page fetches, got %d", backend.calls)
+	if backend.calls != 3 {
+		t.Fatalf("expected exactly 3 page fetches (including the trailing empty one), got %d", backend.calls)
 	}
 }
 

@@ -220,6 +220,9 @@ func (c *RunClient) generateIdempotencyKey(eventName string) string {
 
 // WaitForFinish polls until the run reaches a terminal state or waitSecs elapses (nil waits
 // indefinitely). It returns the latest run.
+//
+// Returns an *APIError for a 404 if the run keeps returning one for more than 3 seconds
+// (riding out database-replica lag on a just-started run).
 func (c *RunClient) WaitForFinish(ctx context.Context, waitSecs *int64) (ActorRun, error) {
 	return waitForFinish[ActorRun](ctx, c.ctx, waitSecs, "run", func(r *ActorRun) bool { return r.IsTerminal() })
 }

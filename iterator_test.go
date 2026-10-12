@@ -104,7 +104,9 @@ func TestListIteratorTotalCap(t *testing.T) {
 }
 
 func TestListIteratorNoCapPagesAll(t *testing.T) {
-	// No total cap, page size 2, backing 5 → all 5 items across 3 pages (2+2+1).
+	// No Limit, page size 2, backing 5 → all 5 items. With no Limit the iterator never consults
+	// Total, so it always needs one extra request past the last non-empty page to confirm there
+	// is nothing left: 2+2+1 items across 4 fetches, the last one finding an empty page.
 	var calls [][2]int64
 	it := newListIterator(nil, ptrInt64(2), 0, stubFetcher(5, 1000, &calls))
 	got := drainInts(t, it)
@@ -116,8 +118,14 @@ func TestListIteratorNoCapPagesAll(t *testing.T) {
 			t.Fatalf("item %d = %d, want %d (items: %v)", i, v, i, got)
 		}
 	}
-	if len(calls) != 3 {
-		t.Fatalf("expected 3 page fetches (2+2+1), got %d: %v", len(calls), calls)
+	want := [][2]int64{{0, 2}, {2, 2}, {4, 2}, {5, 2}}
+	if len(calls) != len(want) {
+		t.Fatalf("expected %d page fetches (2+2+1+0), got %d: %v", len(want), len(calls), calls)
+	}
+	for i, w := range want {
+		if calls[i] != w {
+			t.Fatalf("page %d: requested (offset,limit)=%v, want %v (all calls: %v)", i, calls[i], w, calls)
+		}
 	}
 }
 
@@ -187,9 +195,10 @@ func TestListIteratorStartOffsetWithLimit(t *testing.T) {
 
 func TestListIteratorNonFinalShortPage(t *testing.T) {
 	// The server caps every page at 2 items even when the iterator requests a larger chunk (10),
-	// so pages 1 and 2 are non-final yet shorter than requested. Iteration must keep paging (via
-	// the reported Total) and still yield the whole collection rather than stopping early on the
-	// first short page.
+	// so pages 1-3 are non-final yet shorter than requested. Iteration must keep paging by
+	// scanned rows alone and still yield the whole collection rather than stopping early on a
+	// short page; with no Limit set, it needs one more request past the last page to find it
+	// empty.
 	var calls [][2]int64
 	it := newListIterator(nil, ptrInt64(10), 0, boundedFetcher(6, 6, 2, &calls))
 	got := drainInts(t, it)
@@ -201,10 +210,15 @@ func TestListIteratorNonFinalShortPage(t *testing.T) {
 			t.Fatalf("item %d = %d, want %d (items: %v)", i, v, i, got)
 		}
 	}
-	// Pages at offsets 0,2,4 return 2 items each (remaining reaches 0 after the third), so the
-	// iterator must not issue a needless fourth (empty) fetch.
-	if len(calls) != 3 {
-		t.Fatalf("expected 3 page fetches (2+2+2), got %d: %v", len(calls), calls)
+	// Pages at offsets 0,2,4 return 2 items each, then offset 6 comes back empty.
+	want := [][2]int64{{0, 10}, {2, 10}, {4, 10}, {6, 10}}
+	if len(calls) != len(want) {
+		t.Fatalf("expected %d page fetches (2+2+2+0), got %d: %v", len(want), len(calls), calls)
+	}
+	for i, w := range want {
+		if calls[i] != w {
+			t.Fatalf("page %d: requested (offset,limit)=%v, want %v (all calls: %v)", i, calls[i], w, calls)
+		}
 	}
 }
 
@@ -221,6 +235,73 @@ func TestListIteratorOverReportedTotalTerminates(t *testing.T) {
 	// offset 0 -> 2 items, offset 2 -> 1 item, offset 3 -> empty (terminates).
 	if len(calls) != 3 {
 		t.Fatalf("expected 3 page fetches, got %d: %v", len(calls), calls)
+	}
+}
+
+func TestListIteratorKeepsPagingPastFirstPageTotalWhenCollectionGrows(t *testing.T) {
+	// The collection holds 2 rows when the first page is read and 4 from the second page on
+	// (e.g. a dataset a running Actor keeps pushing to). An iterator that capped itself to the
+	// first page's Total=2 would stop before the two rows pushed after it started; it must keep
+	// paging until it finds an empty page instead.
+	var calls [][2]int64
+	call := 0
+	fetch := func(_ context.Context, offset, limit int64) (PaginationList[int], error) {
+		calls = append(calls, [2]int64{offset, limit})
+		call++
+		total := int64(2)
+		if call > 1 {
+			total = 4
+		}
+		var items []int
+		for i := offset; i < offset+limit && i < total; i++ {
+			items = append(items, int(i))
+		}
+		return PaginationList[int]{Total: total, Offset: offset, Limit: limit, Count: int64(len(items)), Items: items}, nil
+	}
+
+	it := newListIterator(nil, ptrInt64(2), 0, fetch)
+	got := drainInts(t, it)
+	want := []int{0, 1, 2, 3}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v (collection grown to 4), got %v", want, got)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Fatalf("item %d = %d, want %d (items: %v)", i, got[i], v, got)
+		}
+	}
+	wantCalls := [][2]int64{{0, 2}, {2, 2}, {4, 2}}
+	if len(calls) != len(wantCalls) {
+		t.Fatalf("expected %d page fetches, got %d: %v", len(wantCalls), len(calls), calls)
+	}
+	for i, w := range wantCalls {
+		if calls[i] != w {
+			t.Fatalf("page %d: requested (offset,limit)=%v, want %v (all calls: %v)", i, calls[i], w, calls)
+		}
+	}
+}
+
+func TestListIteratorUnpaginatedFetchesOnce(t *testing.T) {
+	// An unpaginated iterator (ActorVersionCollectionClient.Iterate, ActorEnvVarCollectionClient.Iterate)
+	// must fetch exactly once regardless of how many items come back, since the endpoint always
+	// returns the full set and a second fetch would loop forever under the general algorithm.
+	calls := 0
+	it := newUnpaginatedIterator(func(context.Context) (PaginationList[int], error) {
+		calls++
+		return PaginationList[int]{Total: 3, Count: 3, Items: []int{0, 1, 2}}, nil
+	})
+	got := drainInts(t, it)
+	want := []int{0, 1, 2}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Fatalf("item %d = %d, want %d (items: %v)", i, got[i], v, got)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 fetch, got %d", calls)
 	}
 }
 

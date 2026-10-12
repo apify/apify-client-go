@@ -5,6 +5,40 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-10-12
+
+### Added
+
+- `ActorStartOptions.WaitForResources`/`TaskStartOptions.WaitForResources`: retry
+  `Start`/`StartRaw`/`Call`/`CallRaw` every 10 seconds while the API rejects the start for lack
+  of resources (`actor-memory-limit-exceeded` or `concurrent-runs-limit-exceeded`), until it
+  succeeds or the given number of seconds elapses. `WaitForResourcesIndefinitely` retries with
+  no time bound. Matches the reference client's `waitForResources` option.
+
+### Fixed
+
+- `RunClient.WaitForFinish`/`BuildClient.WaitForFinish` (and `ActorClient.Call`/`CallRaw`,
+  `TaskClient.Call`, which poll through them) now give up with the API's 404 error after the
+  run/build keeps returning one for 3 seconds, instead of polling it for the full wait budget
+  (unbounded calls default to ~11.5 days). A successful poll resets the 3-second window. Matches
+  the reference client's fix.
+- Every offset-paginated `Iterate` (and `IterateDatasetItems`/`IterateItems`) no longer stops at
+  the `Total` reported by its first page: it now keeps requesting pages until one scans no rows,
+  or the caller's `Limit` is reached, so rows added to a growing collection while the loop runs
+  are no longer skipped. Draining an iterator with no `Limit` set now always ends with one extra
+  request that finds an empty page. Matches the reference client's fix.
+- `ActorVersionCollectionClient.Iterate` now fetches the version collection once instead of
+  paging it: the endpoint ignores `offset`/`limit` and always returns every version in one
+  response, which the previous Total-based stopping condition happened to terminate correctly on
+  but the fix above no longer does. `ActorEnvVarCollectionClient.Iterate` already fetched once
+  and is unaffected.
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-10-08T073338Z`.
+- Bumped `ClientVersion` to `0.11.0`.
+- Updated `README.md`'s documented `APISpecVersion` example to match.
+
 ## [0.10.0] - 2026-10-02
 
 ### Added
