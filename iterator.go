@@ -24,22 +24,39 @@ type ListIterator[T any] struct {
 	limit *int64
 	// chunkSize is the per-page size (nil or <=0 means the server default).
 	chunkSize *int64
+	// unpaginated marks an endpoint that ignores offset/limit and always returns every item in
+	// a single response (the Actor version and environment-variable collections). loadPage then
+	// fetches exactly once and never asks for a second page, instead of paging to an empty one.
+	unpaginated bool
 
-	buffer      []T
-	pos         int
-	startOffset int64 // offset the caller asked iteration to start from (0 when unset)
-	offset      int64
-	remaining   int64 // items still allowed to be yielded after the current buffer; valid once started
-	started     bool
-	exhausted   bool
+	buffer    []T
+	pos       int
+	offset    int64 // current page offset, seeded from the caller's starting offset (0 when unset)
+	remaining int64 // items still allowed to be yielded after the current buffer; valid once started and hasLimit
+	hasLimit  bool  // whether limit was set, i.e. whether remaining is meaningful (see loadPage)
+	started   bool
+	exhausted bool
 }
 
 // newListIterator builds a ListIterator from a page-fetch closure, the total-item cap (limit),
 // the per-page size (chunkSize) and the starting offset (startOffset, the caller's Offset, 0
-// when unset). It is the single constructor behind every collection's Iterate helper, keeping
-// the paging logic in one place (DRY).
+// when unset). It is the constructor behind every offset-paginated collection's Iterate helper,
+// keeping the paging logic in one place (DRY).
 func newListIterator[T any](limit, chunkSize *int64, startOffset int64, fetch func(ctx context.Context, offset, limit int64) (PaginationList[T], error)) *ListIterator[T] {
-	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize, startOffset: startOffset, offset: startOffset}
+	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize, offset: startOffset}
+}
+
+// newUnpaginatedIterator builds a ListIterator for an endpoint that ignores offset/limit and
+// always returns every item in one response (e.g. the Actor version and environment-variable
+// collections — see ActorVersionCollectionClient.Iterate and ActorEnvVarCollectionClient.Iterate).
+// It fetches once and never asks for a second page. Matches the reference client's
+// listUnpaginatedResources: under the general paging algorithm, an endpoint like this would
+// return the same non-empty page forever, since it never "scans zero rows".
+func newUnpaginatedIterator[T any](fetch func(ctx context.Context) (PaginationList[T], error)) *ListIterator[T] {
+	return &ListIterator[T]{
+		unpaginated: true,
+		fetch:       func(ctx context.Context, _, _ int64) (PaginationList[T], error) { return fetch(ctx) },
+	}
 }
 
 // Next returns the next item, or (nil, nil) once the collection (or the total-item cap) is
@@ -60,61 +77,90 @@ func (it *ListIterator[T]) Next(ctx context.Context) (*T, error) {
 
 // loadPage loads the next page into the buffer, following the same offset/limit/chunkSize
 // arithmetic as the reference client's _listPaginated: the first page requests
-// min(limit, chunkSize) items; the total cap is then bounded by the reported total, and each
-// subsequent page requests min(remaining, chunkSize) items. Iteration ends when a page scans no
-// more rows or the remaining cap reaches zero.
+// min(limit, chunkSize) items, and each subsequent page requests min(remaining, chunkSize)
+// items, where remaining only exists when the caller set a Limit. Iteration ends when a page
+// scans no rows, or (if a Limit was set) once that many items have been yielded — never by
+// consulting the reported Total, which goes stale the moment the listed resource grows or
+// shrinks while the loop runs (e.g. a dataset a running Actor keeps pushing to). Draining an
+// uncapped iterator therefore always ends with one extra request that finds an empty page.
 //
-// Advancing the offset and the remaining cap uses the number of rows the page's fetch scanned
-// (page.scanned, falling back to the item count when a page does not report one), not the
-// number of items it returned. For most endpoints the two are the same; dataset items can
-// differ, since clean/skipEmpty/skipHidden/unwind reshape the rows after Offset/Limit have
-// already been applied to them (see ListDatasetItems). Using the returned count there would
-// re-scan rows a filter dropped, skip rows unwind multiplied, or stop in front of rows a filter
-// hid from an otherwise-empty page.
+// Advancing the offset uses the number of rows the page's fetch scanned (page.scanned, falling
+// back to the item count when a page does not report one — the two are the same for every
+// endpoint except dataset items, see ListDatasetItems), capped at the limit requested for that
+// page. The cap matters because the scanned count can lag a fresh push down to zero even though
+// the page has rows (see ListDatasetItems), and because Unwind can make items.length exceed what
+// was requested; either way advancing past the requested limit would skip rows the next request
+// should have read.
 func (it *ListIterator[T]) loadPage(ctx context.Context) error {
+	if it.unpaginated {
+		return it.loadUnpaginatedPage(ctx)
+	}
+
 	var limitParam int64
 	if !it.started {
 		limitParam = minForLimitParam(it.limitVal(), it.chunkVal())
 	} else {
-		limitParam = minForLimitParam(it.remaining, it.chunkVal())
+		limitParam = minForLimitParam(it.remainingLimitParam(), it.chunkVal())
 	}
 
 	page, err := it.fetch(ctx, it.offset, limitParam)
 	if err != nil {
 		return err
 	}
-	n := int64(len(page.Items))
-	scanned := page.scanned
-	if scanned == 0 {
-		scanned = n
-	}
+	scanned := scannedRows(page, limitParam)
 	it.buffer = page.Items
 	it.pos = 0
 	it.offset += scanned
 
 	if !it.started {
 		it.started = true
-		// Cap the number of items to yield: from the start offset onward at most
-		// (Total - startOffset) items remain, and no more than the caller's Limit. This mirrors
-		// the reference client's remainingItems = min(total - offset, limit) - firstPageCount,
-		// so a caller-set Offset is honored as the starting point and a Limit larger than the
-		// collection still yields everything from the offset onward.
-		capItems := page.Total - it.startOffset
-		if capItems < 0 {
-			capItems = 0
+		if l := it.limitVal(); l > 0 {
+			it.hasLimit = true
+			it.remaining = l - scanned
 		}
-		if l := it.limitVal(); l > 0 && l < capItems {
-			capItems = l
-		}
-		it.remaining = capItems - scanned
-	} else {
+	} else if it.hasLimit {
 		it.remaining -= scanned
 	}
 
-	if scanned == 0 || it.remaining <= 0 {
+	if scanned == 0 || (it.hasLimit && it.remaining <= 0) {
 		it.exhausted = true
 	}
 	return nil
+}
+
+// loadUnpaginatedPage fetches the single response of an unpaginated iterator (see
+// newUnpaginatedIterator) and marks the iterator exhausted unconditionally: there is never a
+// second page to ask for.
+func (it *ListIterator[T]) loadUnpaginatedPage(ctx context.Context) error {
+	page, err := it.fetch(ctx, 0, 0)
+	if err != nil {
+		return err
+	}
+	it.buffer = page.Items
+	it.pos = 0
+	it.exhausted = true
+	return nil
+}
+
+// scannedRows returns the number of rows page's fetch scanned (falling back to the returned
+// item count when the page does not report one — see loadPage), capped at requestedLimit
+// (0 meaning "unset", i.e. no cap). Matches the reference client's scannedRows.
+func scannedRows[T any](page PaginationList[T], requestedLimit int64) int64 {
+	scanned := maxInt64(page.scanned, int64(len(page.Items)))
+	if requestedLimit > 0 && scanned > requestedLimit {
+		return requestedLimit
+	}
+	return scanned
+}
+
+// remainingLimitParam returns the number of items still allowed by the caller's Limit, for use
+// as a minForLimitParam input (0 meaning "unset"). Only meaningful once hasLimit is set; loadPage
+// never calls it otherwise.
+func (it *ListIterator[T]) remainingLimitParam() int64 {
+	if !it.hasLimit {
+		return 0
+	}
+	return it.remaining
 }
 
 // limitVal returns the total-item cap as a plain int64 (0 when unset).

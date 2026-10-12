@@ -82,6 +82,9 @@ func (c *BuildClient) Delete(ctx context.Context) error {
 
 // WaitForFinish polls until the build reaches a terminal state or waitSecs elapses (nil
 // waits indefinitely). It returns the latest build.
+//
+// Returns an *APIError for a 404 if the build keeps returning one for more than 3 seconds
+// (riding out database-replica lag on a just-started build).
 func (c *BuildClient) WaitForFinish(ctx context.Context, waitSecs *int64) (Build, error) {
 	return waitForFinish[Build](ctx, c.ctx, waitSecs, "build", func(b *Build) bool { return b.IsTerminal() })
 }

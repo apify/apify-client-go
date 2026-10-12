@@ -77,6 +77,11 @@ type TaskStartOptions struct {
 	RestartOnError *bool
 	// Webhooks are ad-hoc webhooks to attach to this run (base64-encoded JSON).
 	Webhooks []any
+	// WaitForResources, if set, retries the start every 10 seconds while the API rejects it for
+	// lack of resources. See [ActorStartOptions.WaitForResources] for the full semantics (same
+	// error types, cooldown and WaitForResourcesIndefinitely sentinel; this field mirrors it for
+	// task starts).
+	WaitForResources *int64
 }
 
 func (o TaskStartOptions) apply(q *QueryParams) {
@@ -102,7 +107,9 @@ func (c *TaskClient) Start(ctx context.Context, input any, options TaskStartOpti
 		return ActorRun{}, err
 	}
 	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
-	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentTypeJSON, timeout)
+	return startWaitingForResources(ctx, options.WaitForResources, func() (ActorRun, error) {
+		return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentTypeJSON, timeout)
+	})
 }
 
 // Call starts the task and waits (client-side polling) for it to finish. waitSecs bounds the

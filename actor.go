@@ -31,6 +31,18 @@ type ActorStartOptions struct {
 	// Webhooks are ad-hoc webhooks to attach to this run. They are serialized to
 	// base64-encoded JSON as the `webhooks` query parameter, matching the reference clients.
 	Webhooks []any
+	// WaitForResources, if set, retries the start every 10 seconds while the API rejects it for
+	// lack of resources (an *APIError of type "actor-memory-limit-exceeded" or
+	// "concurrent-runs-limit-exceeded"; both clear as other runs or builds of the account
+	// finish). Nil (the default) does not retry: the first error is returned as-is. Use
+	// WaitForResourcesIndefinitely to retry with no time bound, or a number of seconds to stop
+	// retrying after that long and return the last error. Any other error is returned
+	// immediately, without retrying.
+	//
+	// A run that requests more memory than the account's whole memory limit is rejected with
+	// actor-memory-limit-exceeded as well and never starts, so WaitForResourcesIndefinitely
+	// retries it forever.
+	WaitForResources *int64
 }
 
 func (o ActorStartOptions) apply(q *QueryParams) {
@@ -146,7 +158,9 @@ func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultCon
 		contentType = *options.ContentType
 	}
 	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
-	return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentType, timeout)
+	return startWaitingForResources(ctx, options.WaitForResources, func() (ActorRun, error) {
+		return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentType, timeout)
+	})
 }
 
 // Call starts the Actor and waits (client-side polling) for it to finish.

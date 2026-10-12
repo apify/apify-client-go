@@ -155,6 +155,7 @@ fmt.Println(string(result)) // raw JSON validation result
 | `RestartOnError` | `*bool` | Restart the run if it fails. |
 | `ForcePermissionLevel` | `*string` | Override the Actor's permission level for this run. Accepted values: `LIMITED_PERMISSIONS`, `FULL_PERMISSIONS`. |
 | `Webhooks` | `[]any` | Ad-hoc webhooks to attach to this run. Each element is a map describing one webhook: `{"eventTypes": []string, "requestUrl": string, "payloadTemplate": string}` (same shape as a webhook definition; `eventTypes` are the `WebhookEventType` values listed in [webhooks.md](webhooks.md)). |
+| `WaitForResources` | `*int64` | Retry the start every 10 seconds while the API rejects it for lack of resources (`actor-memory-limit-exceeded` or `concurrent-runs-limit-exceeded`). `apify.WaitForResourcesIndefinitely` retries until the run starts; any other value is the number of seconds to retry for before returning the last error. `nil` (the default) does not retry. Any other error is returned immediately. |
 
 `ActorBuildOptions` (all fields optional):
 
@@ -181,11 +182,14 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 > every poll returns within that 60-second server cap — comfortably inside the client's
 > `WithTimeout` budget (default 360s, which bounds each individual request, not the total wait) —
 > the overall wait is **not** cut off at 360s. It continues across as many polls as needed until
-> the run reaches a terminal state. Passing `waitSecs == nil` therefore genuinely waits until the
-> run finishes (bounded only by a very large internal cap of ~11.5 days, or by cancelling the
-> `ctx` you pass in); a non-nil `waitSecs` bounds the total client-side wait instead. The distinct
+> the run reaches a terminal state, up to ~11.5 days, or 3 seconds of the run answering 404
+> (database-replica lag on a just-started run), or cancelling the `ctx` you pass in — whichever
+> comes first. Passing `waitSecs == nil` therefore genuinely waits until the run finishes, bounded
+> only by those; a non-nil `waitSecs` bounds the total client-side wait instead. The distinct
 > `ActorStartOptions.WaitForFinish` field is unrelated: it only controls the single server-side
-> wait on the initial `Start` request (max 60s), not the client-side polling loop.
+> wait on the initial `Start` request (max 60s), not the client-side polling loop. Time spent
+> retrying under `WaitForResources` is separate too: it happens before the run exists, so it is
+> never counted against `waitSecs`.
 
 ## Versions and environment variables
 

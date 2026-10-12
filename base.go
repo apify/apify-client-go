@@ -3,7 +3,6 @@ package apify
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -21,12 +20,15 @@ const (
 	waitForFinishPollInterval = 250 * time.Millisecond
 	waitForFinishRequestSecs  = int64(60)
 	// maxWaitForFinishSecs is the finite upper bound used when the caller asks to wait
-	// "indefinitely" (waitSecs == nil). The API will not accept "Infinity", and an
-	// unbounded client loop can spin forever if the resource keeps returning 404 (e.g. a
-	// just-started run whose database replica lags). 999999 seconds is more than 11 days,
-	// effectively indefinite while still guaranteeing termination. Mirrors the reference
-	// client's MAX_WAIT_FOR_FINISH.
+	// "indefinitely" (waitSecs == nil). The API will not accept "Infinity". 999999 seconds is
+	// more than 11 days, effectively indefinite while still guaranteeing termination. Mirrors
+	// the reference client's MAX_WAIT_FOR_FINISH.
 	maxWaitForFinishSecs = int64(999999)
+	// maxWaitForMissingJob bounds how long waitForFinish keeps polling a run/build that answers
+	// 404, to ride out database-replica lag, before giving up with a not-found error instead of
+	// continuing for the full wait budget above. A successful poll resets this window. Mirrors
+	// the reference client's MAX_WAIT_WHEN_JOB_NOT_EXIST_MILLIS.
+	maxWaitForMissingJob = 3 * time.Second
 )
 
 // resourceContext is the resolved context for a resource client: its base URL and the
@@ -416,16 +418,18 @@ func putRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 type terminalChecker[T any] func(*T) bool
 
 // waitForFinish polls a GET endpoint with waitForFinish until the resource reaches a
-// terminal state or the wait budget elapses. waitSecs nil means "wait indefinitely", which
-// is implemented as a finite but very large bound (maxWaitForFinishSecs) so the loop always
-// terminates.
+// terminal state, the wait budget elapses, or the resource keeps returning 404 for longer than
+// maxWaitForMissingJob. waitSecs nil means "wait indefinitely", which is implemented as a
+// finite but very large bound (maxWaitForFinishSecs) so the loop always terminates.
 //
-// The budget is a pure time bound, evaluated independently of whether the resource is
+// The overall budget is a pure time bound, evaluated independently of whether the resource is
 // currently present. A just-started run/build can transiently return 404 (database-replica
-// lag); like the reference client, we treat that as "not yet available", keep polling on the
-// time bound, and only after the budget is exhausted do we decide the outcome. If the
-// resource never became available within the budget, a descriptive error is returned naming
-// the resource (resourceName, e.g. "run" or "build").
+// lag); like the reference client, we treat that as "not yet available" and keep polling, but
+// only for up to maxWaitForMissingJob of continuous 404s — a job that keeps answering 404 for
+// longer than that does not exist, and polling it for the full budget (which defaults to more
+// than 11 days) would hang far longer than a caller would expect. A successful poll resets the
+// 404 window. If the resource never became available, the last 404's *APIError is returned
+// instead of a successful result.
 func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int64, resourceName string, isTerminal terminalChecker[T]) (T, error) {
 	var zero T
 
@@ -437,8 +441,10 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 
 	start := time.Now()
 	var (
-		resource T
-		present  bool
+		resource      T
+		present       bool
+		notFoundSince time.Time
+		notFoundErr   error
 	)
 
 	// do-while: always perform at least one fetch (matching the reference client), then
@@ -461,12 +467,26 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 		if err != nil && (!c.hasOwnID || !isNotFound(err)) {
 			return zero, err
 		}
-		// A transient 404 (ok == false) is not fatal: keep the last known state and poll
-		// again until the time budget runs out.
 		if ok {
 			resource, present = res, true
+			notFoundSince = time.Time{}
+			notFoundErr = nil
 			if isTerminal(&resource) {
 				return resource, nil
+			}
+		} else {
+			// A transient 404 is not immediately fatal: keep polling, but only for up to
+			// maxWaitForMissingJob of continuous 404s. present is cleared so that, if the budget
+			// runs out while currently 404 (even if the resource was seen earlier), the final
+			// check below reports not-found rather than a stale last-known state — matching the
+			// reference client, which resets its job to undefined on every 404.
+			present = false
+			if notFoundSince.IsZero() {
+				notFoundSince = time.Now()
+			}
+			notFoundErr = err
+			if time.Since(notFoundSince) >= maxWaitForMissingJob {
+				return zero, notFoundErr
 			}
 		}
 
@@ -481,16 +501,15 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 	}
 
 	if present {
-		// Budget exhausted but the resource was seen at least once: return its latest state
-		// (e.g. still running). Mirrors the reference client returning the last fetched job.
+		// Budget exhausted but the latest poll succeeded: return its state (e.g. still running).
+		// Mirrors the reference client returning the last fetched job.
 		return resource, nil
 	}
 
-	// The resource never became available within the wait budget.
-	return zero, fmt.Errorf(
-		"waiting for %s to finish failed: cannot fetch %s details from the server",
-		resourceName, resourceName,
-	)
+	// The budget ran out while the resource was absent (currently 404, whether or not it was
+	// seen earlier): notFoundErr is always set at this point, since present can only be false
+	// after at least one swallowed 404.
+	return zero, notFoundErr
 }
 
 func maxInt64(a, b int64) int64 {
