@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -412,6 +413,65 @@ func putRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 	_, err := c.http.call(ctx, http.MethodPut, url, body, contentType, c.longTimeout())
 	return err
+}
+
+// putRawWithEncoding is putRaw, but body is already compressed under contentEncoding (e.g.
+// "gzip", "br"): it is sent as-is and Content-Encoding is set to contentEncoding verbatim,
+// bypassing the client's own request compression so the body is never compressed twice. Used
+// for a key-value-store record upload whose value the caller has pre-compressed (see
+// [KeyValueStoreClient.SetRecordRawWithEncoding]). An empty contentEncoding behaves exactly like
+// putRaw.
+func putRawWithEncoding(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType, contentEncoding string) error {
+	if c.idErr != nil {
+		return c.idErr
+	}
+	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
+	_, err := c.http.callPreEncoded(ctx, http.MethodPut, url, body, contentType, contentEncoding, c.longTimeout())
+	return err
+}
+
+// streamRaw opens a GET request and returns the raw response body as an io.ReadCloser without
+// buffering it into memory, bypassing httpClient.call's buffered/retrying transport. Used where
+// the caller wants to consume a (potentially large or live) response incrementally: a streamed
+// log ([LogClient.StreamWithOptions]) or a streamed dataset export
+// ([DatasetClient.DownloadItemsStream]).
+//
+// Because the response is consumed incrementally it is not retried: a transient failure surfaces
+// to the caller directly. The caller is responsible for closing the returned io.ReadCloser.
+//
+// A non-2xx response is read to completion, closed, and classified into an *APIError. notFound
+// controls how a 404 is reported: when true, it resolves to (nil, nil) ("absent"); otherwise it
+// is returned as an error. Pass idErr (the context's own idErr, if any) explicitly so the error
+// check happens before the request is sent.
+func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, notFound bool) (io.ReadCloser, error) {
+	if c.idErr != nil {
+		return nil, c.idErr
+	}
+	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Reuse the shared auth/User-Agent header setup so the streaming path can never drift from
+	// the buffered request path.
+	c.http.applyAuthHeaders(req)
+
+	resp, err := c.http.backend.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= maxSuccessStatusCode {
+		// Consume and classify the error body, then close.
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		apiErr := buildAPIError(resp.StatusCode, body, 1, http.MethodGet, extractPath(url))
+		if notFound && isNotFound(apiErr) {
+			return nil, nil
+		}
+		return nil, apiErr
+	}
+	return resp.Body, nil
 }
 
 // terminalChecker reports whether a fetched resource has reached a terminal state.

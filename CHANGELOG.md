@@ -5,6 +5,23 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-10-19
+
+### Added
+
+- `KeyValueStoreClient.SetRecordRawWithEncoding`: stores a record that is already compressed
+  (`gzip`, `br`, `deflate`), sending it as-is under `Content-Encoding` instead of compressing it
+  a second time. Matches the reference client's `setRecord({ contentEncoding })`.
+- `LogClient.GetBuffer`/`GetBufferWithOptions`: fetch the entire log as raw bytes instead of a
+  decoded string. Matches the reference client's `log.get({ buffer: true })`.
+- `DatasetClient.DownloadItemsStream`: like `DownloadItems`, but returns a Readable stream of
+  the export instead of buffering it all into memory. Matches the reference client's
+  `downloadItems(format, { stream: true })`.
+
+### Changed
+
+- Bumped `ClientVersion` to `0.12.0`.
+
 ## [0.11.0] - 2026-10-12
 
 ### Added

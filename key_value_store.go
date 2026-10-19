@@ -245,6 +245,21 @@ func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, valu
 	return putRaw(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType)
 }
 
+// SetRecordRawWithEncoding is [KeyValueStoreClient.SetRecordRaw], but for a value that is
+// already compressed: contentEncoding (e.g. "gzip", "br", "deflate") is sent as the
+// Content-Encoding header, and value is uploaded exactly as given. The client's own request
+// compression is skipped for this call, so the bytes are never compressed twice, and the API
+// stores (and later serves) the record under contentEncoding. Pass "" (or use SetRecordRaw) for
+// a value that is not pre-compressed. Mirrors the reference client's
+// setRecord({ contentEncoding }).
+func (c *KeyValueStoreClient) SetRecordRawWithEncoding(ctx context.Context, key string, value []byte, contentType, contentEncoding string) error {
+	safeKey, err := safePathSegment(key)
+	if err != nil {
+		return err
+	}
+	return putRawWithEncoding(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType, contentEncoding)
+}
+
 // SetRecordJSON stores a record holding the JSON serialization of value.
 func (c *KeyValueStoreClient) SetRecordJSON(ctx context.Context, key string, value any) error {
 	data, err := json.Marshal(value)

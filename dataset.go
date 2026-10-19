@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 )
@@ -225,7 +226,9 @@ func (c *DatasetClient) IterateItems(options DatasetListItemsOptions, chunkSize 
 
 // DownloadItems downloads dataset items serialized in the given format, returning the raw
 // bytes. Unlike ListItems (parsed items), this returns the items already serialized to JSON,
-// CSV, XLSX, XML, RSS or HTML — useful for exporting.
+// CSV, XLSX, XML, RSS or HTML — useful for exporting. For a large export, see
+// [DatasetClient.DownloadItemsStream], which streams the bytes instead of buffering all of them
+// in memory.
 func (c *DatasetClient) DownloadItems(ctx context.Context, format DownloadItemsFormat, options DatasetDownloadOptions) ([]byte, error) {
 	params := NewQueryParams()
 	fmtStr := string(format)
@@ -237,6 +240,22 @@ func (c *DatasetClient) DownloadItems(ctx context.Context, format DownloadItemsF
 		return nil, err
 	}
 	return resp.body, nil
+}
+
+// DownloadItemsStream is [DatasetClient.DownloadItems], but returns a Readable stream of the
+// serialized export instead of buffering it all into memory, so a large export can be processed
+// in chunks (e.g. piped straight to a file via io.Copy). The caller is responsible for closing
+// the returned [io.ReadCloser].
+//
+// Because the response is consumed incrementally it bypasses the buffered/retrying transport, so
+// a transient failure surfaces to the caller directly instead of being retried. Mirrors the
+// reference client's downloadItems(format, { stream: true }).
+func (c *DatasetClient) DownloadItemsStream(ctx context.Context, format DownloadItemsFormat, options DatasetDownloadOptions) (io.ReadCloser, error) {
+	params := NewQueryParams()
+	fmtStr := string(format)
+	params.AddString("format", &fmtStr)
+	options.apply(params)
+	return streamRaw(ctx, c.ctx, "items", params, false)
 }
 
 // PushItems pushes one or more items to the dataset. items must serialize to a JSON object

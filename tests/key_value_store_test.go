@@ -1,6 +1,8 @@
 package apify_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -122,6 +124,65 @@ func TestKeyValueStoreCRUDFlow(t *testing.T) {
 	}
 	if err := kvs.DeleteRecord(ctx, "OUTPUT"); err != nil {
 		t.Fatalf("delete record: %v", err)
+	}
+}
+
+// TestSetRecordRawWithEncodingRoundTrips uploads a pre-gzipped value via
+// SetRecordRawWithEncoding (a Content-Encoding: gzip PUT, which the client sends as-is rather
+// than compressing a second time) and verifies the original content survives the round trip.
+//
+// The API accepts the compressed upload (saving upload bandwidth, per its documented contract)
+// but may decompress it on ingest rather than echoing the same Content-Encoding back on GET; this
+// asserts only the content client code can rely on either way — the value is never corrupted —
+// without assuming which of the two the API currently does.
+func TestSetRecordRawWithEncodingRoundTrips(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	store, err := client.KeyValueStores().GetOrCreate(ctx, uniqueName("kvs-encoding"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
+	kvs := client.KeyValueStore(store.ID)
+
+	original := []byte("the quick brown fox jumps over the lazy dog, repeated for good measure. " +
+		"the quick brown fox jumps over the lazy dog, repeated for good measure.")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(original); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	compressed := buf.Bytes()
+
+	if err := kvs.SetRecordRawWithEncoding(ctx, "REPORT", compressed, "text/plain", "gzip"); err != nil {
+		t.Fatalf("set record with encoding: %v", err)
+	}
+
+	rec, ok, err := kvs.GetRecord(ctx, "REPORT")
+	if err != nil || !ok {
+		t.Fatalf("get record: ok=%v err=%v", ok, err)
+	}
+
+	got := rec.Value
+	// Accept either form: the record stored (and served back) still gzip-compressed, or
+	// decompressed by the API on ingest.
+	if bytes.HasPrefix(got, []byte{0x1f, 0x8b}) {
+		reader, err := gzip.NewReader(bytes.NewReader(got))
+		if err != nil {
+			t.Fatalf("record value looks gzip-compressed but does not decode: %v", err)
+		}
+		got, err = io.ReadAll(reader)
+		if err != nil {
+			t.Fatalf("gunzip record value: %v", err)
+		}
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("round-tripped content mismatch: got %q, want %q", got, original)
 	}
 }
 

@@ -91,8 +91,19 @@ func TestRunActorAndReadOutputs(t *testing.T) {
 		t.Fatalf("get run: ok=%v err=%v", ok, err)
 	}
 
-	if logText, ok, err := client.Run(run.ID).Log().Get(ctx); err != nil || !ok || logText == "" {
+	logText, ok, err := client.Run(run.ID).Log().Get(ctx)
+	if err != nil || !ok || logText == "" {
 		t.Fatalf("get run log: ok=%v err=%v len=%d", ok, err, len(logText))
+	}
+
+	// GetBuffer is the same request as Get, decoded differently: the raw bytes must match the
+	// string content byte-for-byte.
+	logBuffer, ok, err := client.Run(run.ID).Log().GetBuffer(ctx)
+	if err != nil || !ok {
+		t.Fatalf("get run log buffer: ok=%v err=%v", ok, err)
+	}
+	if string(logBuffer) != logText {
+		t.Fatalf("Log().Get and Log().GetBuffer disagree: %q vs %q", logText, string(logBuffer))
 	}
 
 	if _, err := client.Run(run.ID).Dataset().ListItems(ctx, apify.DatasetListItemsOptions{}); err != nil {
