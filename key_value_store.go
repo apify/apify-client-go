@@ -236,6 +236,39 @@ func (c *KeyValueStoreClient) GetRecordWithOptions(ctx context.Context, key stri
 	}, true, nil
 }
 
+// GetRecordStream is [KeyValueStoreClient.GetRecord], but returns the value as a stream instead
+// of buffering it into memory, so a large record can be read incrementally. The caller is
+// responsible for closing the returned stream. Mirrors the reference client's
+// getRecord(key, { stream: true }).
+func (c *KeyValueStoreClient) GetRecordStream(ctx context.Context, key string) (*KeyValueStoreRecordStream, bool, error) {
+	return c.GetRecordStreamWithOptions(ctx, key, GetRecordOptions{Attachment: ptrBool(true)})
+}
+
+// GetRecordStreamWithOptions fetches a record as a stream with explicit options (attachment,
+// signature). See [KeyValueStoreClient.GetRecordStream].
+func (c *KeyValueStoreClient) GetRecordStreamWithOptions(ctx context.Context, key string, options GetRecordOptions) (*KeyValueStoreRecordStream, bool, error) {
+	safeKey, err := safePathSegment(key)
+	if err != nil {
+		return nil, false, err
+	}
+	params := NewQueryParams()
+	options.apply(params)
+	// true: a record lookup by key is unambiguous regardless of how the store client itself was
+	// reached, matching GetRecordWithOptions's use of getRaw above.
+	body, header, err := streamRaw(ctx, c.ctx, "records/"+safeKey, params, true)
+	if err != nil {
+		return nil, false, err
+	}
+	if body == nil {
+		return nil, false, nil
+	}
+	return &KeyValueStoreRecordStream{
+		Key:         key,
+		Value:       body,
+		ContentType: header.Get("Content-Type"),
+	}, true, nil
+}
+
 // SetRecordRaw stores a record with raw bytes and the given content type.
 func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, value []byte, contentType string) error {
 	safeKey, err := safePathSegment(key)
@@ -245,12 +278,12 @@ func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, valu
 	return putRaw(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType)
 }
 
-// SetRecordRawWithEncoding is [KeyValueStoreClient.SetRecordRaw], but for a value that is
+// SetRecordRawWithEncoding is like [KeyValueStoreClient.SetRecordRaw], for a value that is
 // already compressed: contentEncoding (e.g. "gzip", "br", "deflate") is sent as the
-// Content-Encoding header, and value is uploaded exactly as given. The client's own request
-// compression is skipped for this call, so the bytes are never compressed twice, and the API
-// stores (and later serves) the record under contentEncoding. Pass "" (or use SetRecordRaw) for
-// a value that is not pre-compressed. Mirrors the reference client's
+// Content-Encoding header and value is uploaded exactly as given. This call always skips the
+// client's own request compression, so the bytes are never compressed twice — unlike
+// SetRecordRaw, which compresses a large-enough body of its own accord. Use SetRecordRaw (or
+// contentEncoding == "") for a value that is not pre-compressed. Mirrors the reference client's
 // setRecord({ contentEncoding }).
 func (c *KeyValueStoreClient) SetRecordRawWithEncoding(ctx context.Context, key string, value []byte, contentType, contentEncoding string) error {
 	safeKey, err := safePathSegment(key)

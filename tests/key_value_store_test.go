@@ -186,6 +186,54 @@ func TestSetRecordRawWithEncodingRoundTrips(t *testing.T) {
 	}
 }
 
+// TestGetRecordStream verifies that GetRecordStream serves the same record GetRecord would, as
+// a stream the caller drains incrementally.
+func TestGetRecordStream(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	store, err := client.KeyValueStores().GetOrCreate(ctx, uniqueName("kvs-stream"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
+	kvs := client.KeyValueStore(store.ID)
+
+	if err := kvs.SetRecordRaw(ctx, "OUTPUT", []byte("hello from a stream"), "text/plain"); err != nil {
+		t.Fatalf("set record: %v", err)
+	}
+
+	rec, ok, err := kvs.GetRecordStream(ctx, "OUTPUT")
+	if err != nil || !ok {
+		t.Fatalf("get record stream: ok=%v err=%v", ok, err)
+	}
+	defer func() { _ = rec.Value.Close() }()
+
+	streamed, err := io.ReadAll(rec.Value)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if string(streamed) != "hello from a stream" {
+		t.Fatalf("unexpected streamed content: %q", string(streamed))
+	}
+
+	buffered, ok, err := kvs.GetRecord(ctx, "OUTPUT")
+	if err != nil || !ok {
+		t.Fatalf("get record: ok=%v err=%v", ok, err)
+	}
+	if string(buffered.Value) != string(streamed) || buffered.ContentType != rec.ContentType {
+		t.Fatalf("streamed and buffered records differ: %+v vs stream content %q (content type %q)",
+			buffered, string(streamed), rec.ContentType)
+	}
+
+	// A missing record is unambiguous: GetRecordStream resolves to absent, not an error.
+	missing, ok, err := kvs.GetRecordStream(ctx, "NO-SUCH-KEY")
+	if err != nil || ok || missing != nil {
+		t.Fatalf("expected absent for a missing key, got missing=%v ok=%v err=%v", missing, ok, err)
+	}
+}
+
 // TestRecordPublicURLIsFetchable verifies that the public record URL is fetchable without
 // authentication.
 func TestRecordPublicURLIsFetchable(t *testing.T) {

@@ -169,6 +169,8 @@ Single store: `client.KeyValueStore(id)`:
 | `IterateKeys(ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator` | Lazy iterator over keys (cursor-based). `Limit` caps the total yielded; `chunkSize` is the page size; `Prefix`/`Collection`/`Signature` filter every page; `ExclusiveStartKey` sets where to start. |
 | `GetRecord(ctx, key) (*KeyValueStoreRecord, bool, error)` | Read a record. |
 | `GetRecordWithOptions(ctx, key, GetRecordOptions)` | Read with options. |
+| `GetRecordStream(ctx, key) (*KeyValueStoreRecordStream, bool, error)` | Like `GetRecord`, but the value is a stream for a large record; close when done. |
+| `GetRecordStreamWithOptions(ctx, key, GetRecordOptions)` | Stream with options. |
 | `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes. |
 | `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
 | `SetRecordJSON(ctx, key, value any) error` | Write JSON. |
@@ -210,6 +212,10 @@ Return types:
 | `Value` | `[]byte` | The raw record bytes (decode according to `ContentType`). |
 | `ContentType` | `string` | The record's MIME type, as reported by the API. |
 
+`GetRecordStream`/`GetRecordStreamWithOptions` return a `*KeyValueStoreRecordStream` — the same
+fields, except `Value` is an `io.ReadCloser` over the record's bytes instead of `[]byte`; close it
+when done.
+
 `ListKeys` returns a `KeyValueStoreKeysPage`:
 
 | Field | Type | Meaning |
@@ -237,6 +243,11 @@ if ok {
 // it again.
 gzippedReport := []byte{0x1f, 0x8b, 0x08, 0x00} // stand-in for real gzip-compressed bytes
 _ = client.KeyValueStore(store.ID).SetRecordRawWithEncoding(ctx, "REPORT", gzippedReport, "application/json", "gzip")
+
+// For a large record, stream it instead of buffering it all in memory.
+recStream, _, _ := client.KeyValueStore(store.ID).GetRecordStream(ctx, "OUTPUT")
+defer recStream.Value.Close()
+_, _ = io.Copy(io.Discard, recStream.Value)
 
 // Lazily iterate over every key in the store (cursor-based paging is handled internally).
 keys := client.KeyValueStore(store.ID).IterateKeys(apify.ListKeysOptions{}, nil)

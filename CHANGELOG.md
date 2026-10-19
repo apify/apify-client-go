@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DatasetClient.DownloadItemsStream`: like `DownloadItems`, but returns a Readable stream of
   the export instead of buffering it all into memory. Matches the reference client's
   `downloadItems(format, { stream: true })`.
+- `KeyValueStoreClient.GetRecordStream`/`GetRecordStreamWithOptions`: like `GetRecord`, but
+  returns the value as a stream instead of buffering it into memory. Matches the reference
+  client's `getRecord(key, { stream: true })`.
 
 ### Changed
 

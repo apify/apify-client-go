@@ -234,7 +234,7 @@ func (c *DatasetClient) DownloadItems(ctx context.Context, format DownloadItemsF
 	fmtStr := string(format)
 	params.AddString("format", &fmtStr)
 	options.apply(params)
-	url := params.applyToURL(c.ctx.subURL("items"))
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("items"))
 	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", c.ctx.longTimeout())
 	if err != nil {
 		return nil, err
@@ -255,7 +255,8 @@ func (c *DatasetClient) DownloadItemsStream(ctx context.Context, format Download
 	fmtStr := string(format)
 	params.AddString("format", &fmtStr)
 	options.apply(params)
-	return streamRaw(ctx, c.ctx, "items", params, false)
+	stream, _, err := streamRaw(ctx, c.ctx, "items", params, false)
+	return stream, err
 }
 
 // PushItems pushes one or more items to the dataset. items must serialize to a JSON object

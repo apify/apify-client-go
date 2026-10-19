@@ -150,10 +150,12 @@ func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, bo
 	return c.doRetryLoop(ctx, method, url, sendBody, contentType, contentEncoding, extraHeaders, baseTimeout)
 }
 
-// callPreEncoded is like call, but body is already encoded with the given Content-Encoding
-// (e.g. a pre-compressed key-value-store record) and is sent as-is: the client's own request
-// compression (see maybeCompressRequestBody) is skipped so the body is never compressed twice.
-// An empty contentEncoding behaves exactly like call.
+// callPreEncoded is like call, but body is sent exactly as given, under contentEncoding (set as
+// the Content-Encoding header when non-empty): the client's own request compression (see
+// maybeCompressRequestBody) is skipped unconditionally, so a pre-compressed body (e.g. a
+// pre-compressed key-value-store record) is never compressed a second time. Even with
+// contentEncoding == "", this still differs from call: a body of minCompressRequestBytes or
+// larger that call would brotli/gzip-compress is sent uncompressed here instead.
 func (c *httpClient) callPreEncoded(ctx context.Context, method, url string, body []byte, contentType, contentEncoding string, baseTimeout time.Duration) (*apiResponse, error) {
 	return c.doRetryLoop(ctx, method, url, body, contentType, contentEncoding, nil, baseTimeout)
 }

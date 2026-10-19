@@ -97,5 +97,6 @@ func (c *LogClient) StreamWithOptions(ctx context.Context, options LogOptions) (
 	streamOn := true
 	params.AddBool("stream", &streamOn)
 	options.apply(params)
-	return streamRaw(ctx, c.ctx, "", params, c.ctx.hasOwnID)
+	stream, _, err := streamRaw(ctx, c.ctx, "", params, c.ctx.hasOwnID)
+	return stream, err
 }

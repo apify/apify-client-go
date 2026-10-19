@@ -417,10 +417,11 @@ func putRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 
 // putRawWithEncoding is putRaw, but body is already compressed under contentEncoding (e.g.
 // "gzip", "br"): it is sent as-is and Content-Encoding is set to contentEncoding verbatim,
-// bypassing the client's own request compression so the body is never compressed twice. Used
-// for a key-value-store record upload whose value the caller has pre-compressed (see
-// [KeyValueStoreClient.SetRecordRawWithEncoding]). An empty contentEncoding behaves exactly like
-// putRaw.
+// unconditionally bypassing the client's own request compression so the body is never
+// compressed twice. Used for a key-value-store record upload whose value the caller has
+// pre-compressed (see [KeyValueStoreClient.SetRecordRawWithEncoding]). Even with
+// contentEncoding == "", this still differs from putRaw: a body of minCompressRequestBytes or
+// larger that putRaw would brotli/gzip-compress is sent uncompressed here instead.
 func putRawWithEncoding(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType, contentEncoding string) error {
 	if c.idErr != nil {
 		return c.idErr
@@ -431,27 +432,28 @@ func putRawWithEncoding(ctx context.Context, c *resourceContext, subPath string,
 }
 
 // streamRaw opens a GET request and returns the raw response body as an io.ReadCloser without
-// buffering it into memory, bypassing httpClient.call's buffered/retrying transport. Used where
-// the caller wants to consume a (potentially large or live) response incrementally: a streamed
-// log ([LogClient.StreamWithOptions]) or a streamed dataset export
-// ([DatasetClient.DownloadItemsStream]).
+// buffering it into memory, bypassing httpClient.call's buffered/retrying transport, along with
+// the response headers (e.g. Content-Type, for a caller that needs it — see
+// [KeyValueStoreClient.GetRecordStreamWithOptions]). Used where the caller wants to consume a
+// (potentially large or live) response incrementally: a streamed log
+// ([LogClient.StreamWithOptions]), a streamed dataset export
+// ([DatasetClient.DownloadItemsStream]), or a streamed key-value-store record.
 //
 // Because the response is consumed incrementally it is not retried: a transient failure surfaces
 // to the caller directly. The caller is responsible for closing the returned io.ReadCloser.
 //
 // A non-2xx response is read to completion, closed, and classified into an *APIError. notFound
-// controls how a 404 is reported: when true, it resolves to (nil, nil) ("absent"); otherwise it
-// is returned as an error. Pass idErr (the context's own idErr, if any) explicitly so the error
-// check happens before the request is sent.
-func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, notFound bool) (io.ReadCloser, error) {
+// controls how a 404 is reported: when true, it resolves to (nil, nil, nil) ("absent"); otherwise
+// it is returned as an error.
+func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, notFound bool) (io.ReadCloser, http.Header, error) {
 	if c.idErr != nil {
-		return nil, c.idErr
+		return nil, nil, c.idErr
 	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Reuse the shared auth/User-Agent header setup so the streaming path can never drift from
 	// the buffered request path.
@@ -459,7 +461,7 @@ func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *
 
 	resp, err := c.http.backend.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if resp.StatusCode >= maxSuccessStatusCode {
 		// Consume and classify the error body, then close.
@@ -467,11 +469,11 @@ func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *
 		_ = resp.Body.Close()
 		apiErr := buildAPIError(resp.StatusCode, body, 1, http.MethodGet, extractPath(url))
 		if notFound && isNotFound(apiErr) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, apiErr
+		return nil, nil, apiErr
 	}
-	return resp.Body, nil
+	return resp.Body, resp.Header, nil
 }
 
 // terminalChecker reports whether a fetched resource has reached a terminal state.

@@ -498,6 +498,83 @@ func TestSetRecordRawWithEncodingEmptyMeansNoHeader(t *testing.T) {
 	}
 }
 
+// Even with contentEncoding == "", SetRecordRawWithEncoding must still skip the client's own
+// request compression: a body at or above minCompressRequestBytes that SetRecordRaw would
+// brotli/gzip-compress must be sent uncompressed here instead (the whole point of this call is
+// "send value exactly as given").
+func TestSetRecordRawWithEncodingEmptyStillSkipsAutoCompression(t *testing.T) {
+	backend := &mockBackend{responses: constant(201, "")}
+	client := testClient(backend, 0)
+
+	large := strings.Repeat("x", minCompressRequestBytes+1)
+	err := client.KeyValueStore("kvs1").SetRecordRawWithEncoding(
+		context.Background(), "OUTPUT", []byte(large), "text/plain", "",
+	)
+	if err != nil {
+		t.Fatalf("set record with encoding: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected no Content-Encoding header, got %q", got)
+	}
+	if backend.lastBody != large {
+		t.Fatalf("expected the body to be sent uncompressed and unmodified, got %d bytes (want %d)",
+			len(backend.lastBody), len(large))
+	}
+
+	// SetRecordRaw, by contrast, does auto-compress a body this size: this is the behaviour
+	// SetRecordRawWithEncoding is documented to not have.
+	backend2 := &mockBackend{responses: constant(201, "")}
+	client2 := testClient(backend2, 0)
+	if err := client2.KeyValueStore("kvs1").SetRecordRaw(context.Background(), "OUTPUT", []byte(large), "text/plain"); err != nil {
+		t.Fatalf("set record raw: %v", err)
+	}
+	if got := backend2.lastHeaders.Get("Content-Encoding"); got == "" {
+		t.Fatal("expected SetRecordRaw to auto-compress a body this size (sanity check on the contrast above)")
+	}
+}
+
+// KeyValueStoreClient.GetRecordStream must open a streaming GET (attachment=1 by default,
+// mirroring GetRecord) and report the same ContentType a buffered GetRecord would.
+func TestGetRecordStreamOpensStreamingRequest(t *testing.T) {
+	backend := &mockBackend{responses: []mockResponse{{
+		status:  200,
+		body:    "record bytes",
+		headers: http.Header{"Content-Type": []string{"application/octet-stream"}},
+	}}}
+	client := testClient(backend, 0)
+
+	rec, ok, err := client.KeyValueStore("kvs1").GetRecordStream(context.Background(), "OUTPUT")
+	if err != nil || !ok {
+		t.Fatalf("get record stream: ok=%v err=%v", ok, err)
+	}
+	defer func() { _ = rec.Value.Close() }()
+	if rec.ContentType != "application/octet-stream" {
+		t.Fatalf("unexpected content type: %q", rec.ContentType)
+	}
+	data, err := io.ReadAll(rec.Value)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if string(data) != "record bytes" {
+		t.Fatalf("unexpected stream contents: %q", string(data))
+	}
+	if !strings.Contains(backend.lastURL, "attachment=1") {
+		t.Fatalf("expected attachment=1 in URL, got %q", backend.lastURL)
+	}
+}
+
+// A missing record must resolve to (nil, false, nil), matching GetRecord's behaviour, since a
+// key-value-store record lookup by key is unambiguous.
+func TestGetRecordStreamNotFoundMapsToAbsent(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	rec, ok, err := client.KeyValueStore("kvs1").GetRecordStream(context.Background(), "MISSING")
+	if err != nil || ok || rec != nil {
+		t.Fatalf("expected absent, got rec=%v ok=%v err=%v", rec, ok, err)
+	}
+}
+
 // LogClient.GetBuffer must return the exact response bytes, and GetWithOptions/Get must still
 // decode them to the equivalent string — the two are the same request, differing only in return
 // type.
