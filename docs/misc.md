@@ -100,6 +100,8 @@ fmt.Println(string(usage)) // raw JSON usage report for the current month
 | --- | --- |
 | `Get(ctx) (string, bool, error)` | The entire log as text. |
 | `GetWithOptions(ctx, LogOptions) (string, bool, error)` | Read with options (`Raw`, `Download`). |
+| `GetBuffer(ctx) ([]byte, bool, error)` | The entire log as raw bytes, e.g. for writing it straight to a file. |
+| `GetBufferWithOptions(ctx, LogOptions) ([]byte, bool, error)` | Read as raw bytes with options (`Raw`, `Download`). |
 | `Stream(ctx) (io.ReadCloser, error)` | A live stream of the log; close when done. |
 | `StreamWithOptions(ctx, LogOptions) (io.ReadCloser, error)` | Stream with options (`Raw`, `Download`). |
 

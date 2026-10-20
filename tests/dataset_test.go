@@ -3,6 +3,7 @@ package apify_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 
@@ -114,6 +115,48 @@ func TestDatasetCRUDFlow(t *testing.T) {
 	}
 	if err := json.Unmarshal(page.Items[0], &first); err != nil {
 		t.Fatalf("decode item: %v", err)
+	}
+}
+
+// TestDatasetDownloadItemsStream verifies that DownloadItemsStream serves the same export
+// DownloadItems would, as a Readable stream the caller drains incrementally.
+func TestDatasetDownloadItemsStream(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	ds, err := client.Datasets().GetOrCreate(ctx, uniqueName("ds-stream"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.Dataset(ds.ID).Delete(ctx) }()
+	dataset := client.Dataset(ds.ID)
+
+	items := []map[string]any{{"url": "https://a.com", "n": 1}, {"url": "https://b.com", "n": 2}}
+	if err := dataset.PushItems(ctx, items); err != nil {
+		t.Fatalf("push items: %v", err)
+	}
+
+	stream, err := dataset.DownloadItemsStream(ctx, apify.FormatCSV, apify.DatasetDownloadOptions{Bom: ptr(true)})
+	if err != nil {
+		t.Fatalf("download items stream: %v", err)
+	}
+	defer func() { _ = stream.Close() }()
+
+	streamed, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if !bytes.Contains(streamed, []byte("url")) {
+		t.Fatalf("expected CSV header in streamed export, got %q", string(streamed))
+	}
+
+	buffered, err := dataset.DownloadItems(ctx, apify.FormatCSV, apify.DatasetDownloadOptions{Bom: ptr(true)})
+	if err != nil {
+		t.Fatalf("download items: %v", err)
+	}
+	if !bytes.Equal(streamed, buffered) {
+		t.Fatalf("streamed and buffered exports differ:\nstreamed: %q\nbuffered: %q", streamed, buffered)
 	}
 }
 

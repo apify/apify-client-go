@@ -3,7 +3,6 @@ package apify
 import (
 	"context"
 	"io"
-	"net/http"
 )
 
 // LogClient is a client for accessing the log of an Actor build or run
@@ -46,16 +45,33 @@ func (c *LogClient) Get(ctx context.Context) (string, bool, error) {
 // GetWithOptions fetches the log with explicit options (raw, download). See [LogClient.Get]
 // for how a 404 is handled.
 func (c *LogClient) GetWithOptions(ctx context.Context, options LogOptions) (string, bool, error) {
+	body, ok, err := c.GetBufferWithOptions(ctx, options)
+	return string(body), ok, err
+}
+
+// GetBuffer fetches the entire log as raw bytes, or (nil, false, nil) if the log does not exist.
+//
+// It is the byte-oriented counterpart of [LogClient.Get]: both fetch the whole log in one
+// response (for incremental reading, use [LogClient.Stream]), and GetBuffer only changes the
+// return type to the undecoded bytes, e.g. for writing the log straight to a file. See
+// [LogClient.Get] for how a 404 is handled.
+func (c *LogClient) GetBuffer(ctx context.Context) ([]byte, bool, error) {
+	return c.GetBufferWithOptions(ctx, LogOptions{})
+}
+
+// GetBufferWithOptions fetches the log as raw bytes with explicit options (raw, download). See
+// [LogClient.GetBuffer] and [LogClient.Get] for how a 404 is handled.
+func (c *LogClient) GetBufferWithOptions(ctx context.Context, options LogOptions) ([]byte, bool, error) {
 	params := NewQueryParams()
 	options.apply(params)
 	resp, err := getRawRequired(ctx, c.ctx, "", params, c.ctx.longTimeout())
 	if err != nil {
 		if c.ctx.hasOwnID && isNotFound(err) {
-			return "", false, nil
+			return nil, false, nil
 		}
-		return "", false, err
+		return nil, false, err
 	}
-	return string(resp.body), true, nil
+	return resp.body, true, nil
 }
 
 // Stream opens a live, streaming connection to the log and returns a reader over the log
@@ -77,36 +93,10 @@ func (c *LogClient) Stream(ctx context.Context) (io.ReadCloser, error) {
 // StreamWithOptions opens a live log stream with explicit options (raw, download). See
 // [LogClient.Stream] for the streaming semantics and how a 404 is handled.
 func (c *LogClient) StreamWithOptions(ctx context.Context, options LogOptions) (io.ReadCloser, error) {
-	if c.ctx.idErr != nil {
-		return nil, c.ctx.idErr
-	}
 	params := NewQueryParams()
 	streamOn := true
 	params.AddBool("stream", &streamOn)
 	options.apply(params)
-	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL(""))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	// Reuse the shared auth/User-Agent header setup so the streaming path can never drift from
-	// the buffered request path.
-	c.ctx.http.applyAuthHeaders(req)
-
-	resp, err := c.ctx.http.backend.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= maxSuccessStatusCode {
-		// Consume and classify the error body, then close.
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		apiErr := buildAPIError(resp.StatusCode, body, 1, http.MethodGet, extractPath(url))
-		if c.ctx.hasOwnID && isNotFound(apiErr) {
-			return nil, nil
-		}
-		return nil, apiErr
-	}
-	return resp.Body, nil
+	stream, _, err := streamRaw(ctx, c.ctx, "", params, c.ctx.hasOwnID)
+	return stream, err
 }

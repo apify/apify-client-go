@@ -143,14 +143,30 @@ func (c *httpClient) call(ctx context.Context, method, url string, body []byte, 
 // callWithHeaders is like call but additionally sets the given extra request headers (e.g.
 // the charge idempotency key). They are applied on every attempt.
 func (c *httpClient) callWithHeaders(ctx context.Context, method, url string, body []byte, contentType string, extraHeaders map[string]string, baseTimeout time.Duration) (*apiResponse, error) {
-	delay := c.retry.minDelayBetweenRetries
-	maxAttempts := c.retry.maxRetries + 1
-	path := extractPath(url)
-
 	// Compress the body once (not per attempt): it is identical on every retry. contentEncoding
 	// is "" when the body was left uncompressed (too small, already compressed, or compression
 	// did not shrink it).
 	sendBody, contentEncoding := maybeCompressRequestBody(body, contentType, c.compressors)
+	return c.doRetryLoop(ctx, method, url, sendBody, contentType, contentEncoding, extraHeaders, baseTimeout)
+}
+
+// callPreEncoded is like call, but body is sent exactly as given, under contentEncoding (set as
+// the Content-Encoding header when non-empty): the client's own request compression (see
+// maybeCompressRequestBody) is skipped unconditionally, so a pre-compressed body (e.g. a
+// pre-compressed key-value-store record) is never compressed a second time. Even with
+// contentEncoding == "", this still differs from call: a body of minCompressRequestBytes or
+// larger that call would brotli/gzip-compress is sent uncompressed here instead.
+func (c *httpClient) callPreEncoded(ctx context.Context, method, url string, body []byte, contentType, contentEncoding string, baseTimeout time.Duration) (*apiResponse, error) {
+	return c.doRetryLoop(ctx, method, url, body, contentType, contentEncoding, nil, baseTimeout)
+}
+
+// doRetryLoop is the shared retry/backoff loop behind call, callWithHeaders and callPreEncoded:
+// it sends sendBody (already compressed/encoded, if at all) under contentEncoding, retrying
+// retryable failures with exponential backoff.
+func (c *httpClient) doRetryLoop(ctx context.Context, method, url string, sendBody []byte, contentType, contentEncoding string, extraHeaders map[string]string, baseTimeout time.Duration) (*apiResponse, error) {
+	delay := c.retry.minDelayBetweenRetries
+	maxAttempts := c.retry.maxRetries + 1
+	path := extractPath(url)
 
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {

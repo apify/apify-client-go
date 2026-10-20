@@ -2,6 +2,7 @@ package apify
 
 import (
 	"encoding/json"
+	"io"
 	"time"
 )
 
@@ -288,6 +289,18 @@ type KeyValueStoreRecord struct {
 	Key string
 	// Value is the raw record bytes.
 	Value []byte
+	// ContentType is the record's MIME type, as reported by the API.
+	ContentType string
+}
+
+// KeyValueStoreRecordStream is a record retrieved from a key-value store as a stream (see
+// [KeyValueStoreClient.GetRecordStream]), for reading a large record incrementally instead of
+// buffering it into memory.
+type KeyValueStoreRecordStream struct {
+	// Key is the record key.
+	Key string
+	// Value is a stream over the record's raw bytes; the caller must close it when done.
+	Value io.ReadCloser
 	// ContentType is the record's MIME type, as reported by the API.
 	ContentType string
 }

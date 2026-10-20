@@ -455,6 +455,205 @@ func TestSmallRequestBodyIsNotCompressed(t *testing.T) {
 	}
 }
 
+// SetRecordRawWithEncoding must send the caller's Content-Encoding verbatim and must never run
+// the value through the client's own request compression — even though the value is well above
+// the auto-compression threshold, it must reach the backend byte-for-byte, or a pre-compressed
+// upload would be corrupted by being compressed a second time.
+func TestSetRecordRawWithEncodingSendsHeaderVerbatimAndSkipsCompression(t *testing.T) {
+	backend := &mockBackend{responses: constant(201, "")}
+	client := testClient(backend, 0)
+
+	// Larger than minCompressRequestBytes, and already "pre-compressed" opaque bytes (not
+	// valid gzip/brotli, which would make a false-positive auto-compression attempt obvious
+	// by corrupting the body).
+	preCompressed := []byte(strings.Repeat("not-real-gzip-bytes-", 100))
+
+	err := client.KeyValueStore("kvs1").SetRecordRawWithEncoding(
+		context.Background(), "OUTPUT", preCompressed, "application/octet-stream", "gzip",
+	)
+	if err != nil {
+		t.Fatalf("set record with encoding: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected Content-Encoding: gzip, got %q", got)
+	}
+	if backend.lastBody != string(preCompressed) {
+		t.Fatalf("body must be sent as-is, not re-compressed: got %d bytes, want %d bytes", len(backend.lastBody), len(preCompressed))
+	}
+}
+
+// An empty contentEncoding must behave exactly like SetRecordRaw: no Content-Encoding header.
+func TestSetRecordRawWithEncodingEmptyMeansNoHeader(t *testing.T) {
+	backend := &mockBackend{responses: constant(201, "")}
+	client := testClient(backend, 0)
+
+	err := client.KeyValueStore("kvs1").SetRecordRawWithEncoding(
+		context.Background(), "OUTPUT", []byte("hello"), "text/plain", "",
+	)
+	if err != nil {
+		t.Fatalf("set record with encoding: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected no Content-Encoding header, got %q", got)
+	}
+}
+
+// Even with contentEncoding == "", SetRecordRawWithEncoding must still skip the client's own
+// request compression: a body at or above minCompressRequestBytes that SetRecordRaw would
+// brotli/gzip-compress must be sent uncompressed here instead (the whole point of this call is
+// "send value exactly as given").
+func TestSetRecordRawWithEncodingEmptyStillSkipsAutoCompression(t *testing.T) {
+	backend := &mockBackend{responses: constant(201, "")}
+	client := testClient(backend, 0)
+
+	large := strings.Repeat("x", minCompressRequestBytes+1)
+	err := client.KeyValueStore("kvs1").SetRecordRawWithEncoding(
+		context.Background(), "OUTPUT", []byte(large), "text/plain", "",
+	)
+	if err != nil {
+		t.Fatalf("set record with encoding: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected no Content-Encoding header, got %q", got)
+	}
+	if backend.lastBody != large {
+		t.Fatalf("expected the body to be sent uncompressed and unmodified, got %d bytes (want %d)",
+			len(backend.lastBody), len(large))
+	}
+
+	// SetRecordRaw, by contrast, does auto-compress a body this size: this is the behaviour
+	// SetRecordRawWithEncoding is documented to not have.
+	backend2 := &mockBackend{responses: constant(201, "")}
+	client2 := testClient(backend2, 0)
+	if err := client2.KeyValueStore("kvs1").SetRecordRaw(context.Background(), "OUTPUT", []byte(large), "text/plain"); err != nil {
+		t.Fatalf("set record raw: %v", err)
+	}
+	if got := backend2.lastHeaders.Get("Content-Encoding"); got == "" {
+		t.Fatal("expected SetRecordRaw to auto-compress a body this size (sanity check on the contrast above)")
+	}
+}
+
+// KeyValueStoreClient.GetRecordStream must open a streaming GET (attachment=1 by default,
+// mirroring GetRecord) and report the same ContentType a buffered GetRecord would.
+func TestGetRecordStreamOpensStreamingRequest(t *testing.T) {
+	backend := &mockBackend{responses: []mockResponse{{
+		status:  200,
+		body:    "record bytes",
+		headers: http.Header{"Content-Type": []string{"application/octet-stream"}},
+	}}}
+	client := testClient(backend, 0)
+
+	rec, ok, err := client.KeyValueStore("kvs1").GetRecordStream(context.Background(), "OUTPUT")
+	if err != nil || !ok {
+		t.Fatalf("get record stream: ok=%v err=%v", ok, err)
+	}
+	defer func() { _ = rec.Value.Close() }()
+	if rec.ContentType != "application/octet-stream" {
+		t.Fatalf("unexpected content type: %q", rec.ContentType)
+	}
+	data, err := io.ReadAll(rec.Value)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if string(data) != "record bytes" {
+		t.Fatalf("unexpected stream contents: %q", string(data))
+	}
+	if !strings.Contains(backend.lastURL, "attachment=1") {
+		t.Fatalf("expected attachment=1 in URL, got %q", backend.lastURL)
+	}
+}
+
+// A missing record must resolve to (nil, false, nil), matching GetRecord's behaviour, since a
+// key-value-store record lookup by key is unambiguous.
+func TestGetRecordStreamNotFoundMapsToAbsent(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	rec, ok, err := client.KeyValueStore("kvs1").GetRecordStream(context.Background(), "MISSING")
+	if err != nil || ok || rec != nil {
+		t.Fatalf("expected absent, got rec=%v ok=%v err=%v", rec, ok, err)
+	}
+}
+
+// LogClient.GetBuffer must return the exact response bytes, and GetWithOptions/Get must still
+// decode them to the equivalent string — the two are the same request, differing only in return
+// type.
+func TestLogGetBufferReturnsRawBytes(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, "log line one\nlog line two\n")}
+	client := testClient(backend, 0)
+
+	buf, ok, err := client.Run("r1").Log().GetBuffer(context.Background())
+	if err != nil || !ok {
+		t.Fatalf("get buffer: ok=%v err=%v", ok, err)
+	}
+	if string(buf) != "log line one\nlog line two\n" {
+		t.Fatalf("unexpected buffer contents: %q", string(buf))
+	}
+
+	text, ok, err := client.Run("r1").Log().Get(context.Background())
+	if err != nil || !ok {
+		t.Fatalf("get: ok=%v err=%v", ok, err)
+	}
+	if text != string(buf) {
+		t.Fatalf("Get and GetBuffer must read the same content: %q vs %q", text, string(buf))
+	}
+}
+
+// A 404 for LogClient.GetBuffer must resolve to "absent" under the same rule as Get: only when
+// the client has its own id.
+func TestLogGetBufferNotFoundMapsToAbsent(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	buf, ok, err := client.Log("log1").GetBuffer(context.Background())
+	if err != nil || ok || buf != nil {
+		t.Fatalf("expected absent, got buf=%v ok=%v err=%v", buf, ok, err)
+	}
+}
+
+// DatasetClient.DownloadItemsStream must open a streaming GET against the items endpoint (format
+// in the query) and hand back the raw response body unbuffered.
+func TestDatasetDownloadItemsStreamOpensStreamingRequest(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, "a,b,c\n1,2,3\n")}
+	client := testClient(backend, 0)
+
+	stream, err := client.Dataset("ds1").DownloadItemsStream(context.Background(), FormatCSV, DatasetDownloadOptions{})
+	if err != nil {
+		t.Fatalf("download items stream: %v", err)
+	}
+	defer func() { _ = stream.Close() }()
+
+	data, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if string(data) != "a,b,c\n1,2,3\n" {
+		t.Fatalf("unexpected stream contents: %q", string(data))
+	}
+	if !strings.Contains(backend.lastURL, "/datasets/ds1/items") {
+		t.Fatalf("expected request against the items endpoint, got %q", backend.lastURL)
+	}
+	if !strings.Contains(backend.lastURL, "format=csv") {
+		t.Fatalf("expected format=csv in URL, got %q", backend.lastURL)
+	}
+}
+
+// A 404 from DownloadItemsStream must always surface as an error, matching DownloadItems (the
+// buffered counterpart), since a missing dataset is unambiguous here.
+func TestDatasetDownloadItemsStreamNotFoundIsError(t *testing.T) {
+	backend := &mockBackend{responses: notFound()}
+	client := testClient(backend, 0)
+
+	_, err := client.Dataset("ds1").DownloadItemsStream(context.Background(), FormatCSV, DatasetDownloadOptions{})
+	if err == nil {
+		t.Fatal("expected an error for a 404 dataset")
+	}
+	apiErr, ok := AsAPIError(err)
+	if !ok || !apiErr.IsNotFound() {
+		t.Fatalf("expected a 404 *APIError, got %v", err)
+	}
+}
+
 func TestZeroRetriesSingleAttempt(t *testing.T) {
 	backend := &mockBackend{responses: constant(500, `{"error":{"type":"internal","message":"x"}}`)}
 	client := testClient(backend, 0)

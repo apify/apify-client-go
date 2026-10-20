@@ -21,6 +21,7 @@ Single dataset: `client.Dataset(id)`:
 | `IterateItems(DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage]` | Lazy iterator over items (`Limit` caps total, `chunkSize` is page size); `IterateDatasetItems[T]` decodes into your type. |
 | `PushItems(ctx, items any) error` | Append one item or a slice of items. |
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
+| `DownloadItemsStream(ctx, DownloadItemsFormat, DatasetDownloadOptions) (io.ReadCloser, error)` | Like `DownloadItems`, but as a stream for a large export; close when done. |
 | `GetStatistics(ctx) (json.RawMessage, error)` | Dataset statistics. |
 | `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL, served as `json`. |
 | `CreateItemsPublicURLWithFormat(ctx, DatasetListItemsOptions, expiresInSecs *int64, DownloadItemsFormat) (string, error)` | Like `CreateItemsPublicURL`, but lets the URL serve another export format (CSV, XLSX, ...). An empty format defaults to `json`. |
@@ -146,6 +147,11 @@ defer client.Dataset(ds.ID).Delete(ctx)
 _ = client.Dataset(ds.ID).PushItems(ctx, []map[string]any{{"x": 1}, {"x": 2}})
 page, _ := client.Dataset(ds.ID).ListItems(ctx, apify.DatasetListItemsOptions{Limit: apify.Ptr(int64(100))})
 csv, _ := client.Dataset(ds.ID).DownloadItems(ctx, apify.FormatCSV, apify.DatasetDownloadOptions{Bom: apify.Ptr(true)})
+
+// For a large export, stream it instead of buffering it all in memory.
+stream, _ := client.Dataset(ds.ID).DownloadItemsStream(ctx, apify.FormatCSV, apify.DatasetDownloadOptions{})
+defer stream.Close()
+_, _ = io.Copy(io.Discard, stream)
 ```
 
 ## Key-value stores
@@ -163,7 +169,10 @@ Single store: `client.KeyValueStore(id)`:
 | `IterateKeys(ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator` | Lazy iterator over keys (cursor-based). `Limit` caps the total yielded; `chunkSize` is the page size; `Prefix`/`Collection`/`Signature` filter every page; `ExclusiveStartKey` sets where to start. |
 | `GetRecord(ctx, key) (*KeyValueStoreRecord, bool, error)` | Read a record. |
 | `GetRecordWithOptions(ctx, key, GetRecordOptions)` | Read with options. |
+| `GetRecordStream(ctx, key) (*KeyValueStoreRecordStream, bool, error)` | Like `GetRecord`, but the value is a stream for a large record; close when done. |
+| `GetRecordStreamWithOptions(ctx, key, GetRecordOptions)` | Stream with options. |
 | `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes. |
+| `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
 | `SetRecordJSON(ctx, key, value any) error` | Write JSON. |
 | `RecordExists(ctx, key) (bool, error)` | HEAD check. |
 | `DeleteRecord(ctx, key) error` | Delete a record. |
@@ -203,6 +212,10 @@ Return types:
 | `Value` | `[]byte` | The raw record bytes (decode according to `ContentType`). |
 | `ContentType` | `string` | The record's MIME type, as reported by the API. |
 
+`GetRecordStream`/`GetRecordStreamWithOptions` return a `*KeyValueStoreRecordStream` — the same
+fields, except `Value` is an `io.ReadCloser` over the record's bytes instead of `[]byte`; close it
+when done.
+
 `ListKeys` returns a `KeyValueStoreKeysPage`:
 
 | Field | Type | Meaning |
@@ -225,6 +238,16 @@ rec, ok, _ := client.KeyValueStore(store.ID).GetRecord(ctx, "OUTPUT")
 if ok {
 	fmt.Println(string(rec.Value))
 }
+
+// Upload a value that is already compressed (e.g. read from a .gz file), without compressing
+// it again.
+gzippedReport := []byte{0x1f, 0x8b, 0x08, 0x00} // stand-in for real gzip-compressed bytes
+_ = client.KeyValueStore(store.ID).SetRecordRawWithEncoding(ctx, "REPORT", gzippedReport, "application/json", "gzip")
+
+// For a large record, stream it instead of buffering it all in memory.
+recStream, _, _ := client.KeyValueStore(store.ID).GetRecordStream(ctx, "OUTPUT")
+defer recStream.Value.Close()
+_, _ = io.Copy(io.Discard, recStream.Value)
 
 // Lazily iterate over every key in the store (cursor-based paging is handled internally).
 keys := client.KeyValueStore(store.ID).IterateKeys(apify.ListKeysOptions{}, nil)
