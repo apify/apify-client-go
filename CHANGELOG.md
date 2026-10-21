@@ -17,15 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented the version definition fields (`Versions().Create`, `Version(n).Update`) and the
   schedule `notifications` request field.
 - CI and publish workflows now build with Go 1.26.10 and golangci-lint v2.15.0, and `go.mod`
-  declares `toolchain go1.26.10`, the Go release that fixes the compromised intermediate CA
+  declares `toolchain go1.26.10`, the Go release that distrusts the compromised intermediate CA
   certificates. The minimum supported Go version (`go 1.23`) is unchanged;
   rebuild programs that use this client with Go 1.26.10, 1.27.3 or newer.
 
 ### Fixed
 
-- `ActorEnvVar.Value` is now always serialized (no `omitempty`): the API requires `value` when
-  creating or updating an environment variable, so an empty value was previously sent as a body
-  without it.
+- `ActorEnvVar.Value` is now always sent, so an empty value no longer fails with "value is required".
 
 ## [0.12.0] - 2026-10-19
 

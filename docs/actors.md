@@ -235,7 +235,7 @@ _ = version
 | Field | Type | Meaning |
 |---|---|---|
 | `Name` | `string` | The environment variable name (required). |
-| `Value` | `string` | The environment variable value (required when creating or updating; an empty string is sent as is). |
+| `Value` | `string` | The environment variable value (required when creating or updating; an empty string is sent as is). `Get` returns an empty `Value` for a secret variable, so set it again before calling `Update`, or the secret is overwritten with an empty value. |
 | `IsSecret` | `*bool` | Whether the value is stored as a secret (encrypted at rest). |
 
 ```go

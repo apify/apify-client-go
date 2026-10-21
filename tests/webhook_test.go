@@ -9,8 +9,7 @@ import (
 // createTestWebhook creates a persistent webhook conditioned on a task that only this test owns,
 // so it can fire only for runs of that task, which nothing else starts. The API rejects an ad hoc
 // webhook whose run does not exist, which is why a persistent one is used. Both resources are
-// deleted on t.Cleanup with a fresh context, so a test that fails or times out leaves nothing
-// behind.
+// deleted on t.Cleanup with a fresh context, so a failed test leaves nothing behind.
 func createTestWebhook(t *testing.T, client *apify.ApifyClient, url string) apify.Webhook {
 	t.Helper()
 	ctx, cancel := testContext(t)
