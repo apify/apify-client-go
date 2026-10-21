@@ -6,11 +6,21 @@ import (
 	apify "github.com/apify/apify-client-go"
 )
 
-func webhookDef(url string) map[string]any {
+// webhookDef returns a persistent (not ad hoc) webhook definition bound to a public Actor. The
+// API rejects an ad hoc webhook whose run does not exist, so a persistent one conditioned on an
+// existing Actor is the only kind these tests can create without starting a run.
+func webhookDef(t *testing.T, client *apify.ApifyClient, url string) map[string]any {
+	t.Helper()
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	actor, ok, err := client.Actor("apify/hello-world").Get(ctx)
+	if err != nil || !ok {
+		t.Fatalf("get condition Actor: ok=%v err=%v", ok, err)
+	}
 	return map[string]any{
-		"isAdHoc":    true,
 		"eventTypes": []string{"ACTOR.RUN.SUCCEEDED"},
-		"condition":  map[string]any{"actorRunId": "ZZZZZZZZZZZZZZZZZ"},
+		"condition":  map[string]any{"actorId": actor.ID},
 		"requestUrl": url,
 	}
 }
@@ -48,7 +58,7 @@ func TestGetWebhook(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef("https://example.com/webhook"))
+	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/webhook"))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -65,7 +75,7 @@ func TestGetWebhookDispatch(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef("https://example.com/webhook"))
+	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/webhook"))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -86,7 +96,7 @@ func TestWebhookCRUDFlow(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef("https://example.com/webhook"))
+	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/webhook"))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

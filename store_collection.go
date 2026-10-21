@@ -16,7 +16,7 @@ type StoreListOptions struct {
 	Category *string
 	// Username filters Actors by owner username.
 	Username *string
-	// PricingModel filters Actors by pricing model (e.g. "FREE", "FLAT_PRICE_PER_MONTH").
+	// PricingModel filters Actors by pricing model (e.g. "FREE", "PAY_PER_EVENT").
 	PricingModel *string
 	// IncludeUnrunnableActors includes Actors the current user cannot run.
 	IncludeUnrunnableActors *bool

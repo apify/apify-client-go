@@ -134,7 +134,7 @@ func TestIterateWebhooks(t *testing.T) {
 
 	var want []string
 	for i := 0; i < 3; i++ {
-		wh, err := client.Webhooks().Create(ctx, webhookDef("https://example.com/iter-webhook"))
+		wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/iter-webhook"))
 		if err != nil {
 			t.Fatalf("create webhook %d: %v", i, err)
 		}
@@ -390,7 +390,7 @@ func TestIterateWebhookDispatches(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef("https://example.com/iter-dispatch"))
+	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/iter-dispatch"))
 	if err != nil {
 		t.Fatalf("create webhook: %v", err)
 	}

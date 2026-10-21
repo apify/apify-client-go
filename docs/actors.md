@@ -13,9 +13,12 @@ Actors are the programs that run on the Apify platform. Access the Actor collect
 | `Create(ctx, definition any) (Actor, error)` | Create a new Actor. |
 
 `Create` takes a free-form definition (`any`) serialized to JSON, so the Actor's fields are
-passed as a map (`name`, `title`, `versions`, etc.). A version's `sourceType` selects how its
-source is supplied, and is one of the closed `VersionSourceType` values: `SOURCE_FILES`,
-`GIT_REPO`, `TARBALL`, `GITHUB_GIST`, `SOURCE_CODE`. For `SOURCE_FILES`, each entry in
+passed as a map (`name`, `title`, `versions`, etc.). A new Actor is always private, so
+`isPublic` can only be `false` on creation: build the Actor first, then publish it with `Update`.
+`versions`, when sent, must contain at least one version, and each one needs a `versionNumber`
+and a `sourceType`. The `sourceType` selects how the source is supplied and is one of the
+`WritableVersionSourceType` values: `SOURCE_FILES`, `GIT_REPO`, `TARBALL`, `GITHUB_GIST`
+(`SOURCE_CODE` can appear in responses but is not accepted in requests). For `SOURCE_FILES`, each entry in
 `sourceFiles` has a `format` of `TEXT` or `BASE64`. A minimal `SOURCE_FILES` Actor:
 
 ```go
@@ -25,7 +28,7 @@ actor, err := client.Actors().Create(ctx, map[string]any{
 	"versions": []any{
 		map[string]any{
 			"versionNumber": "0.0",
-			"sourceType":    "SOURCE_FILES", // VersionSourceType: SOURCE_FILES|GIT_REPO|TARBALL|GITHUB_GIST|SOURCE_CODE
+			"sourceType":    "SOURCE_FILES", // SOURCE_FILES|GIT_REPO|TARBALL|GITHUB_GIST
 			"sourceFiles": []any{
 				map[string]any{
 					"name":    "Dockerfile",

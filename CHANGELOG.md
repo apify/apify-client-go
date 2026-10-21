@@ -5,6 +5,20 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-10-21
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-10-20T121847Z` and `ClientVersion` to `0.12.1`.
+- Documented the spec's request changes: a new Actor is always private, `versions` must hold at
+  least one version, and `SOURCE_CODE` is not accepted as a version `sourceType` in requests.
+- Removed the discontinued `FLAT_PRICE_PER_MONTH` value from the documented `PricingModel`
+  store filter values.
+- CI and publish workflows now build with Go 1.26.10 and golangci-lint v2.15.0, and `go.mod`
+  declares `toolchain go1.26.10`, picking up the Go release that distrusts the compromised
+  intermediate CA certificates. The minimum supported Go version (`go 1.23`) is unchanged;
+  rebuild programs that use this client with Go 1.26.10, 1.27.3 or newer.
+
 ## [0.12.0] - 2026-10-19
 
 ### Added

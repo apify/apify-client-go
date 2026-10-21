@@ -19,7 +19,7 @@ Browse public Actors with `client.Store()`:
 | `SortBy` | `*string` | Sort field (e.g. `"popularity"`, `"newest"`). |
 | `Category` | `*string` | Filter Actors by category. |
 | `Username` | `*string` | Filter Actors by owner username. |
-| `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `FLAT_PRICE_PER_MONTH`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
+| `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
 | `IncludeUnrunnableActors` | `*bool` | Include Actors the current user cannot run. |
 | `AllowsAgenticUsers` | `*bool` | Filter to Actors that allow agentic users. |
 | `ResponseFormat` | `*string` | Select the response format. Accepted values: `full`, `agent`. |
