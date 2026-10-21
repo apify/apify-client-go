@@ -20,12 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declares `toolchain go1.26.10`, the Go release that distrusts the compromised intermediate CA
   certificates. The minimum supported Go version (`go 1.23`) is unchanged;
   rebuild programs that use this client with Go 1.26.10, 1.27.3 or newer.
+- Behavior change: the API returns an empty `ActorEnvVar.Value` for a secret from `Get`, `List` and
+  `Iterate`. Passing such an object to `Update` unchanged used to fail and now overwrites the
+  secret with an empty value, so set `Value` first.
 
 ### Fixed
 
 - `ActorEnvVar.Value` is now always sent, so an empty value no longer fails with "value is required".
-  A secret variable fetched with `Get` has an empty `Value`; passing it to `Update` unchanged now
-  stores an empty value instead of failing.
 
 ## [0.12.0] - 2026-10-19
 
