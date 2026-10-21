@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   store filter values.
 - Documented the version definition fields (`Versions().Create`, `Version(n).Update`) and the
   schedule `notifications` request field.
-
 - CI and publish workflows now build with Go 1.26.10 and golangci-lint v2.15.0, and `go.mod`
   declares `toolchain go1.26.10`, the Go release that fixes the compromised intermediate CA
   certificates. The minimum supported Go version (`go 1.23`) is unchanged;
