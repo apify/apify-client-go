@@ -52,6 +52,27 @@ func TestChargeHonorsExplicitIdempotencyKey(t *testing.T) {
 	}
 }
 
+// RequestID must be sent as requestId in the charge body, and omitted when empty.
+func TestChargeSendsRequestID(t *testing.T) {
+	backend := &mockBackend{responses: okData()}
+	client := testClient(backend, 0)
+
+	err := client.Run("run123").Charge(context.Background(), RunChargeOptions{EventName: "e", RequestID: "req-1"})
+	if err != nil {
+		t.Fatalf("charge: %v", err)
+	}
+	if !strings.Contains(backend.lastBody, `"requestId":"req-1"`) || !strings.Contains(backend.lastBody, `"count":1`) {
+		t.Fatalf("unexpected charge body: %s", backend.lastBody)
+	}
+
+	if err := client.Run("run123").Charge(context.Background(), RunChargeOptions{EventName: "e"}); err != nil {
+		t.Fatalf("charge: %v", err)
+	}
+	if strings.Contains(backend.lastBody, "requestId") {
+		t.Fatalf("requestId must be omitted when empty, got %s", backend.lastBody)
+	}
+}
+
 // GetRecord must default attachment=true (matching the reference client).
 func TestGetRecordDefaultsAttachment(t *testing.T) {
 	backend := &mockBackend{responses: constant(200, "raw-bytes")}

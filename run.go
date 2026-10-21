@@ -46,6 +46,10 @@ type RunChargeOptions struct {
 	// API requires this header on every charge request; the key expires 3 minutes after the
 	// charge, so a later request reusing it starts a new charge rather than being deduplicated.
 	IdempotencyKey string
+	// RequestID is the ID of the Server Actor request being charged, taken from the
+	// `X-Actor-Request-ID` header of the incoming request. Required for multi-tenant Server
+	// Actor runs; omitted from the request body when empty.
+	RequestID string
 }
 
 // RunClient is a client for a specific Actor run.
@@ -199,7 +203,11 @@ func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error 
 	if idempotencyKey == "" {
 		idempotencyKey = c.generateIdempotencyKey(options.EventName)
 	}
-	body := mustMarshal(map[string]any{"eventName": options.EventName, "count": count})
+	payload := map[string]any{"eventName": options.EventName, "count": count}
+	if options.RequestID != "" {
+		payload["requestId"] = options.RequestID
+	}
+	body := mustMarshal(payload)
 	url := c.ctx.subURL("charge")
 	headers := map[string]string{chargeIdempotencyHeader: idempotencyKey}
 	_, err := c.ctx.http.callWithHeaders(ctx, http.MethodPost, url, body, contentTypeJSON, headers, c.ctx.shortTimeout())

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.1] - 2026-10-21
 
+### Added
+
+- `RunChargeOptions.RequestID` sends `requestId` to `Charge`, for multi-tenant Server Actor runs.
+
 ### Changed
 
 - Bumped `APISpecVersion` to `v2-2026-10-20T121847Z` and `ClientVersion` to `0.12.1`.
