@@ -441,6 +441,28 @@ func TestSingletonSubResourcesPropagate404(t *testing.T) {
 	}
 }
 
+// MonthlyUsageWithOptions sends the date query parameter only when it is set.
+func TestMonthlyUsageWithOptionsDate(t *testing.T) {
+	backend := &mockBackend{responses: okData()}
+	client := testClient(backend, 0)
+
+	if _, err := client.Me().MonthlyUsageWithOptions(context.Background(), MonthlyUsageOptions{Date: "2026-09-14"}); err != nil {
+		t.Fatalf("monthly usage: %v", err)
+	}
+	if !strings.Contains(backend.lastURL, "/users/me/usage/monthly") || !strings.Contains(backend.lastURL, "date=2026-09-14") {
+		t.Fatalf("expected date query parameter, got %q", backend.lastURL)
+	}
+	if _, err := client.Me().MonthlyUsage(context.Background()); err != nil {
+		t.Fatalf("monthly usage: %v", err)
+	}
+	if strings.Contains(backend.lastURL, "date=") {
+		t.Fatalf("date must be omitted when empty, got %q", backend.lastURL)
+	}
+	if _, err := client.User("someone").MonthlyUsageWithOptions(context.Background(), MonthlyUsageOptions{}); err == nil {
+		t.Fatal("expected an error for a non-me client")
+	}
+}
+
 // ApiError's Is* status-classification predicates match the response status, and only that
 // status's predicate is true.
 func TestAPIErrorStatusPredicates(t *testing.T) {

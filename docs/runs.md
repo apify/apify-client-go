@@ -74,12 +74,12 @@ The time filters apply only to Actor- and task-scoped collections.
 | `EventName` | `string` | Name of the event to charge for. **Required.** |
 | `Count` | `*int64` | Number of times to charge the event (defaults to 1 when nil). |
 | `IdempotencyKey` | `string` | Deduplicates the charge across retries; auto-generated when empty, so a retried charge is applied at most once. The API requires this header on every charge and expires the key 3 minutes after the charge. |
-| `RequestID` | `string` | ID of the Server Actor request being charged, from the `X-Actor-Request-ID` header of the incoming request. Required for multi-tenant Server Actor runs; omitted from the request when empty. |
+| `RequestID` | `string` | ID of the Server Actor request being charged, from the `X-Actor-Request-ID` header of the incoming request. Required for multi-tenant Server Actor runs, ignored elsewhere; omitted from the request when empty. |
 
 > Note: unlike most option structs (whose optional fields are pointer-typed — see
 > [docs/README.md](README.md)), `MetamorphOptions` and the string fields of `RunChargeOptions`
-> use plain values. `Build`/`ContentType` and `EventName`/`IdempotencyKey`/`RequestID` treat the zero value
-> (empty string) as "unset"; only `RunChargeOptions.Count` is a pointer.
+> use plain values. `Build`/`ContentType` and `EventName`/`IdempotencyKey`/`RequestID` treat
+> the zero value (empty string) as "unset"; only `RunChargeOptions.Count` is a pointer.
 
 ```go
 // nil polls until the run is terminal and is not cut off by WithTimeout (which bounds each

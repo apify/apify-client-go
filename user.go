@@ -38,10 +38,27 @@ func (c *UserClient) Get(ctx context.Context) (User, bool, error) {
 // It returns the raw JSON usage report from the API (a JSON object with the account's usage
 // breakdown and totals for the period).
 func (c *UserClient) MonthlyUsage(ctx context.Context) (json.RawMessage, error) {
+	return c.MonthlyUsageWithOptions(ctx, MonthlyUsageOptions{})
+}
+
+// MonthlyUsageOptions configures [UserClient.MonthlyUsageWithOptions].
+type MonthlyUsageOptions struct {
+	// Date selects the billing period that contains this date, in YYYY-MM-DD format. If empty,
+	// the current period is used.
+	Date string
+}
+
+// MonthlyUsageWithOptions is like [UserClient.MonthlyUsage] but can select another period
+// with [MonthlyUsageOptions.Date]. Only available for "me".
+func (c *UserClient) MonthlyUsageWithOptions(ctx context.Context, options MonthlyUsageOptions) (json.RawMessage, error) {
 	if !c.isMe {
 		return nil, errNotMe
 	}
-	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", NewQueryParams(), c.ctx.shortTimeout())
+	params := NewQueryParams()
+	if options.Date != "" {
+		params.AddString("date", &options.Date)
+	}
+	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", params, c.ctx.shortTimeout())
 }
 
 // Limits fetches the current account's resource limits. Only available for "me".

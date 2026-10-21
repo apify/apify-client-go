@@ -5,15 +5,17 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.12.1] - 2026-10-21
+## [0.13.0] - 2026-10-21
 
 ### Added
 
 - `RunChargeOptions.RequestID` sends `requestId` to `Charge`, for multi-tenant Server Actor runs.
+- `UserClient.MonthlyUsageWithOptions` selects the billing period with the spec's `date` query
+  parameter; `MonthlyUsage` is unchanged.
 
 ### Changed
 
-- Bumped `APISpecVersion` to `v2-2026-10-20T121847Z` and `ClientVersion` to `0.12.1`.
+- Bumped `APISpecVersion` to `v2-2026-10-20T121847Z` and `ClientVersion` to `0.13.0`.
 - Documented the spec's request changes: a new Actor is always private, `versions` must hold at
   least one version, and `SOURCE_CODE` is not accepted as a version `sourceType` in requests.
 - Removed the discontinued `FLAT_PRICE_PER_MONTH` value from the documented `PricingModel`

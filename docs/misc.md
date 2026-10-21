@@ -57,6 +57,7 @@ for {
 | --- | --- |
 | `Get(ctx) (User, bool, error)` | Account details (private for `Me()`, public otherwise). |
 | `MonthlyUsage(ctx) (json.RawMessage, error)` | Current month's usage (`Me()` only). |
+| `MonthlyUsageWithOptions(ctx, MonthlyUsageOptions) (json.RawMessage, error)` | Usage for the period containing `Date` (`YYYY-MM-DD`; empty means current) (`Me()` only). |
 | `Limits(ctx) (json.RawMessage, error)` | Current account's limits (`Me()` only). |
 | `UpdateLimits(ctx, newLimits any) error` | Update the account's limits (`Me()` only). |
 
