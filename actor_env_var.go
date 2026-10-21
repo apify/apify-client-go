@@ -45,7 +45,9 @@ func (c *ActorEnvVarClient) Get(ctx context.Context) (ActorEnvVar, bool, error) 
 	return getResource[ActorEnvVar](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Update updates the environment variable and returns the updated object.
+// Update updates the environment variable and returns the updated object. The API requires
+// envVar.Value, so an empty Value is sent as an empty string: do not pass back an object from Get
+// for a secret variable unchanged, since its Value is empty and would overwrite the secret.
 func (c *ActorEnvVarClient) Update(ctx context.Context, envVar ActorEnvVar) (ActorEnvVar, error) {
 	return updateResource[ActorEnvVar](ctx, c.ctx, "", envVar)
 }

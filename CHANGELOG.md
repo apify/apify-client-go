@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `ActorEnvVar.Value` is now always sent, so an empty value no longer fails with "value is required".
+  A secret variable fetched with `Get` has an empty `Value`; passing it to `Update` unchanged now
+  stores an empty value instead of failing.
 
 ## [0.12.0] - 2026-10-19
 
