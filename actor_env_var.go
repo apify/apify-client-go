@@ -46,8 +46,8 @@ func (c *ActorEnvVarClient) Get(ctx context.Context) (ActorEnvVar, bool, error) 
 }
 
 // Update updates the environment variable and returns the updated object. A secret's Value is
-// empty in responses (Get, List, Iterate), so set it before passing a fetched object back, or the
-// secret is overwritten with an empty value.
+// empty in every API response, so set it before passing a returned object back, or the secret
+// is overwritten with an empty value.
 func (c *ActorEnvVarClient) Update(ctx context.Context, envVar ActorEnvVar) (ActorEnvVar, error) {
 	return updateResource[ActorEnvVar](ctx, c.ctx, "", envVar)
 }
