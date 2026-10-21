@@ -134,11 +134,7 @@ func TestIterateWebhooks(t *testing.T) {
 
 	var want []string
 	for i := 0; i < 3; i++ {
-		wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/iter-webhook"))
-		if err != nil {
-			t.Fatalf("create webhook %d: %v", i, err)
-		}
-		defer func(id string) { _ = client.Webhook(id).Delete(ctx) }(wh.ID)
+		wh := createTestWebhook(t, client, "https://example.com/iter-webhook")
 		want = append(want, wh.ID)
 	}
 
@@ -390,11 +386,7 @@ func TestIterateWebhookDispatches(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/iter-dispatch"))
-	if err != nil {
-		t.Fatalf("create webhook: %v", err)
-	}
-	defer func() { _ = client.Webhook(wh.ID).Delete(ctx) }()
+	wh := createTestWebhook(t, client, "https://example.com/iter-dispatch")
 	webhook := client.Webhook(wh.ID)
 
 	// Each Test() dispatches the webhook, creating a dispatch record to page through.

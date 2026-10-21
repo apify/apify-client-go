@@ -41,7 +41,8 @@ Schedules start Actor or task runs at specified times. Access the schedule colle
 
 `Create`/`Update` take a free-form definition (`any`) that is serialized to JSON, so the
 schedule's fields are passed as a map. The key fields are `name`, `cronExpression`, `isEnabled`,
-`isExclusive` (whether overlapping invocations are skipped), and `actions` — the list of things
+`isExclusive` (whether overlapping invocations are skipped), `notifications` (`{"email": bool}`,
+whether to send email notifications about the schedule), and `actions` — the list of things
 the schedule does when it fires.
 
 Each entry in `actions` describes one action. The common type is `RUN_ACTOR` (or

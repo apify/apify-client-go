@@ -6,23 +6,40 @@ import (
 	apify "github.com/apify/apify-client-go"
 )
 
-// webhookDef returns a persistent (not ad hoc) webhook definition bound to a public Actor. The
-// API rejects an ad hoc webhook whose run does not exist, so a persistent one conditioned on an
-// existing Actor is the only kind these tests can create without starting a run.
-func webhookDef(t *testing.T, client *apify.ApifyClient, url string) map[string]any {
+// createTestWebhook creates a persistent webhook conditioned on a task that only this test owns,
+// so it can fire only for runs of that task, which nothing else starts. The API rejects an ad hoc
+// webhook whose run does not exist, which is why a persistent one is used. Both resources are
+// deleted on t.Cleanup with a fresh context, so a test that fails or times out leaves nothing
+// behind.
+func createTestWebhook(t *testing.T, client *apify.ApifyClient, url string) apify.Webhook {
 	t.Helper()
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	actor, ok, err := client.Actor("apify/hello-world").Get(ctx)
-	if err != nil || !ok {
-		t.Fatalf("get condition Actor: ok=%v err=%v", ok, err)
+	task, err := client.Tasks().Create(ctx, taskDef(uniqueName("webhook-task")))
+	if err != nil {
+		t.Fatalf("create webhook condition task: %v", err)
 	}
-	return map[string]any{
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := testContext(t)
+		defer cleanupCancel()
+		_ = client.Task(task.ID).Delete(cleanupCtx)
+	})
+
+	wh, err := client.Webhooks().Create(ctx, map[string]any{
 		"eventTypes": []string{"ACTOR.RUN.SUCCEEDED"},
-		"condition":  map[string]any{"actorId": actor.ID},
+		"condition":  map[string]any{"actorTaskId": task.ID},
 		"requestUrl": url,
+	})
+	if err != nil {
+		t.Fatalf("create webhook: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := testContext(t)
+		defer cleanupCancel()
+		_ = client.Webhook(wh.ID).Delete(cleanupCtx)
+	})
+	return wh
 }
 
 func TestListWebhooks(t *testing.T) {
@@ -58,11 +75,7 @@ func TestGetWebhook(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/webhook"))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	defer func() { _ = client.Webhook(wh.ID).Delete(ctx) }()
+	wh := createTestWebhook(t, client, "https://example.com/webhook")
 
 	got, ok, err := client.Webhook(wh.ID).Get(ctx)
 	if err != nil || !ok || got.ID != wh.ID {
@@ -75,11 +88,7 @@ func TestGetWebhookDispatch(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/webhook"))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	defer func() { _ = client.Webhook(wh.ID).Delete(ctx) }()
+	wh := createTestWebhook(t, client, "https://example.com/webhook")
 
 	dispatch, err := client.Webhook(wh.ID).Test(ctx)
 	if err != nil {
@@ -96,11 +105,7 @@ func TestWebhookCRUDFlow(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	wh, err := client.Webhooks().Create(ctx, webhookDef(t, client, "https://example.com/webhook"))
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	defer func() { _ = client.Webhook(wh.ID).Delete(ctx) }()
+	wh := createTestWebhook(t, client, "https://example.com/webhook")
 	webhook := client.Webhook(wh.ID)
 
 	if _, ok, err := webhook.Get(ctx); err != nil || !ok {
