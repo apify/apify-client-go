@@ -19,7 +19,7 @@ Browse public Actors with `client.Store()`:
 | `SortBy` | `*string` | Sort field (e.g. `"popularity"`, `"newest"`). |
 | `Category` | `*string` | Filter Actors by category. |
 | `Username` | `*string` | Filter Actors by owner username. |
-| `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `FLAT_PRICE_PER_MONTH`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
+| `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
 | `IncludeUnrunnableActors` | `*bool` | Include Actors the current user cannot run. |
 | `AllowsAgenticUsers` | `*bool` | Filter to Actors that allow agentic users. |
 | `ResponseFormat` | `*string` | Select the response format. Accepted values: `full`, `agent`. |
@@ -57,6 +57,7 @@ for {
 | --- | --- |
 | `Get(ctx) (User, bool, error)` | Account details (private for `Me()`, public otherwise). |
 | `MonthlyUsage(ctx) (json.RawMessage, error)` | Current month's usage (`Me()` only). |
+| `MonthlyUsageWithOptions(ctx, MonthlyUsageOptions) (json.RawMessage, error)` | Usage for the period containing `Date` (`YYYY-MM-DD`; empty means current) (`Me()` only). |
 | `Limits(ctx) (json.RawMessage, error)` | Current account's limits (`Me()` only). |
 | `UpdateLimits(ctx, newLimits any) error` | Update the account's limits (`Me()` only). |
 

@@ -504,8 +504,11 @@ func (v *ActorVersion) UnmarshalJSON(data []byte) error {
 type ActorEnvVar struct {
 	// Name is the environment variable name.
 	Name string `json:"name"`
-	// Value is the environment variable value.
-	Value string `json:"value,omitempty"`
+	// Value is the environment variable value. It is always sent, since the API requires it
+	// when creating or updating a variable (an empty string is a valid value). It is empty in
+	// every API response for a secret variable, so set it again before passing such an object to
+	// Update.
+	Value string `json:"value"`
 	// IsSecret reports whether the value is stored as a secret.
 	IsSecret *bool `json:"isSecret,omitempty"`
 	// Extra holds any other fields returned by the API.

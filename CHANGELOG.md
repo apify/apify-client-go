@@ -5,6 +5,35 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-10-21
+
+### Added
+
+- `RunChargeOptions.RequestID` sends `requestId` to `Charge`, for multi-tenant Server Actor runs.
+- `UserClient.MonthlyUsageWithOptions` selects the billing period with the spec's `date` query
+  parameter; `MonthlyUsage` is unchanged.
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-10-20T121847Z` and `ClientVersion` to `0.13.0`.
+- Documented the spec's request changes: a new Actor is always private, `versions` must hold at
+  least one version, and `SOURCE_CODE` is not accepted as a version `sourceType` in requests.
+- Removed the discontinued `FLAT_PRICE_PER_MONTH` value from the documented `PricingModel`
+  store filter values.
+- Documented the version definition fields (`Versions().Create`, `Version(n).Update`) and the
+  schedule `notifications` request field.
+- CI and publish workflows now build with Go 1.26.10 and golangci-lint v2.15.0, and `go.mod`
+  declares `toolchain go1.26.10`, the Go release that distrusts the compromised intermediate CA
+  certificates. The minimum supported Go version (`go 1.23`) is unchanged;
+  rebuild programs that use this client with Go 1.26.10, 1.27.3 or newer.
+- Behavior change: `ActorEnvVar.Value` is empty in every API response for a secret. Passing such a
+  returned object to `Update` unchanged used to fail and now overwrites the secret with an empty
+  value, so set `Value` first.
+
+### Fixed
+
+- `ActorEnvVar.Value` is now always sent, so an empty value no longer fails with "value is required".
+
 ## [0.12.0] - 2026-10-19
 
 ### Added

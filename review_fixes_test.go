@@ -52,6 +52,27 @@ func TestChargeHonorsExplicitIdempotencyKey(t *testing.T) {
 	}
 }
 
+// RequestID must be sent as requestId in the charge body, and omitted when empty.
+func TestChargeSendsRequestID(t *testing.T) {
+	backend := &mockBackend{responses: okData()}
+	client := testClient(backend, 0)
+
+	err := client.Run("run123").Charge(context.Background(), RunChargeOptions{EventName: "e", RequestID: "req-1"})
+	if err != nil {
+		t.Fatalf("charge: %v", err)
+	}
+	if !strings.Contains(backend.lastBody, `"requestId":"req-1"`) || !strings.Contains(backend.lastBody, `"count":1`) {
+		t.Fatalf("unexpected charge body: %s", backend.lastBody)
+	}
+
+	if err := client.Run("run123").Charge(context.Background(), RunChargeOptions{EventName: "e"}); err != nil {
+		t.Fatalf("charge: %v", err)
+	}
+	if strings.Contains(backend.lastBody, "requestId") {
+		t.Fatalf("requestId must be omitted when empty, got %s", backend.lastBody)
+	}
+}
+
 // GetRecord must default attachment=true (matching the reference client).
 func TestGetRecordDefaultsAttachment(t *testing.T) {
 	backend := &mockBackend{responses: constant(200, "raw-bytes")}
@@ -420,6 +441,28 @@ func TestSingletonSubResourcesPropagate404(t *testing.T) {
 	}
 }
 
+// MonthlyUsageWithOptions sends the date query parameter only when it is set.
+func TestMonthlyUsageWithOptionsDate(t *testing.T) {
+	backend := &mockBackend{responses: okData()}
+	client := testClient(backend, 0)
+
+	if _, err := client.Me().MonthlyUsageWithOptions(context.Background(), MonthlyUsageOptions{Date: "2026-09-14"}); err != nil {
+		t.Fatalf("monthly usage: %v", err)
+	}
+	if !strings.Contains(backend.lastURL, "/users/me/usage/monthly") || !strings.Contains(backend.lastURL, "date=2026-09-14") {
+		t.Fatalf("expected date query parameter, got %q", backend.lastURL)
+	}
+	if _, err := client.Me().MonthlyUsage(context.Background()); err != nil {
+		t.Fatalf("monthly usage: %v", err)
+	}
+	if strings.Contains(backend.lastURL, "date=") {
+		t.Fatalf("date must be omitted when empty, got %q", backend.lastURL)
+	}
+	if _, err := client.User("someone").MonthlyUsageWithOptions(context.Background(), MonthlyUsageOptions{}); err == nil {
+		t.Fatal("expected an error for a non-me client")
+	}
+}
+
 // ApiError's Is* status-classification predicates match the response status, and only that
 // status's predicate is true.
 func TestAPIErrorStatusPredicates(t *testing.T) {
@@ -760,5 +803,16 @@ func TestListRequestsFilterCommaJoined(t *testing.T) {
 	gotURL := backend.lastURL
 	if !strings.Contains(gotURL, "filter=locked%2Cpending") && !strings.Contains(gotURL, "filter=locked,pending") {
 		t.Fatalf("expected filter sent comma-joined as a single param, got URL: %s", gotURL)
+	}
+}
+
+// The API requires `value` on env var create/update, so an empty value must still be sent.
+func TestActorEnvVarSendsEmptyValue(t *testing.T) {
+	body, err := json.Marshal(ActorEnvVar{Name: "EMPTY"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != `{"name":"EMPTY","value":""}` {
+		t.Fatalf("unexpected body: %s", body)
 	}
 }

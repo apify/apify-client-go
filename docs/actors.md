@@ -13,9 +13,9 @@ Actors are the programs that run on the Apify platform. Access the Actor collect
 | `Create(ctx, definition any) (Actor, error)` | Create a new Actor. |
 
 `Create` takes a free-form definition (`any`) serialized to JSON, so the Actor's fields are
-passed as a map (`name`, `title`, `versions`, etc.). A version's `sourceType` selects how its
-source is supplied, and is one of the closed `VersionSourceType` values: `SOURCE_FILES`,
-`GIT_REPO`, `TARBALL`, `GITHUB_GIST`, `SOURCE_CODE`. For `SOURCE_FILES`, each entry in
+passed as a map (`name`, `title`, `versions`, etc.). A new Actor is always private: to publish it,
+build it first, then call `Update` with `isPublic` set to `true`. `versions`, when sent, must
+contain at least one version (see [Version definitions](#version-definitions)). For `SOURCE_FILES`, each entry in
 `sourceFiles` has a `format` of `TEXT` or `BASE64`. A minimal `SOURCE_FILES` Actor:
 
 ```go
@@ -25,7 +25,7 @@ actor, err := client.Actors().Create(ctx, map[string]any{
 	"versions": []any{
 		map[string]any{
 			"versionNumber": "0.0",
-			"sourceType":    "SOURCE_FILES", // VersionSourceType: SOURCE_FILES|GIT_REPO|TARBALL|GITHUB_GIST|SOURCE_CODE
+			"sourceType":    "SOURCE_FILES", // SOURCE_FILES|GIT_REPO|TARBALL|GITHUB_GIST
 			"sourceFiles": []any{
 				map[string]any{
 					"name":    "Dockerfile",
@@ -202,12 +202,40 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 | `Version(n).EnvVars().List(ctx)` / `.Iterate()` / `.Create(ctx, ActorEnvVar)` | List/iterate/create env vars. |
 | `Version(n).EnvVar(name).Get/Update/Delete(ctx)` | Manage a single env var. |
 
+### Version definitions
+
+`Versions().Create` and `Version(n).Update` (and each entry of `versions` when creating an Actor)
+take a free-form definition (`any`) serialized to JSON:
+
+| Field | Meaning |
+|---|---|
+| `versionNumber` | `MAJOR.MINOR`, for example `"0.1"`. Required on create. |
+| `sourceType` | Where the source lives: `SOURCE_FILES`, `GIT_REPO`, `TARBALL` or `GITHUB_GIST`. Required on create. `SOURCE_CODE` can appear in responses but is not accepted in requests. |
+| `sourceFiles`, `gitRepoUrl`, `tarballUrl`, `gitHubGistUrl` | The source, matching `sourceType`. |
+| `envVars` | List of `{name, value, isSecret}`. Each entry needs `name` and `value`. |
+| `applyEnvVarsToBuild`, `buildTag` | Optional build settings. |
+
+```go
+version, err := client.Actor(actorID).Versions().Create(ctx, map[string]any{
+	"versionNumber": "0.1",
+	"sourceType":    "GIT_REPO",
+	"gitRepoUrl":    "https://github.com/apify/actor-templates.git",
+	"envVars": []any{
+		map[string]any{"name": "API_KEY", "value": "secret", "isSecret": true},
+	},
+})
+if err != nil {
+	log.Fatal(err)
+}
+_ = version
+```
+
 `ActorEnvVar` fields:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `Name` | `string` | The environment variable name (required). |
-| `Value` | `string` | The environment variable value. |
+| `Value` | `string` | The environment variable value (required when creating or updating; an empty string is sent as is). Every API response has an empty `Value` for a secret variable, so set it again before passing a returned object to `Update`, or the secret is overwritten with an empty value. |
 | `IsSecret` | `*bool` | Whether the value is stored as a secret (encrypted at rest). |
 
 ```go
