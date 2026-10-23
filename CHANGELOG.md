@@ -5,6 +5,14 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-10-23
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-10-22T140011Z` and `ClientVersion` to `0.13.1`.
+- Documented that `RunClient.Resurrect` accepts runs with status `SUCCEEDED`, `FAILED`,
+  `ABORTED` or `TIMED-OUT`.
+
 ## [0.13.0] - 2026-10-21
 
 ### Added

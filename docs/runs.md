@@ -33,7 +33,7 @@ The time filters apply only to Actor- and task-scoped collections.
 | `Metamorph(ctx, targetActorID string, input any, MetamorphOptions) (ActorRun, error)` | Metamorph into another Actor. |
 | `MetamorphRaw(ctx, targetActorID string, input []byte, MetamorphOptions) (ActorRun, error)` | Like `Metamorph`, but sends `input` as a raw request body (no JSON serialization), paired with `MetamorphOptions.ContentType`. |
 | `Reboot(ctx) (ActorRun, error)` | Reboot the run. |
-| `Resurrect(ctx, RunResurrectOptions) (ActorRun, error)` | Resurrect a finished run. |
+| `Resurrect(ctx, RunResurrectOptions) (ActorRun, error)` | Resurrect a finished run (status `SUCCEEDED`, `FAILED`, `ABORTED` or `TIMED-OUT`); it restarts with the same storages. |
 | `Charge(ctx, RunChargeOptions) error` | Charge a pay-per-event run (sends an idempotency key). |
 | `WaitForFinish(ctx, waitSecs *int64) (ActorRun, error)` | Poll until the run is terminal. |
 | `Dataset() *DatasetClient` | The run's default dataset. |

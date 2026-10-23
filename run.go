@@ -181,7 +181,10 @@ func (c *RunClient) Reboot(ctx context.Context) (ActorRun, error) {
 	return postWithBody[ActorRun](ctx, c.ctx, "reboot", NewQueryParams(), nil, "", c.ctx.mediumTimeout())
 }
 
-// Resurrect resurrects a finished run, starting it again from the beginning.
+// Resurrect resurrects a finished run and returns the details of the resurrected run.
+// Only runs with status SUCCEEDED, FAILED, ABORTED or TIMED-OUT can be resurrected. The run
+// status changes to RUNNING and its container restarts with the same storages, as when a run
+// migrates to a new server.
 func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) (ActorRun, error) {
 	params := NewQueryParams()
 	options.apply(params)
