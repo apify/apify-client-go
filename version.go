@@ -10,4 +10,4 @@ const ClientVersion = "0.13.1"
 // client was generated and verified against.
 //
 // It corresponds to the `info.version` field of the Apify OpenAPI document.
-const APISpecVersion = "v2-2026-10-22T140011Z"
+const APISpecVersion = "v2-2026-10-26T112451Z"
