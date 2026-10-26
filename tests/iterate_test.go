@@ -425,8 +425,8 @@ func TestIterateDatasetItems(t *testing.T) {
 		t.Fatalf("push items: %v", err)
 	}
 
-	// The X-Apify-Pagination-Total header can lag right after a push, and offset-based
-	// iteration relies on it to page. Wait for the total to converge before iterating.
+	// Pushed items become listable asynchronously. Wait until the listing reports all of them,
+	// so the iteration below can be checked against the exact pushed count.
 	settled := false
 	for attempt := 0; attempt < 20; attempt++ {
 		page, err := dataset.ListItems(ctx, apify.DatasetListItemsOptions{Limit: ptr(int64(1))})
