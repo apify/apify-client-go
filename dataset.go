@@ -201,12 +201,6 @@ func (c *DatasetClient) ListItems(ctx context.Context, options DatasetListItemsO
 // and fetching pages on demand. The options' Limit caps the total number of items yielded
 // (unset means all); the per-page size is chunkSize (nil for the server default). Mirrors the
 // reference client's iterable listItems().
-//
-// Caveat: offset-based iteration paginates using the item total reported in the
-// X-Apify-Pagination-Total header, and that header can lag right after items are pushed (the
-// count is updated asynchronously). Iterating immediately after a push may therefore stop early
-// (after one page) until the total settles. This matches the reference client's behaviour; wait
-// for the total to converge before iterating a just-written dataset if completeness matters.
 func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOptions, chunkSize *int64) *ListIterator[T] {
 	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[T], error) {
 		opts := options
@@ -218,8 +212,7 @@ func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOption
 
 // IterateItems returns a lazy iterator over the dataset's items, decoding each into a generic
 // json.RawMessage. For typed decoding use [IterateDatasetItems]. See [IterateDatasetItems] for
-// how the options' Limit (total cap) and chunkSize (page size) are interpreted, including the
-// pagination-total lag caveat.
+// how the options' Limit (total cap) and chunkSize (page size) are interpreted.
 func (c *DatasetClient) IterateItems(options DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage] {
 	return IterateDatasetItems[json.RawMessage](c, options, chunkSize)
 }

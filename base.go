@@ -65,7 +65,7 @@ func newCollectionContext(hc *httpClient, baseURL, resourcePath string) *resourc
 // newSingleContext creates a context for a single resource: {base}/{resourcePath}/{safeID}.
 //
 // id is validated and percent-encoded (see safePathSegment); an invalid id (empty, or a dot
-// segment) does not fail here; synchronously since every resource getter in this package
+// segment) does not fail synchronously here, because every resource getter in this package
 // returns a client struct directly rather than an error. Instead, the resource context
 // remembers the error and every CRUD call this client later attempts fails fast with it.
 func newSingleContext(hc *httpClient, baseURL, resourcePath, id string) *resourceContext {
