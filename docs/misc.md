@@ -117,15 +117,15 @@ fmt.Println(string(usage)) // raw JSON usage report for the current month
 | `Raw` | `*bool` | Return the unprocessed log content (no platform post-processing). |
 | `Download` | `*bool` | Set `Content-Disposition` so the log is served as a download. |
 
-`client.Run(id).GetStreamedLog(ctx)` returns a raw live stream of the run's log directly. To
-redirect the log message by message to a writer, with a prefix, see
-[log redirection](runs.md#log-redirection).
+`client.Run(id).GetStreamedLog(ctx)` is deprecated: despite the name it returns the raw live
+stream, like `Log().StreamWithOptions` with `Raw` set. To redirect the log message by message to
+a writer, with a prefix, use `NewStreamedLog`; see [log redirection](runs.md#log-redirection).
 
 ```go
 // Read the whole log.
 logText, ok, err := client.Run(runID).Log().Get(ctx)
 
-// Or stream it live (log redirection).
+// Or stream it live, as raw bytes.
 stream, err := client.Run(runID).Log().Stream(ctx)
 if err != nil {
 	log.Fatal(err)

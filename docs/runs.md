@@ -41,7 +41,7 @@ with `client.Run(id)`, and an Actor's or task's runs with `client.Actor(id).Runs
 | `KeyValueStore() *KeyValueStoreClient` | The run's default key-value store. |
 | `RequestQueue() *RequestQueueClient` | The run's default request queue. |
 | `Log() *LogClient` | The run's log. |
-| `GetStreamedLog(ctx) (io.ReadCloser, error)` | Live stream of the run's raw log, as bytes. |
+| `GetStreamedLog(ctx) (io.ReadCloser, error)` | Deprecated: a raw live stream of the run's log, as bytes, despite the name. Use `NewStreamedLog` to redirect the log, or `Log().StreamWithOptions` for the raw stream. |
 | `NewStreamedLog(ctx, StreamedLogOptions) (*StreamedLog, bool, error)` | Redirects the run's log message by message to a writer; see [Log redirection](#log-redirection). The bool is `false` for a run that does not exist (with the default prefix). |
 | `IterateDatasetItems(RunIterateDatasetItemsOptions) *RunDatasetItemsIterator[json.RawMessage]` | Iterates over the items of the run's default dataset while the run is still producing them; see [Live iteration of dataset items](#live-iteration-of-dataset-items). |
 
@@ -160,7 +160,8 @@ if err := streamed.Stop(ctx); err != nil {
 | `Disabled` | `bool` | Turns the redirection off in `ActorStartOptions.Log`. |
 
 The log is split into messages at the timestamps the platform puts in front of each of them, so a
-message that spans several lines is written as one. `Start` begins the redirection in the
+message that spans several lines is written as one, even when its lines arrive in separate
+reads; the last message is therefore written when the next one starts or the log ends. `Start` begins the redirection in the
 background, and it also ends when the `ctx` it got is done. `Stop` gives the messages in flight up
 to one second, then aborts the stream; if the stream delivered nothing yet, it reads the whole log
 in one request, so a short run that finished before the stream connected is not lost. The `ctx`

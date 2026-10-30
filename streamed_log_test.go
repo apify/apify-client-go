@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -41,7 +42,8 @@ type logBackend struct {
 	streamCalls   int
 	fullLogCalls  int
 	rawOnStream   bool
-	streamTailErr error // makes the stream fail with this error after its body
+	streamChunks  []string // when set, the stream serves these pieces, one per read
+	streamTailErr error    // makes the stream fail with this error after its body
 	// blockFullLog makes the read of the whole log wait until its request is canceled.
 	blockFullLog bool
 	// holdStream keeps the live stream open after its body, until the request is canceled.
@@ -84,6 +86,22 @@ func (r *holdingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// chunkReader serves each of its chunks in a read of its own, like a log stream whose data
+// arrives in separate pieces.
+type chunkReader struct{ chunks []string }
+
+func (r *chunkReader) Read(p []byte) (int, error) {
+	if len(r.chunks) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p, r.chunks[0])
+	r.chunks[0] = r.chunks[0][n:]
+	if r.chunks[0] == "" {
+		r.chunks = r.chunks[1:]
+	}
+	return n, nil
+}
+
 func (b *logBackend) fullLogReads() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -107,6 +125,9 @@ func (b *logBackend) Do(req *http.Request) (*http.Response, error) {
 			body := b.streamBodies[min(b.streamCalls, len(b.streamBodies)-1)]
 			b.streamCalls++
 			var reader io.Reader = strings.NewReader(body)
+			if b.streamChunks != nil {
+				reader = &chunkReader{chunks: append([]string(nil), b.streamChunks...)}
+			}
 			if b.holdStream {
 				reader = &holdingReader{data: reader, ctx: req.Context()}
 			}
@@ -153,7 +174,7 @@ func TestStreamedLogRedirectsMessagesWithThePrefixOfTheActorAndTheRun(t *testing
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	if err := streamed.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -181,7 +202,7 @@ func TestStreamedLogPrefixOverrideSkipsTheLookups(t *testing.T) {
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	if err := streamed.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +246,7 @@ func TestStreamedLogReopensAnEmptyStream(t *testing.T) {
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	if err := streamed.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +382,7 @@ func TestStreamedLogStopWithADoneContextAfterACompleteLogIsNotAnError(t *testing
 	if err := streamed.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	done, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := streamed.Stop(done); err != nil {
@@ -416,7 +437,7 @@ func TestStreamedLogStopReportsALogCutOffByItsContext(t *testing.T) {
 	if err := streamed.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	stopCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	if err := streamed.Stop(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
@@ -426,6 +447,57 @@ func TestStreamedLogStopReportsALogCutOffByItsContext(t *testing.T) {
 
 // Without a Stop context to cut it off, a live stream ends after the grace period: that is how a
 // redirection ends normally, and it is not an error.
+func TestStreamedLogKeepsAMessageWhoseLinesArriveInSeparateReads(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{""}, streamChunks: []string{
+		"2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n",
+		"    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n",
+	}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "next") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := "2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n"
+	if got := out.String(); got != want {
+		t.Fatalf("redirected log:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// Stop promises the messages in flight up to a second: a stream that is still delivering when
+// Stop is called is read to its end, not just to the end of the current read.
+func TestStreamedLogStopKeepsReadingTheMessagesInFlight(t *testing.T) {
+	const lines = 20000
+	var log strings.Builder
+	for i := 0; i < lines; i++ {
+		fmt.Fprintf(&log, "2026-10-30T10:00:00.000Z message %d\n", i)
+	}
+	backend := &logBackend{streamBodies: []string{log.String()}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "message 0\n") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(out.String(), "\n"); got != lines {
+		t.Fatalf("redirected %d of %d messages", got, lines)
+	}
+}
+
 func TestStreamedLogStopOfALiveStreamAfterTheGracePeriodIsNotAnError(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{sampleLog}, holdStream: true}
 	out := &syncBuffer{}
@@ -436,7 +508,7 @@ func TestStreamedLogStopOfALiveStreamAfterTheGracePeriodIsNotAnError(t *testing.
 	if err := streamed.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	if err := streamed.Stop(context.Background()); err != nil {
 		t.Fatalf("a normal stop is not an error, got %v", err)
 	}
@@ -494,7 +566,7 @@ func TestStreamedLogStopAfterTheStartContextEndedIsNotAnError(t *testing.T) {
 	if err := streamed.Start(parent); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "first line") })
 	cancel()
 	if err := streamed.Stop(parent); err != nil {
 		t.Fatalf("the end of the Start context is not an error, got %v", err)
@@ -513,7 +585,7 @@ func TestCallWhoseContextEndsWithAnOpenLogStreamReportsNoError(t *testing.T) {
 		go func() {
 			defer cancel()
 			deadline := time.Now().Add(10 * time.Second)
-			for !strings.Contains(out.String(), "last message") && time.Now().Before(deadline) {
+			for !strings.Contains(out.String(), "first line") && time.Now().Before(deadline) {
 				time.Sleep(2 * time.Millisecond)
 			}
 		}()

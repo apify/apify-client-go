@@ -9,63 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `RunListOptions.Deployment` filters the account-wide and Actor-scoped run lists by the Actor
-  Standby pool that serves a run; `StoreListOptions.IncludeInputSchema` adds each Actor's compact
-  input schema to the Store listing.
-- `UserClient.Limits`, `UpdateLimits` and `MonthlyUsage*` work on `client.User(id)` too (the API
-  serves them for your own account or your organization by ID or username); they no longer fail
-  on a client that is not `Me()`.
-- `StreamedLog` (`RunClient.NewStreamedLog`, `Start`, `Stop`, `StreamedLogOptions`) redirects a
-  run's log message by message to a writer with a prefix. `ActorClient.Call` and `CallRaw` use it
-  by default, writing to `os.Stderr` with the prefix `"{Actor name} runId:{run ID} -> "`;
-  `ActorStartOptions.Log` changes the output or turns it off (`Disabled`).
-- `RunClient.IterateDatasetItems` and `IterateRunDatasetItems[T]` iterate over the items of a
-  run's default dataset while the run is still producing them.
-- `KeyValueStoreClient.SetRecordRawWithOptions` and `SetRecordJSONWithOptions` with
-  `SetRecordOptions` (`ContentEncoding`, `DoNotRetryTimeouts`).
-- Typed, normalized URL fields on the models: `ActorRun.ConsoleURL`/`Output`, `Dataset.ConsoleURL`/
-  `ItemsPublicURL`, `KeyValueStore.ConsoleURL`/`KeysPublicURL`/`RecordsPublicURL`,
-  `KeyValueStoreKey.RecordPublicURL`, `RequestQueue.ConsoleURL`, `Task.StandbyURL`,
-  `ActorStoreListItem.URL`/`UserPictureURL`, `User.Profile` (`UserProfile`) and
-  `WebhookDispatch.Webhook` (`WebhookDispatchWebhookSummary`). The URL fields the API specification
-  declares (these, `ActorRun.ContainerURL` and `Webhook.RequestURL`) are returned normalized, close
-  to the WHATWG URL serialization: the scheme and host are lowercased, a non-ASCII host becomes
-  punycode, an IPv4 or IPv6 host is written canonically, a default port is dropped, an empty path
-  becomes `/`, dot segments are resolved and unsafe characters are percent-encoded. A value that
-  is not an absolute URL fails decoding the response.
+- `RunListOptions.Deployment` and `StoreListOptions.IncludeInputSchema` list parameters.
+- `UserClient` limits and monthly usage methods work on `client.User(id)` too, not only `Me()`.
+- `StreamedLog` (`RunClient.NewStreamedLog`) redirects a run's log to a writer; `ActorClient.Call`
+  and `CallRaw` use it by default, `ActorStartOptions.Log` configures or disables it.
+- `RunClient.IterateDatasetItems` and `IterateRunDatasetItems[T]` iterate a run's dataset while it
+  is still being filled.
+- `KeyValueStoreClient.SetRecordRawWithOptions` and `SetRecordJSONWithOptions`.
+- `RequestQueueClient.PaginateRequestsWithOptions` iterates with `Limit`, `Cursor` and `Filter`.
+- Typed URL fields on the models (`ConsoleURL`, `ItemsPublicURL`, `RecordPublicURL`,
+  `User.Profile`, `WebhookDispatch.Webhook` and others), returned normalized.
 
 ### Changed
 
 - Bumped `APISpecVersion` to `v2-2026-10-29T100357Z` and `ClientVersion` to `0.14.0`.
-- **Breaking:** `ActorVersionCollectionClient.List` takes no options and `Iterate` takes no
-  arguments, like the environment-variable collection: the versions endpoint documents no query
-  parameters and always returns every version in one response. Matches the reference client,
-  whose versions `list()` takes no arguments.
-- The keys of the new typed fields (`consoleUrl`, `output`, `itemsPublicUrl`, `keysPublicUrl`,
-  `recordsPublicUrl`, `recordPublicUrl`, `standbyUrl`, `url`, `userPictureUrl`, `profile` and a
-  dispatch's `webhook`) are no longer in the `Extra` map of their model.
-- `ListRequestsOptions.ExclusiveStartID` is marked deprecated: the API deprecated the
-  `exclusiveStartId` parameter in favor of `cursor`.
-- `ActorClient.Call`/`CallRaw` and `TaskClient.Call` start the run without a client-side timeout,
-  so a slow start is no longer aborted and repeated, which started a second run.
-- A request that timed out is no longer retried when it is not idempotent: `Start`, `StartRaw`
-  and `Build` of an Actor, a task's `Start`, and `PushItems`.
-- `KeyValueStoreClient.Update`, `RecordExists`, `GetRecordPublicURL`, `CreateKeysPublicURL` and
-  `DatasetClient.CreateItemsPublicURL*` use the "long" timeout tier, like the reference client.
-- The storages and the log of a run reached through `LastRun`/`LastRunWithOptions`, and their
-  public URLs, carry its `status` and `origin` filters, so they address the run the filters
-  resolve to instead of the newest run of any status.
-- Documented that `GetRecord` returns the raw bytes without parsing them and that `SetRecordRaw`
-  sends them as they are, whatever the content type.
+- **Breaking:** `ActorVersionCollectionClient.List` and `Iterate` take no options.
+- The typed URL fields are no longer in the `Extra` map of their model.
+- `ListRequestsOptions.ExclusiveStartID` is deprecated in favor of `Cursor`.
+- `RunClient.GetStreamedLog` is deprecated: it returns the raw stream, use `NewStreamedLog`.
+- `Call` starts the run without a client-side timeout.
+- Requests that are not idempotent (`Start`, `Build`, `PushItems`) are not retried after a timeout.
+- Some `KeyValueStoreClient` and `DatasetClient` methods use the "long" timeout tier.
+- Storages, log and public URLs of a `LastRun` carry its `status` and `origin` filters.
+- Documented that `GetRecord` and `SetRecordRaw` handle raw bytes.
 
 ### Fixed
 
-- `DatasetClient.PushItems` rejects, before sending, a value that is not a JSON object or an array
-  of objects, the only shapes the API accepts. A plain Go string, number, `nil` or a slice of
-  strings used to be sent and rejected by the API.
-- `DatasetClient.ListItems`, `ActorClient.DefaultBuild` and `ValidateInputForBuild`,
-  `TaskClient.UpdateInput`, `UserClient.UpdateLimits` and `RunClient.Charge` now fail on an empty or
-  dot-segment ID like every other method, instead of sending a malformed request.
+- `DatasetClient.PushItems` rejects values that are not a JSON object or an array of objects.
+- Methods that lacked an ID check now fail on an empty or dot-segment ID.
 
 ## [0.13.1] - 2026-10-26
 

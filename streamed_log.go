@@ -285,6 +285,7 @@ func (s *StreamedLog) redirect(parent, streamCtx context.Context) error {
 		gotBytes, readErr = s.consumeStream(stream)
 		_ = stream.Close()
 		if readErr != nil && streamCtx.Err() == nil {
+			s.flush()
 			return readErr
 		}
 		if !gotBytes {
@@ -300,8 +301,9 @@ func (s *StreamedLog) redirect(parent, streamCtx context.Context) error {
 	return nil
 }
 
-// consumeStream redirects the complete messages of stream and reports whether it delivered any
-// byte. It stops at the end of the stream, an error, or when the redirection is being stopped.
+// consumeStream redirects the messages of stream and reports whether it delivered any byte. It
+// reads until the end of the stream or an error; Stop ends it by cancelling the stream after its
+// grace period, so the messages in flight are not lost.
 func (s *StreamedLog) consumeStream(stream io.Reader) (bool, error) {
 	chunk := make([]byte, logReadChunkBytes)
 	gotBytes := false
@@ -317,40 +319,41 @@ func (s *StreamedLog) consumeStream(stream io.Reader) (bool, error) {
 			}
 			return gotBytes, err
 		}
-		if s.isStopping() {
-			return gotBytes, nil
-		}
 	}
 }
 
-// consume adds data to the buffer and redirects every complete message in it: everything before
-// the last end of line. An incomplete last line stays in the buffer for the next chunk.
+// consume adds data to the buffer and redirects every message that is known to be complete: the
+// ones followed by the timestamp of the next message. The last message stays in the buffer, since
+// its continuation lines (a stack trace, say) may arrive in a later read; [StreamedLog.flush]
+// writes it when the log ends.
 func (s *StreamedLog) consume(data []byte) {
 	s.buffer.Write(data)
-	buffered := s.buffer.Bytes()
-	lastEOL := bytes.LastIndexByte(buffered, '\n')
-	if lastEOL < 0 {
+	text := s.buffer.String()
+	markers := logMessageMarker.FindAllStringIndex(text, -1)
+	if len(markers) < 2 {
 		return
 	}
-	complete := string(buffered[:lastEOL])
-	rest := append([]byte(nil), buffered[lastEOL:]...)
+	last := markers[len(markers)-1][0]
+	s.redirectMessages(text[:last])
 	s.buffer.Reset()
-	s.buffer.Write(rest)
-	s.redirectMessages(complete)
+	s.buffer.WriteString(text[last:])
 }
 
-// flush redirects whatever is left in the buffer when the log ends: an incomplete last message,
-// or a last line without an end of line.
+// flush redirects whatever is left in the buffer when the log ends: the last message, or a last
+// line that has no timestamp.
 func (s *StreamedLog) flush() {
-	last := strings.TrimSpace(s.buffer.String())
+	text := s.buffer.String()
 	s.buffer.Reset()
-	if last != "" {
-		s.write(last)
+	switch {
+	case strings.TrimSpace(text) == "":
+	case logMessageMarker.MatchString(text):
+		s.redirectMessages(text)
+	default:
+		s.write(strings.TrimSpace(text))
 	}
 }
 
-// redirectMessages splits the complete part of the log into messages at their timestamps and
-// writes them.
+// redirectMessages splits text into messages at their timestamps and writes them.
 func (s *StreamedLog) redirectMessages(text string) {
 	markers := logMessageMarker.FindAllStringSubmatchIndex(text, -1)
 	for i, marker := range markers {

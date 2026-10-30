@@ -270,11 +270,14 @@ func (c *RunClient) Log() *LogClient {
 	return client
 }
 
-// GetStreamedLog opens a live stream of this run's raw log, for convenient log redirection.
+// GetStreamedLog opens a live stream of this run's raw log. The caller must close the returned
+// reader. It is a convenience wrapper over Log().StreamWithOptions with raw=true.
 //
-// It is a convenience wrapper over Log().StreamWithOptions with raw=true (matching the
-// reference client's getStreamedLog, which streams raw log content). The caller must close
-// the returned reader.
+// Despite the name it is not the counterpart of the reference client's getStreamedLog(), which
+// redirects the log message by message: that is [RunClient.NewStreamedLog].
+//
+// Deprecated: use [RunClient.NewStreamedLog] to redirect the log, or Log().StreamWithOptions for
+// the raw stream.
 func (c *RunClient) GetStreamedLog(ctx context.Context) (io.ReadCloser, error) {
 	raw := true
 	return c.Log().StreamWithOptions(ctx, LogOptions{Raw: &raw})
