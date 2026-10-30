@@ -448,7 +448,7 @@ func TestStreamedLogStopReportsALogCutOffByItsContext(t *testing.T) {
 // A message whose continuation lines arrive in a later read is redirected whole, and so is one
 // whose timestamp is split across reads.
 func TestStreamedLogKeepsAMessageWhoseLinesArriveInSeparateReads(t *testing.T) {
-	backend := &logBackend{streamBodies: []string{""}, streamChunks: []string{
+	backend := &logBackend{streamBodies: []string{""}, holdStream: true, streamChunks: []string{
 		"2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n",
 		"    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n2026-10-30T10:0",
 		"0:02.000Z split\n",
@@ -462,7 +462,9 @@ func TestStreamedLogKeepsAMessageWhoseLinesArriveInSeparateReads(t *testing.T) {
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "split") })
+	// The stream stays open: the message before the split timestamp is redirected only if the
+	// timestamp is recognized across the two reads, not when the log ends.
+	waitFor(t, func() bool { return strings.Contains(out.String(), "next") })
 	if err := streamed.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -703,14 +705,14 @@ func waitFor(t *testing.T, condition func() bool) {
 }
 
 // One large message must not be scanned again on every read: Stop gives the log only a second.
-// The bound is loose to allow the race detector (0.2s without it); scanning again on every read
-// takes about 9s without it.
+// The bound is loose, to allow for the race detector.
 func TestStreamedLogRedirectsALargeMessageQuickly(t *testing.T) {
-	const lines = 4 << 20 / 8
+	const line = "line 1\n"
+	const lines = 4 << 20 / len(line)
 	var log strings.Builder
 	log.WriteString("2026-10-30T10:00:00.000Z big\n")
 	for i := 0; i < lines; i++ {
-		log.WriteString("line 1\n")
+		log.WriteString(line)
 	}
 	log.WriteString("2026-10-30T10:00:01.000Z next\n")
 	out := &syncBuffer{}

@@ -26,6 +26,8 @@ const (
 	stopGrace = time.Second
 	// logRedirectPrefixSeparator ends the default message prefix, which names the Actor and the run.
 	logRedirectPrefixSeparator = " -> "
+	// logTimestampPattern matches the ISO timestamp, 24 characters long, that starts a message.
+	logTimestampPattern = `\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z`
 	// logMarkerOverlapBytes is the length of a timestamp together with the end of line before it.
 	logMarkerOverlapBytes = 25
 	// logReadChunkBytes is the size of the buffer the log stream is read through.
@@ -35,11 +37,11 @@ const (
 // logMessageMarker matches the ISO timestamp that starts every message of an Actor run log. The
 // log is split into messages at these markers, so a message that spans several lines (a stack
 // trace, say) is redirected as one.
-var logMessageMarker = regexp.MustCompile(`(?:\n|^)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)`)
+var logMessageMarker = regexp.MustCompile(`(?:\n|^)(` + logTimestampPattern + `)`)
 
 // logMessageStart matches the timestamp that starts a message in the middle of the buffer, with
 // the end of line before it.
-var logMessageStart = regexp.MustCompile(`\n\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z`)
+var logMessageStart = regexp.MustCompile(`\n` + logTimestampPattern)
 
 // StreamedLogOptions configures [RunClient.NewStreamedLog] and, through
 // [ActorStartOptions.Log], the log redirection of [ActorClient.Call].
