@@ -33,6 +33,9 @@ func TestNormalizeURL(t *testing.T) {
 		{"foo://Example.COM/A", "foo://Example.COM/A"},
 		{"foo://host/a/../b", "foo://host/b"},
 		{"foo:/a/./b", "foo:/a/b"},
+		{"foo:/.//p", "foo:/.//p"},
+		{"foo:/a/..//p", "foo:/.//p"},
+		{"foo://h/.//p", "foo://h//p"},
 		// An empty password, and an empty userinfo, are dropped.
 		{"https://u:@ex.com/", "https://u@ex.com/"},
 		{"https://:@ex.com/", "https://ex.com/"},
@@ -79,7 +82,7 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNormalizeURLRejectsInvalidURLs(t *testing.T) {
-	for _, raw := range []string{"not a url", "/relative/path", "https://", "http://exa mple.com/", "http://example.com:99999/", "http://example.com:abc/", "http://[::1/", "http://1.2.3.4.5/", "http://256.1.1.1/", "http://foo.123/", "https://%ff.example/", "http://ex.com:+80/", "http://ex.com:-0/", "http://[fe80::1%25eth0]/", "file://host:80/x"} {
+	for _, raw := range []string{"not a url", "/relative/path", "https://", "http://exa mple.com/", "http://example.com:99999/", "http://example.com:abc/", "http://[::1/", "http://1.2.3.4.5/", "http://256.1.1.1/", "http://foo.123/", "https://%ff.example/", "http://ex.com:+80/", "http://ex.com:-0/", "http://[fe80::1%25eth0]/", "file://host:80/x", "file://host:/x", "file://u@h/x", "file://u:p@h/x"} {
 		if got, err := normalizeURL(raw); err == nil {
 			t.Errorf("normalizeURL(%q) = %q, want an error", raw, got)
 		}

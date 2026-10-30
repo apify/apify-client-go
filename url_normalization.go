@@ -96,6 +96,7 @@ func normalizeURL(raw string) (string, error) {
 	out.WriteString(scheme)
 	out.WriteByte(':')
 	path := rest
+	hasAuthority := special
 	switch {
 	case special && !isFile:
 		// A special URL always has an authority, whatever number of slashes (even none) follows
@@ -106,7 +107,7 @@ func normalizeURL(raw string) (string, error) {
 			end = len(authority)
 		}
 		path = authority[end:]
-		host, err := normalizeAuthority(authority[:end], authorityRules{defaultPort: defaultPorts[scheme], special: true, allowPort: true})
+		host, err := normalizeAuthority(authority[:end], authorityRules{defaultPort: defaultPorts[scheme], special: true, allowPort: true, allowUserinfo: true})
 		if err != nil {
 			return "", fmt.Errorf("invalid URL %q: %w", raw, err)
 		}
@@ -138,12 +139,13 @@ func normalizeURL(raw string) (string, error) {
 		}
 	default:
 		if authority, ok := strings.CutPrefix(rest, "//"); ok {
+			hasAuthority = true
 			end := strings.IndexByte(authority, '/')
 			if end < 0 {
 				end = len(authority)
 			}
 			path = authority[end:]
-			host, err := normalizeAuthority(authority[:end], authorityRules{allowPort: true})
+			host, err := normalizeAuthority(authority[:end], authorityRules{allowPort: true, allowUserinfo: true})
 			if err != nil {
 				return "", fmt.Errorf("invalid URL %q: %w", raw, err)
 			}
@@ -158,6 +160,10 @@ func normalizeURL(raw string) (string, error) {
 	opaquePath := !special && !strings.HasPrefix(path, "/")
 	if !opaquePath {
 		path = removeDotSegments(path)
+		if !hasAuthority && strings.HasPrefix(path, "//") {
+			// Without this marker the path would read as the start of an authority.
+			out.WriteString("/.")
+		}
 		out.WriteString(percentEncode(path, unsafePathBytes))
 	} else {
 		out.WriteString(percentEncodeControls(path))
@@ -184,17 +190,23 @@ type authorityRules struct {
 	// special is true for the special schemes, whose host is a domain, IPv4 or IPv6 address. The
 	// host of any other scheme is opaque and kept as given.
 	special bool
-	// allowPort is false for a scheme whose URLs have no port (file).
-	allowPort bool
+	// allowPort is false for a scheme whose URLs have no port (file), and allowUserinfo for one
+	// whose URLs have no credentials (file).
+	allowPort     bool
+	allowUserinfo bool
 }
 
 // normalizeAuthority normalizes the "userinfo@host:port" part of a URL.
 func normalizeAuthority(authority string, rules authorityRules) (string, error) {
 	var userinfo string
 	if i := strings.LastIndexByte(authority, '@'); i >= 0 {
+		if !rules.allowUserinfo {
+			return "", errors.New("credentials are not allowed")
+		}
 		userinfo, authority = authority[:i], authority[i+1:]
 	}
 	host, port := authority, ""
+	hasPortSeparator := false
 	if strings.HasPrefix(authority, "[") {
 		end := strings.IndexByte(authority, ']')
 		if end < 0 {
@@ -209,14 +221,18 @@ func normalizeAuthority(authority string, rules authorityRules) (string, error) 
 			return "", fmt.Errorf("invalid IPv6 address %q", authority[1:end])
 		}
 		host, port = serializeIPv6(address), strings.TrimPrefix(tail, ":")
+		hasPortSeparator = tail != ""
 	} else {
 		if i := strings.LastIndexByte(authority, ':'); i >= 0 {
-			host, port = authority[:i], authority[i+1:]
+			host, port, hasPortSeparator = authority[:i], authority[i+1:], true
 		}
 		var err error
 		if host, err = normalizeHost(host, rules.special); err != nil {
 			return "", err
 		}
+	}
+	if hasPortSeparator && !rules.allowPort {
+		return "", errors.New("a port is not allowed")
 	}
 	if port != "" {
 		number, err := parsePort(port)

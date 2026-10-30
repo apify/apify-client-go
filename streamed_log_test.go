@@ -44,6 +44,8 @@ type logBackend struct {
 	streamTailErr error // makes the stream fail with this error after its body
 	// blockFullLog makes the read of the whole log wait until its request is canceled.
 	blockFullLog bool
+	// holdStream keeps the live stream open after its body, until the request is canceled.
+	holdStream bool
 	// fullLogFailure, when set, makes the read of the whole log fail with this status after
 	// fullLogDelay.
 	fullLogFailure int
@@ -63,6 +65,31 @@ func (r *failingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// holdingReader serves data, then blocks until ctx is done, like an open log stream of a run that
+// is still running but logs nothing.
+type holdingReader struct {
+	data io.Reader
+	ctx  context.Context
+}
+
+func (r *holdingReader) Read(p []byte) (int, error) {
+	n, err := r.data.Read(p)
+	if errors.Is(err, io.EOF) && n == 0 {
+		<-r.ctx.Done()
+		return 0, r.ctx.Err()
+	}
+	if errors.Is(err, io.EOF) {
+		return n, nil
+	}
+	return n, err
+}
+
+func (b *logBackend) fullLogReads() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.fullLogCalls
+}
+
 func (b *logBackend) Do(req *http.Request) (*http.Response, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -80,6 +107,9 @@ func (b *logBackend) Do(req *http.Request) (*http.Response, error) {
 			body := b.streamBodies[min(b.streamCalls, len(b.streamBodies)-1)]
 			b.streamCalls++
 			var reader io.Reader = strings.NewReader(body)
+			if b.holdStream {
+				reader = &holdingReader{data: reader, ctx: req.Context()}
+			}
 			if b.streamTailErr != nil {
 				reader = &failingReader{data: reader, err: b.streamTailErr}
 			}
@@ -371,6 +401,84 @@ func TestStreamedLogStopReportsAFailedReadOfTheWholeLog(t *testing.T) {
 	if !ok || apiErr.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected the 403 of the final read, got %v", err)
 	}
+}
+
+// Stop with a context that ends while the stream is still open and has delivered lines cuts the
+// log off: it returns the error of its context, so a truncated log is not mistaken for a complete
+// one.
+func TestStreamedLogStopReportsALogCutOffByItsContext(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}, holdStream: true}
+	out := &syncBuffer{}
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(context.Background(), StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	stopCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := streamed.Stop(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected the error of the Stop context for a log that was cut off, got %v", err)
+	}
+}
+
+// Without a Stop context to cut it off, a live stream ends after the grace period: that is how a
+// redirection ends normally, and it is not an error.
+func TestStreamedLogStopOfALiveStreamAfterTheGracePeriodIsNotAnError(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}, holdStream: true}
+	out := &syncBuffer{}
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(context.Background(), StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	if err := streamed.Stop(context.Background()); err != nil {
+		t.Fatalf("a normal stop is not an error, got %v", err)
+	}
+}
+
+// The context given to Start ends the redirection on purpose, so its end is not an error of Stop,
+// whether it ends before Stop or during the final read of the whole log.
+func TestStreamedLogStartContextEndingIsNotAnErrorOfStop(t *testing.T) {
+	t.Run("before Stop", func(t *testing.T) {
+		backend := &logBackend{streamBodies: []string{""}, blockFullLog: true}
+		parent, cancelParent := context.WithCancel(context.Background())
+		streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(parent, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := streamed.Start(parent); err != nil {
+			t.Fatal(err)
+		}
+		cancelParent()
+		time.Sleep(50 * time.Millisecond)
+		if err := streamed.Stop(context.Background()); err != nil {
+			t.Fatalf("expected nil, got %v", err)
+		}
+	})
+	t.Run("during the final read", func(t *testing.T) {
+		backend := &logBackend{streamBodies: []string{""}, blockFullLog: true}
+		parent, cancelParent := context.WithCancel(context.Background())
+		streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(parent, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := streamed.Start(parent); err != nil {
+			t.Fatal(err)
+		}
+		stopped := make(chan error, 1)
+		go func() { stopped <- streamed.Stop(context.Background()) }()
+		waitFor(t, func() bool { return backend.fullLogReads() == 1 })
+		cancelParent()
+		if err := <-stopped; err != nil {
+			t.Fatalf("expected nil, got %v", err)
+		}
+	})
 }
 
 func TestNewStreamedLogOfAMissingRunIsNotFound(t *testing.T) {

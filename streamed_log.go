@@ -173,8 +173,16 @@ func (s *StreamedLog) Stop(ctx context.Context) error {
 	select {
 	case err = <-done:
 	case <-ctx.Done():
-		cancel()
-		err = <-done
+		select {
+		case err = <-done: // it finished as the context ended
+		default:
+			// The redirection is still running: cutting it off loses the rest of the log, which
+			// the caller must be able to tell from a complete one.
+			cancel()
+			if err = <-done; err == nil {
+				err = ctx.Err()
+			}
+		}
 	}
 	cancel()
 	// A read cut short by the context of this call reports a plain cancellation: name the cause.
@@ -226,8 +234,10 @@ func (s *StreamedLog) isStopping() bool {
 func (s *StreamedLog) streamLog(parent, streamCtx context.Context) error {
 	err := s.redirect(parent, streamCtx)
 	var lost *logReadError
-	if errors.As(err, &lost) {
-		return lost.err // the log was not redirected: the caller must hear of it, whatever the cause
+	if errors.As(err, &lost) && !(isContextError(lost.err) && parent.Err() != nil) {
+		// The log was not redirected: the caller must hear of it, unless the cause is the end of
+		// the caller's own context, which ends the redirection on purpose.
+		return lost.err
 	}
 	if err != nil && streamCtx.Err() != nil && isContextError(err) {
 		return nil // ended on purpose: by Stop, or because the caller's context is done
