@@ -178,7 +178,7 @@ func (s *StreamedLog) Stop(ctx context.Context) error {
 	}
 	cancel()
 	// A read cut short by the context of this call reports a plain cancellation: name the cause.
-	if ctxErr := ctx.Err(); ctxErr != nil && (err == nil || errors.Is(err, context.Canceled)) {
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, context.Canceled) {
 		err = ctxErr
 	}
 
@@ -202,6 +202,18 @@ func (s *StreamedLog) finalReadContext(parent context.Context) (context.Context,
 	}
 }
 
+// logReadError wraps the failure of the final read of the whole log, which leaves the log
+// unredirected. Unlike a stream that is cut on purpose, it is never swallowed.
+type logReadError struct{ err error }
+
+func (e *logReadError) Error() string { return e.err.Error() }
+func (e *logReadError) Unwrap() error { return e.err }
+
+// isContextError reports whether err is the cancellation or the deadline of a context.
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 func (s *StreamedLog) isStopping() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -213,7 +225,11 @@ func (s *StreamedLog) isStopping() bool {
 // It returns nil when the redirection was ended on purpose.
 func (s *StreamedLog) streamLog(parent, streamCtx context.Context) error {
 	err := s.redirect(parent, streamCtx)
-	if err != nil && streamCtx.Err() != nil {
+	var lost *logReadError
+	if errors.As(err, &lost) {
+		return lost.err // the log was not redirected: the caller must hear of it, whatever the cause
+	}
+	if err != nil && streamCtx.Err() != nil && isContextError(err) {
 		return nil // ended on purpose: by Stop, or because the caller's context is done
 	}
 	return err
@@ -233,7 +249,7 @@ func (s *StreamedLog) redirect(parent, streamCtx context.Context) error {
 			body, _, err := s.log.GetBufferWithOptions(readCtx, options)
 			cancelRead()
 			if err != nil {
-				return err
+				return &logReadError{err: err}
 			}
 			s.consume(body)
 			break

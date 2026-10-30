@@ -44,6 +44,10 @@ type logBackend struct {
 	streamTailErr error // makes the stream fail with this error after its body
 	// blockFullLog makes the read of the whole log wait until its request is canceled.
 	blockFullLog bool
+	// fullLogFailure, when set, makes the read of the whole log fail with this status after
+	// fullLogDelay.
+	fullLogFailure int
+	fullLogDelay   time.Duration
 }
 
 type failingReader struct {
@@ -87,6 +91,12 @@ func (b *logBackend) Do(req *http.Request) (*http.Response, error) {
 			<-req.Context().Done()
 			b.mu.Lock()
 			return nil, req.Context().Err()
+		}
+		if b.fullLogFailure != 0 {
+			b.mu.Unlock()
+			time.Sleep(b.fullLogDelay)
+			b.mu.Lock()
+			return &http.Response{StatusCode: b.fullLogFailure, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"error":{"type":"forbidden","message":"no"}}`))}, nil
 		}
 		return ok(strings.NewReader(b.fullLog))
 	case strings.HasSuffix(path, "/actors/actor1"):
@@ -309,6 +319,60 @@ func TestStreamedLogStopContextBoundsTheReadOfTheWholeLog(t *testing.T) {
 	}
 }
 
+// Stop with a context that is already done does not turn a log that was redirected completely
+// into an error: nothing was cut short.
+func TestStreamedLogStopWithADoneContextAfterACompleteLogIsNotAnError(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}}
+	out := &syncBuffer{}
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(context.Background(), StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	done, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := streamed.Stop(done); err != nil {
+		t.Fatalf("a complete log is not an error, got %v", err)
+	}
+}
+
+// A Call whose context ends while it waits does not report a failed redirection after a log that
+// was redirected completely.
+func TestCallWhoseContextEndsDoesNotReportAFalseRedirectionError(t *testing.T) {
+	out := &syncBuffer{}
+	backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, fullLog: sampleLog}, pollDelay: 300 * time.Millisecond}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	_, err := testClient(backend, 0).Actor("actor1").Call(ctx, nil, ActorStartOptions{Log: &StreamedLogOptions{Output: out, Prefix: Ptr("")}}, Ptr(int64(0)))
+	if err == nil {
+		t.Fatal("expected the call to end with the error of its context")
+	}
+	if strings.Contains(out.String(), "Log redirection stopped due to error") {
+		t.Fatalf("a complete log is not a redirection error: %q", out.String())
+	}
+}
+
+// A failed final read of the whole log is reported even when it fails after the grace period of
+// Stop: the log is lost, and the caller must hear of it.
+func TestStreamedLogStopReportsAFailedReadOfTheWholeLog(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{""}, fullLogFailure: http.StatusForbidden, fullLogDelay: stopGrace + 500*time.Millisecond}
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(context.Background(), StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	err = streamed.Stop(context.Background())
+	apiErr, ok := AsAPIError(err)
+	if !ok || apiErr.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected the 403 of the final read, got %v", err)
+	}
+}
+
 func TestNewStreamedLogOfAMissingRunIsNotFound(t *testing.T) {
 	backend := &mockBackend{responses: constant(404, `{"error":{"type":"record-not-found","message":"m"}}`)}
 	streamed, found, err := testClient(backend, 0).Run("gone").NewStreamedLog(context.Background(), StreamedLogOptions{})
@@ -365,7 +429,11 @@ func (b *callLogBackend) Do(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":{"id":"run1","actId":"actor1","status":"RUNNING"}}`))}, nil
 	}
 	if strings.Contains(req.URL.Path, "/actor-runs/") && !strings.HasSuffix(req.URL.Path, "/log") && req.URL.Query().Get("waitForFinish") != "" {
-		time.Sleep(b.pollDelay)
+		select {
+		case <-time.After(b.pollDelay):
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":{"id":"run1","actId":"actor1","status":"SUCCEEDED"}}`))}, nil
 	}
 	return b.logBackend.Do(req)

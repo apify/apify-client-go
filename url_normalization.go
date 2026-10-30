@@ -15,9 +15,9 @@ import (
 // form, close to the WHATWG URL serialization that the JavaScript client returns: the scheme and
 // host are lowercased, a non-ASCII host is converted to punycode, a numeric (IPv4) or IPv6 host is
 // written in its canonical form, the default port is dropped, an empty path becomes "/", dot
-// segments are resolved and characters that are unsafe in a URL are percent-encoded. It covers
-// the http(s), ws(s), ftp and file URLs the API returns and keeps the rest as given; it does not
-// apply the full Unicode (UTS #46) mapping to a non-ASCII host.
+// segments are resolved and characters that are unsafe in a URL are percent-encoded. It is built
+// for the http(s), ws(s), ftp and file URLs the API returns. The host of any other scheme is kept
+// as given. It does not apply the full Unicode (UTS #46) mapping to a non-ASCII host.
 
 // defaultPorts maps a special URL scheme to its default port, which normalization drops.
 var defaultPorts = map[string]string{
@@ -106,7 +106,7 @@ func normalizeURL(raw string) (string, error) {
 			end = len(authority)
 		}
 		path = authority[end:]
-		host, err := normalizeAuthority(authority[:end], defaultPorts[scheme], true)
+		host, err := normalizeAuthority(authority[:end], authorityRules{defaultPort: defaultPorts[scheme], special: true, allowPort: true})
 		if err != nil {
 			return "", fmt.Errorf("invalid URL %q: %w", raw, err)
 		}
@@ -123,7 +123,7 @@ func normalizeURL(raw string) (string, error) {
 			path = authority[end:]
 			if authority[:end] != "" {
 				var err error
-				if host, err = normalizeAuthority(authority[:end], "", true); err != nil {
+				if host, err = normalizeAuthority(authority[:end], authorityRules{special: true}); err != nil {
 					return "", fmt.Errorf("invalid URL %q: %w", raw, err)
 				}
 			}
@@ -143,7 +143,7 @@ func normalizeURL(raw string) (string, error) {
 				end = len(authority)
 			}
 			path = authority[end:]
-			host, err := normalizeAuthority(authority[:end], "", false)
+			host, err := normalizeAuthority(authority[:end], authorityRules{allowPort: true})
 			if err != nil {
 				return "", fmt.Errorf("invalid URL %q: %w", raw, err)
 			}
@@ -155,10 +155,13 @@ func normalizeURL(raw string) (string, error) {
 	if special && path == "" {
 		path = "/"
 	}
-	if special {
+	opaquePath := !special && !strings.HasPrefix(path, "/")
+	if !opaquePath {
 		path = removeDotSegments(path)
+		out.WriteString(percentEncode(path, unsafePathBytes))
+	} else {
+		out.WriteString(percentEncodeControls(path))
 	}
-	out.WriteString(percentEncode(path, unsafePathBytes))
 	if hasQuery {
 		unsafe := unsafeQueryBytes
 		if !special {
@@ -174,9 +177,19 @@ func normalizeURL(raw string) (string, error) {
 	return out.String(), nil
 }
 
-// normalizeAuthority normalizes the "userinfo@host:port" part of a URL. With special false (a
-// scheme that is not one of the special ones) the host is opaque and kept as given.
-func normalizeAuthority(authority, defaultPort string, special bool) (string, error) {
+// authorityRules says how the authority of a URL is normalized.
+type authorityRules struct {
+	// defaultPort is the port that is dropped as the default one of the scheme.
+	defaultPort string
+	// special is true for the special schemes, whose host is a domain, IPv4 or IPv6 address. The
+	// host of any other scheme is opaque and kept as given.
+	special bool
+	// allowPort is false for a scheme whose URLs have no port (file).
+	allowPort bool
+}
+
+// normalizeAuthority normalizes the "userinfo@host:port" part of a URL.
+func normalizeAuthority(authority string, rules authorityRules) (string, error) {
 	var userinfo string
 	if i := strings.LastIndexByte(authority, '@'); i >= 0 {
 		userinfo, authority = authority[:i], authority[i+1:]
@@ -192,7 +205,7 @@ func normalizeAuthority(authority, defaultPort string, special bool) (string, er
 			return "", errors.New("unexpected text after the IPv6 address")
 		}
 		address, err := netip.ParseAddr(authority[1:end])
-		if err != nil || !address.Is6() {
+		if err != nil || !address.Is6() || address.Zone() != "" {
 			return "", fmt.Errorf("invalid IPv6 address %q", authority[1:end])
 		}
 		host, port = serializeIPv6(address), strings.TrimPrefix(tail, ":")
@@ -201,26 +214,26 @@ func normalizeAuthority(authority, defaultPort string, special bool) (string, er
 			host, port = authority[:i], authority[i+1:]
 		}
 		var err error
-		if host, err = normalizeHost(host, special); err != nil {
+		if host, err = normalizeHost(host, rules.special); err != nil {
 			return "", err
 		}
 	}
 	if port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 0 || number > maxPort {
+		number, err := parsePort(port)
+		if err != nil || !rules.allowPort {
 			return "", fmt.Errorf("invalid port %q", port)
 		}
 		port = strconv.Itoa(number)
-		if port == defaultPort {
+		if port == rules.defaultPort {
 			port = ""
 		}
 	}
 
 	var out strings.Builder
-	if userinfo != "" {
-		username, password, hasPassword := strings.Cut(userinfo, ":")
+	username, password, _ := strings.Cut(userinfo, ":")
+	if username != "" || password != "" {
 		out.WriteString(percentEncode(username, unsafeUserinfoBytes))
-		if hasPassword {
+		if password != "" {
 			out.WriteByte(':')
 			out.WriteString(percentEncode(password, unsafeUserinfoBytes))
 		}
@@ -232,6 +245,20 @@ func normalizeAuthority(authority, defaultPort string, special bool) (string, er
 		out.WriteString(port)
 	}
 	return out.String(), nil
+}
+
+// parsePort parses a port: ASCII digits only, at most maxPort.
+func parsePort(port string) (int, error) {
+	for i := 0; i < len(port); i++ {
+		if port[i] < '0' || port[i] > '9' {
+			return 0, errors.New("not a number")
+		}
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number > maxPort {
+		return 0, errors.New("out of range")
+	}
+	return number, nil
 }
 
 // normalizeHost normalizes a host name: percent-decoded, lowercased, converted to punycode, and
@@ -328,6 +355,24 @@ func percentEncode(s, unsafe string) string {
 	for i := 0; i < len(s); i++ {
 		b := s[i]
 		if b <= ' ' || b >= 0x7F || strings.IndexByte(unsafe, b) >= 0 {
+			out.WriteByte('%')
+			out.WriteByte(upperHex[b>>4])
+			out.WriteByte(upperHex[b&0x0F])
+			continue
+		}
+		out.WriteByte(b)
+	}
+	return out.String()
+}
+
+// percentEncodeControls percent-encodes only the control characters and the non-ASCII bytes of s,
+// as is done for the opaque path of a URL such as mailto:.
+func percentEncodeControls(s string) string {
+	const upperHex = "0123456789ABCDEF"
+	var out strings.Builder
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b < ' ' || b >= 0x7F {
 			out.WriteByte('%')
 			out.WriteByte(upperHex[b>>4])
 			out.WriteByte(upperHex[b&0x0F])

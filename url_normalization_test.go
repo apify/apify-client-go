@@ -27,9 +27,16 @@ func TestNormalizeURL(t *testing.T) {
 		// Userinfo and IPv6 hosts survive.
 		{"https://user:pa ss@Example.com/", "https://user:pa%20ss@example.com/"},
 		{"http://[::1]:80/x", "http://[::1]/x"},
-		// A URL that is not special keeps its host and path as they are.
+		// The host of a URL that is not special is kept as given; its path is still resolved.
 		{"mailto:Someone@Example.com", "mailto:Someone@Example.com"},
+		{"mailto:a b", "mailto:a b"},
 		{"foo://Example.COM/A", "foo://Example.COM/A"},
+		{"foo://host/a/../b", "foo://host/b"},
+		{"foo:/a/./b", "foo:/a/b"},
+		// An empty password, and an empty userinfo, are dropped.
+		{"https://u:@ex.com/", "https://u@ex.com/"},
+		{"https://:@ex.com/", "https://ex.com/"},
+		{"https://:p@ex.com/", "https://:p@ex.com/"},
 		// A special URL has an authority, whatever the number of slashes after its scheme.
 		{"https:foo", "https://foo/"},
 		{"https:///foo/a", "https://foo/a"},
@@ -72,7 +79,7 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNormalizeURLRejectsInvalidURLs(t *testing.T) {
-	for _, raw := range []string{"not a url", "/relative/path", "https://", "http://exa mple.com/", "http://example.com:99999/", "http://example.com:abc/", "http://[::1/", "http://1.2.3.4.5/", "http://256.1.1.1/", "http://foo.123/", "https://%ff.example/"} {
+	for _, raw := range []string{"not a url", "/relative/path", "https://", "http://exa mple.com/", "http://example.com:99999/", "http://example.com:abc/", "http://[::1/", "http://1.2.3.4.5/", "http://256.1.1.1/", "http://foo.123/", "https://%ff.example/", "http://ex.com:+80/", "http://ex.com:-0/", "http://[fe80::1%25eth0]/", "file://host:80/x"} {
 		if got, err := normalizeURL(raw); err == nil {
 			t.Errorf("normalizeURL(%q) = %q, want an error", raw, got)
 		}
