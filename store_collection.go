@@ -24,6 +24,10 @@ type StoreListOptions struct {
 	AllowsAgenticUsers *bool
 	// ResponseFormat selects the response format.
 	ResponseFormat *string
+	// IncludeInputSchema, if true, adds to each listed Actor an inputSchema field with a compact
+	// version of its default build's input schema (property types and required properties only).
+	// With it set, the API defaults Limit to 10 and does not accept a larger one.
+	IncludeInputSchema *bool
 }
 
 func (o StoreListOptions) apply(q *QueryParams) {
@@ -36,7 +40,8 @@ func (o StoreListOptions) apply(q *QueryParams) {
 		AddString("pricingModel", o.PricingModel).
 		AddBool("includeUnrunnableActors", o.IncludeUnrunnableActors).
 		AddBool("allowsAgenticUsers", o.AllowsAgenticUsers).
-		AddString("responseFormat", o.ResponseFormat)
+		AddString("responseFormat", o.ResponseFormat).
+		AddBool("includeInputSchema", o.IncludeInputSchema)
 }
 
 // StoreCollectionClient is a client for browsing the Apify Store (GET /v2/store).

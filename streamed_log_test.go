@@ -1,0 +1,325 @@
+package apify
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+// syncBuffer is a bytes.Buffer that is safe to read while the redirection writes to it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// logBackend serves a run's log: streamBodies[i] answers the i-th request for the live stream
+// (the last one repeats), and fullLog answers the read of the whole log. Run and Actor lookups
+// answer the fixed documents below.
+type logBackend struct {
+	mu            sync.Mutex
+	streamBodies  []string
+	streamErr     error
+	fullLog       string
+	streamCalls   int
+	fullLogCalls  int
+	rawOnStream   bool
+	streamTailErr error // makes the stream fail with this error after its body
+}
+
+type failingReader struct {
+	data io.Reader
+	err  error
+}
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	n, err := r.data.Read(p)
+	if errors.Is(err, io.EOF) {
+		return n, r.err
+	}
+	return n, err
+}
+
+func (b *logBackend) Do(req *http.Request) (*http.Response, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ok := func(body io.Reader) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(body)}, nil
+	}
+	path := req.URL.Path
+	switch {
+	case strings.HasSuffix(path, "/log"):
+		if req.URL.Query().Get("stream") != "" {
+			b.rawOnStream = req.URL.Query().Get("raw") == "1"
+			if b.streamErr != nil {
+				return nil, b.streamErr
+			}
+			body := b.streamBodies[min(b.streamCalls, len(b.streamBodies)-1)]
+			b.streamCalls++
+			var reader io.Reader = strings.NewReader(body)
+			if b.streamTailErr != nil {
+				reader = &failingReader{data: reader, err: b.streamTailErr}
+			}
+			return ok(reader)
+		}
+		b.fullLogCalls++
+		return ok(strings.NewReader(b.fullLog))
+	case strings.HasSuffix(path, "/actors/actor1"):
+		return ok(strings.NewReader(`{"data":{"id":"actor1","name":"hello-world"}}`))
+	case strings.Contains(path, "/actor-runs/"):
+		return ok(strings.NewReader(`{"data":{"id":"run1","actId":"actor1","status":"RUNNING"}}`))
+	}
+	return nil, errors.New("unexpected request " + req.URL.String())
+}
+
+const sampleLog = "2026-10-30T10:00:00.000Z ACTOR: Starting\n" +
+	"2026-10-30T10:00:01.000Z first line\nsecond line of the same message\n" +
+	"2026-10-30T10:00:02.000Z last message\n"
+
+func TestStreamedLogRedirectsMessagesWithThePrefixOfTheActorAndTheRun(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out})
+	if err != nil || streamed == nil {
+		t.Fatalf("NewStreamedLog: %v, %v", streamed, err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	const prefix = "hello-world runId:run1 -> "
+	want := prefix + "2026-10-30T10:00:00.000Z ACTOR: Starting\n" +
+		prefix + "2026-10-30T10:00:01.000Z first line\nsecond line of the same message\n" +
+		prefix + "2026-10-30T10:00:02.000Z last message\n"
+	if got := out.String(); got != want {
+		t.Fatalf("redirected log:\n%q\nwant:\n%q", got, want)
+	}
+	if !backend.rawOnStream {
+		t.Fatal("the raw log must be streamed")
+	}
+}
+
+func TestStreamedLogPrefixOverrideSkipsTheLookups(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil || streamed == nil {
+		t.Fatalf("NewStreamedLog: %v, %v", streamed, err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "2026-10-30T10:00:00.000Z ACTOR: Starting\n") {
+		t.Fatalf("an empty prefix is used as it is: %q", out.String())
+	}
+}
+
+func TestStreamedLogDropsMessagesBeforeTheStartWhenNotFromStart(t *testing.T) {
+	future := time.Now().Add(time.Hour).UTC().Format("2006-01-02T15:04:05.000Z")
+	log := "2026-10-30T10:00:00.000Z old\n" + future + " new\n"
+	backend := &logBackend{streamBodies: []string{log}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr(""), FromStart: Ptr(false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "new") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "old") {
+		t.Fatalf("a message logged before the redirection was created must be dropped: %q", out.String())
+	}
+}
+
+// The API serves the log of a run that has not logged anything as an empty stream that ends at
+// once: the redirection reopens it until the first bytes arrive.
+func TestStreamedLogReopensAnEmptyStream(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{"", "", sampleLog}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if backend.streamCalls != 3 {
+		t.Fatalf("expected the empty stream to be reopened twice, got %d stream requests", backend.streamCalls)
+	}
+}
+
+// A run that finished before the stream delivered anything is not lost: stopping reads the whole
+// log in one request.
+func TestStreamedLogStoppedBeforeTheFirstBytesReadsTheWholeLog(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{""}, fullLog: sampleLog}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if backend.fullLogCalls != 1 {
+		t.Fatalf("expected one read of the whole log, got %d", backend.fullLogCalls)
+	}
+	if !strings.Contains(out.String(), "last message") || strings.Count(out.String(), "\n") < 4 {
+		t.Fatalf("the whole log must be redirected: %q", out.String())
+	}
+}
+
+func TestStreamedLogFlushesALastLineWithoutAnEndOfLine(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{"2026-10-30T10:00:00.000Z one\n2026-10-30T10:00:01.000Z unterminated"}}
+	out := &syncBuffer{}
+	ctx := context.Background()
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr(">")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "unterminated") })
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != ">2026-10-30T10:00:00.000Z one\n>2026-10-30T10:00:01.000Z unterminated\n" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestStreamedLogStartAndStopMustBePaired(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}}
+	ctx := context.Background()
+	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Stop(ctx); err == nil {
+		t.Fatal("Stop before Start must fail")
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err == nil {
+		t.Fatal("a second Start must fail")
+	}
+	if err := streamed.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewStreamedLogOfAMissingRunIsNil(t *testing.T) {
+	backend := &mockBackend{responses: constant(404, `{"error":{"type":"record-not-found","message":"m"}}`)}
+	streamed, err := testClient(backend, 0).Run("gone").NewStreamedLog(context.Background(), StreamedLogOptions{})
+	if err != nil || streamed != nil {
+		t.Fatalf("expected (nil, nil), got %v, %v", streamed, err)
+	}
+}
+
+// Call redirects the log of the run by default, and the call goes on when the redirection fails.
+func TestCallRedirectsTheLogOfTheRun(t *testing.T) {
+	out := &syncBuffer{}
+	backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, fullLog: sampleLog}}
+	got, err := testClient(backend, 0).Actor("actor1").Call(context.Background(), nil, ActorStartOptions{Log: &StreamedLogOptions{Output: out}}, Ptr(int64(0)))
+	if err != nil || got.Status != "SUCCEEDED" {
+		t.Fatalf("Call: %+v, %v", got, err)
+	}
+	if !strings.Contains(out.String(), "hello-world runId:run1 -> 2026-10-30T10:00:02.000Z last message") {
+		t.Fatalf("the log must be redirected with the prefix of the Actor and the run: %q", out.String())
+	}
+}
+
+func TestCallWithDisabledLogRedirectionRequestsNoLog(t *testing.T) {
+	backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, fullLog: sampleLog}}
+	_, err := testClient(backend, 0).Actor("actor1").Call(context.Background(), nil, ActorStartOptions{Log: &StreamedLogOptions{Disabled: true}}, Ptr(int64(0)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backend.streamCalls != 0 || backend.fullLogCalls != 0 {
+		t.Fatalf("no log may be requested, got %d stream and %d full reads", backend.streamCalls, backend.fullLogCalls)
+	}
+}
+
+func TestACallGoesOnWhenTheLogRedirectionFails(t *testing.T) {
+	out := &syncBuffer{}
+	backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, streamErr: errors.New("boom")}, pollDelay: 100 * time.Millisecond}
+	got, err := testClient(backend, 0).Actor("actor1").Call(context.Background(), nil, ActorStartOptions{Log: &StreamedLogOptions{Output: out, Prefix: Ptr("")}}, Ptr(int64(0)))
+	if err != nil || got.Status != "SUCCEEDED" {
+		t.Fatalf("a failing log redirection must not fail the call: %+v, %v", got, err)
+	}
+	if !strings.Contains(out.String(), "Log redirection stopped due to error") || !strings.Contains(out.String(), "boom") {
+		t.Fatalf("the failure must be reported: %q", out.String())
+	}
+}
+
+// callLogBackend also serves the start of a run, and answers every poll of it as finished after
+// pollDelay, which leaves the log redirection time to run before the call stops it.
+type callLogBackend struct {
+	logBackend
+	pollDelay time.Duration
+}
+
+func (b *callLogBackend) Do(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/runs") {
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":{"id":"run1","actId":"actor1","status":"RUNNING"}}`))}, nil
+	}
+	if strings.Contains(req.URL.Path, "/actor-runs/") && !strings.HasSuffix(req.URL.Path, "/log") && req.URL.Query().Get("waitForFinish") != "" {
+		time.Sleep(b.pollDelay)
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"data":{"id":"run1","actId":"actor1","status":"SUCCEEDED"}}`))}, nil
+	}
+	return b.logBackend.Do(req)
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the condition")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

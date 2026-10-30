@@ -82,7 +82,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `Delete(ctx) error` | Delete the Actor. |
 | `Start(ctx, input any, ActorStartOptions) (ActorRun, error)` | Start a run, return immediately. |
 | `StartRaw(ctx, input []byte, ActorStartOptions) (ActorRun, error)` | Like `Start`, but sends `input` as a raw request body (no JSON serialization) — for a non-JSON input such as a ZIP archive, paired with `ActorStartOptions.ContentType`. |
-| `Call(ctx, input any, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait for the run to finish. `waitSecs` bounds the client-side wait; pass `nil` to wait indefinitely (until the run reaches a terminal state). |
+| `Call(ctx, input any, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait for the run to finish, redirecting the run's log to `os.Stderr` while it waits (see `ActorStartOptions.Log`). `waitSecs` bounds the client-side wait; pass `nil` to wait indefinitely (until the run reaches a terminal state). Neither the start request nor the polls have a client-side timeout: `ctx` bounds the call. |
 | `CallRaw(ctx, input []byte, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | `StartRaw` followed by waiting for the run to finish, like `Call`. |
 | `Build(ctx, versionNumber string, ActorBuildOptions) (Build, error)` | Build a version. |
 | `DefaultBuild(ctx, waitForFinish *int64) (*BuildClient, error)` | Resolve the default build. |
@@ -155,6 +155,7 @@ fmt.Println(string(result)) // raw JSON validation result
 | `RestartOnError` | `*bool` | Restart the run if it fails. |
 | `ForcePermissionLevel` | `*string` | Override the Actor's permission level for this run. Accepted values: `LIMITED_PERMISSIONS`, `FULL_PERMISSIONS`. |
 | `Webhooks` | `[]any` | Ad-hoc webhooks to attach to this run. Each element is a map describing one webhook: `{"eventTypes": []string, "requestUrl": string, "payloadTemplate": string}` (same shape as a webhook definition; `eventTypes` are the `WebhookEventType` values listed in [webhooks.md](webhooks.md)). |
+| `Log` | `*StreamedLogOptions` | Only for `Call`/`CallRaw`: how the run's log is redirected while they wait. `nil` redirects it to `os.Stderr`, with every message prefixed by `"{Actor name} runId:{run ID} -> "`. Set `Output` (an `io.Writer`), `Prefix` or `FromStart` to change that, or `Disabled` to turn the redirection off. See [`StreamedLog`](runs.md#log-redirection). `Start` and `StartRaw` ignore it. |
 | `WaitForResources` | `*int64` | Retry the start every 10 seconds while the API rejects it for lack of resources (`actor-memory-limit-exceeded` or `concurrent-runs-limit-exceeded`). `apify.WaitForResourcesIndefinitely` retries until the run starts; any other value is the number of seconds to retry for before returning the last error. `nil` (the default) does not retry. Any other error is returned immediately. |
 
 `ActorBuildOptions` (all fields optional):

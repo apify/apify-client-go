@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -120,6 +122,20 @@ type httpClient struct {
 	retry       retryConfig
 	tiers       timeoutTiers
 	compressors []requestCompressor
+	// doNotRetryTimeouts makes a request attempt that exceeds its timeout fail at once instead of
+	// being retried. Set it (through [httpClient.withoutTimeoutRetry]) for a request that is not
+	// idempotent, where a timed-out attempt may already have taken effect on the server, so
+	// repeating it could create a second run or store the same dataset items twice.
+	doNotRetryTimeouts bool
+}
+
+// withoutTimeoutRetry returns a copy of c that does not retry a request attempt that timed out.
+// Other retryable failures (a 429 or 5xx response, a transport error that is not a timeout) are
+// still retried.
+func (c *httpClient) withoutTimeoutRetry() *httpClient {
+	clone := *c
+	clone.doNotRetryTimeouts = true
+	return &clone
 }
 
 // apiResponse is the parsed result of a single API call: the status, headers and the
@@ -175,7 +191,7 @@ func (c *httpClient) doRetryLoop(ctx context.Context, method, url string, sendBo
 		var retryable bool
 		if err != nil {
 			lastErr = err
-			retryable = isTransportErrorRetryable(err)
+			retryable = isTransportErrorRetryable(err) && (!c.doNotRetryTimeouts || !isTimeoutError(err))
 		} else if resp.statusCode < maxSuccessStatusCode {
 			return resp, nil
 		} else {
@@ -496,6 +512,16 @@ func isTransportErrorRetryable(err error) bool {
 		return false
 	}
 	return true
+}
+
+// isTimeoutError reports whether err means a request attempt ran out of time: the attempt's own
+// context deadline, or a timeout reported by the transport.
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // randomizedDelay returns a delay chosen randomly from [delay, 2*delay), matching the

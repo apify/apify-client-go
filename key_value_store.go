@@ -64,9 +64,10 @@ func (c *KeyValueStoreClient) Get(ctx context.Context) (KeyValueStore, bool, err
 	return getResource[KeyValueStore](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Update updates the store metadata (e.g. name) and returns the updated object.
+// Update updates the store metadata (e.g. name) and returns the updated object. Uses the "long"
+// timeout tier, the reference client's tier for this call.
 func (c *KeyValueStoreClient) Update(ctx context.Context, newFields any) (KeyValueStore, error) {
-	return updateResource[KeyValueStore](ctx, c.ctx, "", newFields)
+	return updateResourceWithTimeout[KeyValueStore](ctx, c.ctx, "", newFields, c.ctx.longTimeout())
 }
 
 // Delete deletes the store.
@@ -293,13 +294,50 @@ func (c *KeyValueStoreClient) SetRecordRawWithEncoding(ctx context.Context, key 
 	return putRawWithEncoding(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType, contentEncoding)
 }
 
+// SetRecordOptions configures [KeyValueStoreClient.SetRecordRawWithOptions] and
+// [KeyValueStoreClient.SetRecordJSONWithOptions].
+type SetRecordOptions struct {
+	// ContentEncoding, when not empty (e.g. "gzip", "br", "deflate"), says the value is already
+	// compressed under that encoding: it is uploaded exactly as given, with the Content-Encoding
+	// header, and the client's own request compression is skipped. See
+	// [KeyValueStoreClient.SetRecordRawWithEncoding].
+	ContentEncoding string
+	// DoNotRetryTimeouts, if true, makes an upload attempt that times out fail at once instead of
+	// being retried (other failures are still retried). Use it when storing the record twice
+	// would be harmful. Matches the reference client's setRecord({ doNotRetryTimeouts }).
+	DoNotRetryTimeouts bool
+}
+
+// SetRecordRawWithOptions is like [KeyValueStoreClient.SetRecordRaw], with the per-call
+// [SetRecordOptions].
+func (c *KeyValueStoreClient) SetRecordRawWithOptions(ctx context.Context, key string, value []byte, contentType string, options SetRecordOptions) error {
+	safeKey, err := safePathSegment(key)
+	if err != nil {
+		return err
+	}
+	resource := c.ctx
+	if options.DoNotRetryTimeouts {
+		resource = resource.withoutTimeoutRetry()
+	}
+	if options.ContentEncoding != "" {
+		return putRawWithEncoding(ctx, resource, "records/"+safeKey, NewQueryParams(), value, contentType, options.ContentEncoding)
+	}
+	return putRaw(ctx, resource, "records/"+safeKey, NewQueryParams(), value, contentType)
+}
+
 // SetRecordJSON stores a record holding the JSON serialization of value.
 func (c *KeyValueStoreClient) SetRecordJSON(ctx context.Context, key string, value any) error {
+	return c.SetRecordJSONWithOptions(ctx, key, value, SetRecordOptions{})
+}
+
+// SetRecordJSONWithOptions is like [KeyValueStoreClient.SetRecordJSON], with the per-call
+// [SetRecordOptions].
+func (c *KeyValueStoreClient) SetRecordJSONWithOptions(ctx context.Context, key string, value any, options SetRecordOptions) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return c.SetRecordRaw(ctx, key, data, contentTypeJSONCharset)
+	return c.SetRecordRawWithOptions(ctx, key, data, contentTypeJSONCharset, options)
 }
 
 // DeleteRecord deletes a record by key.
@@ -309,6 +347,12 @@ func (c *KeyValueStoreClient) DeleteRecord(ctx context.Context, key string) erro
 		return err
 	}
 	return deleteResourceAlways(ctx, c.ctx, "records/"+safeKey)
+}
+
+// getForPublicURL fetches the store to read its URL-signing secret, with the "long" timeout tier
+// the reference client uses for its public-URL builders.
+func (c *KeyValueStoreClient) getForPublicURL(ctx context.Context) (KeyValueStore, bool, error) {
+	return getResourceWithTimeout[KeyValueStore](ctx, c.ctx, "", NewQueryParams(), c.ctx.longTimeout())
 }
 
 // GetRecordPublicURL builds a public URL for fetching the given record.
@@ -322,7 +366,7 @@ func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string
 		return "", err
 	}
 	params := NewQueryParams()
-	store, present, err := c.Get(ctx)
+	store, present, err := c.getForPublicURL(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -332,7 +376,7 @@ func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string
 			params.AddString("signature", &sig)
 		}
 	}
-	return params.applyToURL(c.ctx.publicURL("records/" + safeKey)), nil
+	return c.ctx.mergedParams(params).applyToURL(c.ctx.publicURL("records/" + safeKey)), nil
 }
 
 // CreateKeysPublicURL builds a public URL for listing this store's keys.
@@ -341,7 +385,7 @@ func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string
 // optionally bounds the validity of a signed URL (nil for non-expiring).
 func (c *KeyValueStoreClient) CreateKeysPublicURL(ctx context.Context, expiresInSecs *int64) (string, error) {
 	params := NewQueryParams()
-	store, present, err := c.Get(ctx)
+	store, present, err := c.getForPublicURL(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -351,5 +395,5 @@ func (c *KeyValueStoreClient) CreateKeysPublicURL(ctx context.Context, expiresIn
 			params.AddString("signature", &sig)
 		}
 	}
-	return params.applyToURL(c.ctx.publicURL("keys")), nil
+	return c.ctx.mergedParams(params).applyToURL(c.ctx.publicURL("keys")), nil
 }

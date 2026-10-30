@@ -86,6 +86,14 @@ func newResourceContext(hc *httpClient, url, baseURL string, hasOwnID bool, idEr
 	}
 }
 
+// withoutTimeoutRetry returns a copy of this context whose requests do not retry an attempt that
+// timed out (see [httpClient.withoutTimeoutRetry]). Use it for a request that is not idempotent.
+func (c *resourceContext) withoutTimeoutRetry() *resourceContext {
+	clone := *c
+	clone.http = c.http.withoutTimeoutRetry()
+	return &clone
+}
+
 // withPublicOrigin overrides the origin used when building public URLs.
 func (c *resourceContext) withPublicOrigin(publicBaseURL string) *resourceContext {
 	c.publicOrigin = originOf(publicBaseURL)
@@ -150,8 +158,14 @@ func originOf(rawURL string) string {
 // reference client's catchNotFoundForResourceOrThrow. For a 404 that is unambiguous regardless
 // of how the client was reached (e.g. a lookup by key or request id), use [getResourceAlways].
 func getResource[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (T, bool, error) {
+	return getResourceWithTimeout[T](ctx, c, subPath, params, c.shortTimeout())
+}
+
+// getResourceWithTimeout is [getResource] with the caller's chosen timeout tier, for a lookup
+// that is slower than a plain metadata read (see [timeoutTiers]).
+func getResourceWithTimeout[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, timeout time.Duration) (T, bool, error) {
 	var zero T
-	result, err := getResourceRequired[T](ctx, c, subPath, params, c.shortTimeout())
+	result, err := getResourceRequired[T](ctx, c, subPath, params, timeout)
 	if err != nil {
 		if c.hasOwnID && isNotFound(err) {
 			return zero, false, nil
@@ -182,16 +196,7 @@ func extendForServerWait(base time.Duration, waitForFinishSecs *int64) time.Dura
 // [extendForServerWait], for a get(waitForFinish) call that asks the server to hold the
 // response (RunClient.GetWithWait, BuildClient.GetWithWait).
 func getResourceWithServerWait[T any](ctx context.Context, c *resourceContext, params *QueryParams, waitForFinishSecs *int64) (T, bool, error) {
-	var zero T
-	timeout := extendForServerWait(c.shortTimeout(), waitForFinishSecs)
-	result, err := getResourceRequired[T](ctx, c, "", params, timeout)
-	if err != nil {
-		if c.hasOwnID && isNotFound(err) {
-			return zero, false, nil
-		}
-		return zero, false, err
-	}
-	return result, true, nil
+	return getResourceWithTimeout[T](ctx, c, "", params, extendForServerWait(c.shortTimeout(), waitForFinishSecs))
 }
 
 // getResourceAlways performs a GET that unwraps the data envelope; a not-found always maps to
@@ -232,6 +237,11 @@ func getResourceRequired[T any](ctx context.Context, c *resourceContext, subPath
 // updateResource performs a PUT with a JSON body, unwrapping the data envelope. Metadata writes
 // use the "short" timeout tier.
 func updateResource[T any](ctx context.Context, c *resourceContext, subPath string, body any) (T, error) {
+	return updateResourceWithTimeout[T](ctx, c, subPath, body, c.shortTimeout())
+}
+
+// updateResourceWithTimeout is [updateResource] with the caller's chosen timeout tier.
+func updateResourceWithTimeout[T any](ctx context.Context, c *resourceContext, subPath string, body any, timeout time.Duration) (T, error) {
 	var zero T
 	if c.idErr != nil {
 		return zero, c.idErr
@@ -241,7 +251,7 @@ func updateResource[T any](ctx context.Context, c *resourceContext, subPath stri
 		return zero, err
 	}
 	url := c.mergedParams(NewQueryParams()).applyToURL(c.subURL(subPath))
-	resp, err := c.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, c.shortTimeout())
+	resp, err := c.http.call(ctx, http.MethodPut, url, data, contentTypeJSON, timeout)
 	if err != nil {
 		return zero, err
 	}
@@ -386,15 +396,15 @@ func getRawRequired(ctx context.Context, c *resourceContext, subPath string, par
 	return c.http.call(ctx, http.MethodGet, url, nil, "", timeout)
 }
 
-// headExists performs a HEAD request, returning whether the resource exists, using the "short"
-// timeout tier. A not-found always maps to (false, nil): used only for an unambiguous lookup (a
-// key-value-store record by key).
+// headExists performs a HEAD request, returning whether the resource exists, using the "long"
+// timeout tier (the reference client's tier for a record lookup). A not-found always maps to
+// (false, nil): used only for an unambiguous lookup (a key-value-store record by key).
 func headExists(ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (bool, error) {
 	if c.idErr != nil {
 		return false, c.idErr
 	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
-	_, err := c.http.call(ctx, http.MethodHead, url, nil, "", c.shortTimeout())
+	_, err := c.http.call(ctx, http.MethodHead, url, nil, "", c.longTimeout())
 	if err != nil {
 		if isNotFound(err) {
 			return false, nil

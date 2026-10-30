@@ -18,8 +18,9 @@ with `client.Run(id)`, and an Actor's or task's runs with `client.Actor(id).Runs
 | `Status` | `[]string` | Filter by one or more run statuses; sent as a comma-separated list. Values are the eight `ActorJobStatus` values: `READY`, `RUNNING`, `SUCCEEDED`, `FAILED`, `TIMING-OUT`, `TIMED-OUT`, `ABORTING`, `ABORTED`. |
 | `StartedAfter` | `*string` | Only runs started after this ISO-8601 timestamp. |
 | `StartedBefore` | `*string` | Only runs started before this ISO-8601 timestamp. |
+| `Deployment` | `[]string` | Only Actor Standby runs served by these pools (`SINGLE_TENANT`, `MULTI_TENANT_FREE_USERS`, `MULTI_TENANT_PAYING_USERS`, `MULTI_TENANT_OWNER_PAID`); sent as a comma-separated list. The API requires `Status` to hold only non-terminal statuses (`READY`, `RUNNING`, `TIMING-OUT`, `ABORTING`) with it. |
 
-The time filters apply only to Actor- and task-scoped collections.
+The time filters apply only to Actor- and task-scoped collections, and `Deployment` only to the account-wide and Actor-scoped ones.
 
 ## Single run
 
@@ -40,7 +41,13 @@ The time filters apply only to Actor- and task-scoped collections.
 | `KeyValueStore() *KeyValueStoreClient` | The run's default key-value store. |
 | `RequestQueue() *RequestQueueClient` | The run's default request queue. |
 | `Log() *LogClient` | The run's log. |
-| `GetStreamedLog(ctx) (io.ReadCloser, error)` | Live stream of the run's raw log (log redirection). |
+| `GetStreamedLog(ctx) (io.ReadCloser, error)` | Live stream of the run's raw log, as bytes. |
+| `NewStreamedLog(ctx, StreamedLogOptions) (*StreamedLog, error)` | Redirects the run's log message by message to a writer; see [Log redirection](#log-redirection). `(nil, nil)` for a run that does not exist (with the default prefix). |
+| `IterateDatasetItems(RunIterateDatasetItemsOptions) *RunDatasetItemsIterator[json.RawMessage]` | Iterates over the items of the run's default dataset while the run is still producing them; see [Live iteration of dataset items](#live-iteration-of-dataset-items). |
+
+On a client from `LastRun(...)`, `Dataset()`, `KeyValueStore()`, `RequestQueue()` and `Log()` carry
+the same `status` and `origin` filters, so they address the storages and the log of the run the
+filters resolve to, not those of the newest run of any status.
 
 > **Missing resources.** `Dataset()`/`KeyValueStore()`/`RequestQueue()`/`Log()` address a
 > sub-resource with no ID of its own, so a 404 from `Get`/`Delete`/`Log().Get`/`Log().Stream`
@@ -112,9 +119,80 @@ run's metadata. The commonly used fields:
 | `DefaultDatasetID` | `string` | ID of the run's default dataset. |
 | `DefaultKeyValueStoreID` | `string` | ID of the run's default key-value store. |
 | `DefaultRequestQueueID` | `string` | ID of the run's default request queue. |
-| `ContainerURL` | `string` | URL of the run's container (for live access). |
+| `ContainerURL` | `string` | URL of the run's container (for live access), normalized. |
+| `ConsoleURL` | `string` | URL of the run in the Apify Console, normalized. |
+| `Output` | `map[string]string` | Output links of the run (name to normalized URL), generated from the output schema of the Actor build. `nil` if the build defines none. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 `ActorRun.IsTerminal()` reports whether a run has finished. Status message convenience:
 `client.SetStatusMessage(ctx, message, isTerminal)` updates the current run identified by the
 `ACTOR_RUN_ID` environment variable.
+
+## Log redirection
+
+`ActorClient.Call` redirects the log of the run while it waits (set `ActorStartOptions.Log` to
+change where it goes or turn it off). To redirect the log of any run, create a `StreamedLog`:
+
+```go
+streamed, err := client.Run(runID).NewStreamedLog(ctx, apify.StreamedLogOptions{Output: os.Stdout})
+if err != nil {
+	log.Fatal(err)
+}
+if err := streamed.Start(ctx); err != nil {
+	log.Fatal(err)
+}
+// ... wait for the run to finish ...
+if err := streamed.Stop(ctx); err != nil {
+	log.Fatal(err)
+}
+```
+
+`StreamedLogOptions` (all fields optional):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Output` | `io.Writer` | Receives every message, one per line, with the prefix. Defaults to `os.Stderr`. Writes are serialized. |
+| `Prefix` | `*string` | Written in front of every message. The default is `"{Actor name} runId:{run ID} -> "`, which costs two requests (the run and its Actor); a non-nil `Prefix`, an empty one included, skips them. |
+| `FromStart` | `*bool` | `false` drops the messages that were logged before the redirection was created. Default `true`. |
+| `Disabled` | `bool` | Turns the redirection off in `ActorStartOptions.Log`. |
+
+The log is split into messages at the timestamps the platform puts in front of each of them, so a
+message that spans several lines is written as one. `Start` begins the redirection in the
+background, and it also ends when the `ctx` it got is done. `Stop` gives the messages in flight up
+to one second, then aborts the stream; if the stream delivered nothing yet, it reads the whole log
+in one request, so a short run that finished before the stream connected is not lost. A log that
+has no bytes yet (the run has not logged anything) is reopened, pausing from 500ms up to 5s,
+until its first bytes arrive. `Stop` returns the error that ended the redirection early, if any;
+`Call` reports it on the redirection's output and goes on.
+
+## Live iteration of dataset items
+
+`RunClient.IterateDatasetItems` (and the generic `apify.IterateRunDatasetItems[T]`, which decodes
+every item into `T`) iterates over the items of the run's default dataset *while the run is still
+producing them*. While the run has not finished, each round yields the rows below the dataset's
+`itemCount` and then waits up to `PollIntervalSecs` for the run to finish, so the last rows are
+read as soon as it does. `itemCount` lags a few seconds behind the pushed items, so once the run
+has finished the rows past it are read a page at a time until none are left. On a client from
+`LastRun(...)`, the iterator sticks to the run its first request resolves to.
+
+`RunIterateDatasetItemsOptions` (all fields optional):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Items` | `DatasetListItemsOptions` | Filters and projections applied to every page (see [storages.md](storages.md)). `Items.Offset` is the number of rows to skip (default 0) and `Items.Limit` the maximum number of dataset rows to scan (default no limit): fewer items are yielded when filters drop some, more when `Unwind` splits a row into several. `Items.Desc` is not supported, because the rows are read by offset from the oldest; it makes `Next` fail. |
+| `ChunkSize` | `*int64` | Maximum number of dataset rows requested per API call. Default 1000. |
+| `PollIntervalSecs` | `*int64` | How long to wait for the run to finish between polls, in seconds. Default 5. |
+
+```go
+it := client.Run(runID).IterateDatasetItems(apify.RunIterateDatasetItemsOptions{})
+for {
+	item, err := it.Next(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if item == nil {
+		break // every item has been read
+	}
+	fmt.Println(string(*item))
+}
+```

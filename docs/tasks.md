@@ -25,6 +25,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `ModifiedAt` | `*time.Time` | When the task was last modified. |
 | `IsPublic` | `*bool` | Whether the task is published on its public landing page, derived from `PublicConfig.PublishedAt`; use `Publish`/`Unpublish` to change it. |
 | `PublicConfig` | `*TaskPublicConfig` | Public-facing display configuration of the landing page, set once the task has been configured for publishing. |
+| `StandbyURL` | `*string` | URL of the task's Actor Standby endpoint, normalized. `nil` when the task has none. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 ### `TaskPublicConfig` fields
@@ -49,7 +50,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Publish(ctx) (Task, error)` | Publish the task on its public landing page. An Actor can have at most 10 published tasks, and an account at most 100 (contact Apify support to raise either limit). |
 | `Unpublish(ctx) (Task, error)` | Unpublish the task from its public landing page. |
 | `Start(ctx, input any, TaskStartOptions) (ActorRun, error)` | Start a run (input overrides stored input). |
-| `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. |
+| `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. Neither the start request nor the polls have a client-side timeout: `ctx` bounds the call. |
 | `GetInput(ctx) (json.RawMessage, error)` | Fetch the stored input. |
 | `UpdateInput(ctx, input any) (json.RawMessage, error)` | Replace the stored input. |
 | `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |

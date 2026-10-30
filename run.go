@@ -198,6 +198,9 @@ func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) 
 // retried by the transport is applied at most once, matching the reference client. The API
 // requires this header and expires the key 3 minutes after the charge.
 func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error {
+	if c.ctx.idErr != nil {
+		return c.ctx.idErr
+	}
 	count := int64(1)
 	if options.Count != nil {
 		count = *options.Count
@@ -238,24 +241,33 @@ func (c *RunClient) WaitForFinish(ctx context.Context, waitSecs *int64) (ActorRu
 	return waitForFinish[ActorRun](ctx, c.ctx, waitSecs, "run", func(r *ActorRun) bool { return r.IsTerminal() })
 }
 
-// Dataset returns a client for this run's default dataset.
+// Dataset returns a client for this run's default dataset. On a client from LastRun, it carries
+// the same status and origin filters, so it addresses the dataset of the same run.
 func (c *RunClient) Dataset() *DatasetClient {
-	return newDatasetNestedClient(c.ctx.http, c.ctx.subURL(""), "dataset")
+	client := newDatasetNestedClient(c.ctx.http, c.ctx.subURL(""), "dataset")
+	client.ctx.baseParams = c.ctx.baseParams.clone()
+	return client
 }
 
 // KeyValueStore returns a client for this run's default key-value store.
 func (c *RunClient) KeyValueStore() *KeyValueStoreClient {
-	return newKeyValueStoreNestedClient(c.ctx.http, c.ctx.subURL(""), "key-value-store")
+	client := newKeyValueStoreNestedClient(c.ctx.http, c.ctx.subURL(""), "key-value-store")
+	client.ctx.baseParams = c.ctx.baseParams.clone()
+	return client
 }
 
 // RequestQueue returns a client for this run's default request queue.
 func (c *RunClient) RequestQueue() *RequestQueueClient {
-	return newRequestQueueNestedClient(c.ctx.http, c.ctx.subURL(""), "request-queue")
+	client := newRequestQueueNestedClient(c.ctx.http, c.ctx.subURL(""), "request-queue")
+	client.ctx.baseParams = c.ctx.baseParams.clone()
+	return client
 }
 
 // Log returns a client for accessing this run's log.
 func (c *RunClient) Log() *LogClient {
-	return newNestedLogClient(c.ctx.http, c.ctx.subURL(""))
+	client := newNestedLogClient(c.ctx.http, c.ctx.subURL(""))
+	client.ctx.baseParams = c.ctx.baseParams.clone()
+	return client
 }
 
 // GetStreamedLog opens a live stream of this run's raw log, for convenient log redirection.

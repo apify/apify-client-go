@@ -17,11 +17,13 @@ request queues, tasks, schedules, webhooks, the store, users and logs).
 - Transparent authentication, `User-Agent` header, retries with exponential backoff, and
   per-request timeouts applied to every call.
 - Replaceable HTTP transport (the `HTTPBackend` interface) with a default implementation.
-- Convenience helpers: start-and-wait, build/run polling, lazy store and request-queue
-  iterators, dataset export, signed public URLs, request-queue locking, and more.
+- Convenience helpers: start-and-wait with live log redirection, build/run polling, lazy store
+  and request-queue iterators, live iteration of a running Actor's dataset items, dataset
+  export, signed public URLs, request-queue locking, and more.
 - Forward-compatible models that keep unknown API fields in an `Extra` map.
-- A single third-party dependency (`github.com/andybalholm/brotli`, used for Brotli
-  request-body compression); everything else is the Go standard library.
+- Two third-party dependencies: `github.com/andybalholm/brotli` (Brotli request-body
+  compression) and `golang.org/x/net/idna` (punycode conversion of hosts when normalizing URL
+  fields); everything else is the Go standard library.
 
 ## Installation
 
@@ -126,8 +128,9 @@ func main() {
 Every request the client sends is assigned one of three timeout tiers, matching the kind of
 operation its method performs — `short` for a metadata read/write, `medium` for a listing,
 batch or trigger call, `long` for a download, upload or streaming call — except the polling
-requests behind `WaitForFinish`/`Call`, which run with no client-imposed timeout of their own
-(the pure time budget `waitSecs`/`timeoutSecs` already bounds the overall wait). The duration of
+requests behind `WaitForFinish`/`Call`, and the start request of `Call`, which run with no
+client-imposed timeout of their own (the time budget `waitSecs` bounds the overall wait, and the
+`context.Context` the call itself). The duration of
 each tier is configured on the client (see the table above); a timeout still grows with each
 retry, capped at `WithTimeoutMax`.
 
@@ -136,6 +139,13 @@ A single call that needs a different bound already has full control via the
 `context.WithTimeout`, overrides whichever tier the method would otherwise use (the client's
 internal per-attempt deadline is always the *later* of the two to apply — i.e.
 `context.WithTimeout` composes with whichever is sooner).
+
+A request that timed out is retried like any other transient failure, with a longer timeout,
+except one that is not idempotent, where the timed-out attempt may already have taken effect:
+starting a run (`Start`, `StartRaw`, a task's `Start`), building an Actor (`Build`), pushing
+dataset items (`PushItems`) and, when `SetRecordOptions.DoNotRetryTimeouts` is set, storing a
+record. Those fail on the first timeout. The other failures (a 429 or 5xx response, a network
+error) are retried for them as well.
 
 A method with a `waitForFinishSecs`/`WaitForFinish` parameter that asks the API to hold the
 response (e.g. `RunClient.GetWithWait`, `ActorClient.Start`'s `WaitForFinish` option) extends
@@ -158,6 +168,18 @@ Apify platform. It is driven solely by the `APIFY_IS_AT_HOME` environment variab
 variable the JavaScript reference client reads); if it is set to a non-empty value, the flag is
 `true`, otherwise `false`.
 
+### URL fields
+
+The fields the API specification declares as URLs (`consoleUrl`, `containerUrl`, `itemsPublicUrl`,
+`keysPublicUrl`, `recordsPublicUrl`, `recordPublicUrl`, `standbyUrl`, the webhook `requestUrl`, a
+run's `output` links, a Store Actor's `url` and `userPictureUrl`, and a user profile's
+`pictureUrl` and `websiteUrl`) are returned in a normalized form, so every Apify client returns
+the same string for the same field: the scheme and host are lowercased, a non-ASCII host becomes
+punycode, a default port is dropped, an empty path becomes `/`, dot segments are resolved, and
+unsafe characters are percent-encoded. Compare a field against a stored URL after normalizing
+the stored one the same way (for example by reading it back from the API). A value that is not
+an absolute URL makes decoding the response fail.
+
 ## Resource clients
 
 | Accessor | Returns | Purpose |
@@ -173,7 +195,7 @@ variable the JavaScript reference client reads); if it is set to a non-empty val
 | `client.Webhooks()` / `client.Webhook(id)` | `*WebhookCollectionClient` / `*WebhookClient` | List/create webhooks; manage and test a single webhook. |
 | `client.WebhookDispatches()` / `client.WebhookDispatch(id)` | `*WebhookDispatchCollectionClient` / `*WebhookDispatchClient` | List/inspect webhook dispatches. |
 | `client.Store()` | `*StoreCollectionClient` | Browse and iterate the Apify Store. |
-| `client.Me()` / `client.User(id)` | `*UserClient` | Account details, usage and limits (account scope for `Me()`). |
+| `client.Me()` / `client.User(id)` | `*UserClient` | Account details, usage and limits (for your own account or your organization with `User(id)`). |
 | `client.Log(buildOrRunID)` | `*LogClient` | Read or stream a build/run log. |
 
 ## Error handling
@@ -258,7 +280,7 @@ func main() {
 
 - `apify.ClientVersion` — the semantic version of this library.
 - `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-10-26T112451Z`).
+  (`v2-2026-10-29T100357Z`).
 
 ### Releasing
 
@@ -295,7 +317,7 @@ APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 | `run_store_actor` | Run a Store Actor, wait for it, and read its default dataset. |
 | `run_and_last_run_storages` | Start a run, wait for it to finish, then fetch the Actor's last run and its storages. |
 | `iterate_store` | Lazily iterate Actors in the Apify Store. |
-| `log_redirection` | Start an Actor and stream its log in real time. |
+| `log_redirection` | Run an Actor and redirect its log to stdout in real time. |
 | `create_build_run_actor` | Create an Actor, build it, run it, and print the run log. |
 | `public_build_no_token` | Fetch a public Actor's default build with an unauthenticated client (no token). |
 

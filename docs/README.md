@@ -105,7 +105,7 @@ the [storages](storages.md) page.
 
 - [Actors](actors.md) — Actors, versions, environment variables.
 - [Builds](builds.md) — Actor builds.
-- [Runs](runs.md) — Actor runs and their default storages.
+- [Runs](runs.md) — Actor runs, their default storages, log redirection and live iteration of dataset items.
 - [Tasks](tasks.md) — Actor tasks.
 - [Storages](storages.md) — Datasets, key-value stores, request queues.
 - [Schedules](schedules.md) — Schedules.

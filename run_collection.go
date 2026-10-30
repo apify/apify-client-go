@@ -4,7 +4,8 @@ import "context"
 
 // RunListOptions adds run-specific filters on top of [ListOptions] for
 // [RunCollectionClient.List]. The startedAfter/startedBefore filters are only honoured by
-// the Actor-scoped and task-scoped run collections.
+// the Actor-scoped and task-scoped run collections, and the deployment filter only by the
+// account-wide and Actor-scoped ones.
 type RunListOptions struct {
 	// Status filters by one or more run statuses (e.g. "SUCCEEDED", "RUNNING"). Sent as a
 	// comma-separated list, as the API accepts.
@@ -13,12 +14,18 @@ type RunListOptions struct {
 	StartedAfter *string
 	// StartedBefore filters to runs started before this ISO-8601 timestamp.
 	StartedBefore *string
+	// Deployment filters Actor Standby runs by the pool that serves them, as a list of
+	// SINGLE_TENANT, MULTI_TENANT_FREE_USERS, MULTI_TENANT_PAYING_USERS or MULTI_TENANT_OWNER_PAID.
+	// Sent as a comma-separated list. The API requires Status to hold only non-terminal statuses
+	// (READY, RUNNING, TIMING-OUT or ABORTING) when it is set.
+	Deployment []string
 }
 
 func (o RunListOptions) apply(q *QueryParams) {
 	q.AddCSV("status", o.Status).
 		AddString("startedAfter", o.StartedAfter).
-		AddString("startedBefore", o.StartedBefore)
+		AddString("startedBefore", o.StartedBefore).
+		AddCSV("deployment", o.Deployment)
 }
 
 // RunCollectionClient is a client for a run collection: the account-wide collection

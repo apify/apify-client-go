@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // ActorStartOptions configures starting an Actor or task run
@@ -43,6 +44,11 @@ type ActorStartOptions struct {
 	// actor-memory-limit-exceeded as well and never starts, so WaitForResourcesIndefinitely
 	// retries it forever.
 	WaitForResources *int64
+	// Log configures the redirection of the run's log that [ActorClient.Call] and
+	// [ActorClient.CallRaw] do while they wait (see [StreamedLog]). Nil redirects it to os.Stderr
+	// with the default prefix; set Log.Disabled to turn the redirection off. Start and StartRaw
+	// ignore it.
+	Log *StreamedLogOptions
 }
 
 func (o ActorStartOptions) apply(q *QueryParams) {
@@ -133,7 +139,7 @@ func (c *ActorClient) Start(ctx context.Context, input any, options ActorStartOp
 	if err != nil {
 		return ActorRun{}, err
 	}
-	return c.startWithBody(ctx, body, contentTypeJSON, options)
+	return c.startWithBody(ctx, body, contentTypeJSON, options, c.startTimeout(options))
 }
 
 // StartRaw starts the Actor with a raw request body instead of a JSON-serializable value.
@@ -144,22 +150,30 @@ func (c *ActorClient) Start(ctx context.Context, input any, options ActorStartOp
 // handles the serialization. Mirrors the reference client, whose Actor input accepts a plain
 // object, an array of them, or raw bytes.
 func (c *ActorClient) StartRaw(ctx context.Context, input []byte, options ActorStartOptions) (ActorRun, error) {
-	return c.startWithBody(ctx, input, "application/octet-stream", options)
+	return c.startWithBody(ctx, input, "application/octet-stream", options, c.startTimeout(options))
+}
+
+// startTimeout is the timeout of a start request: the "medium" tier, extended to cover the time
+// the API may hold the response for options.WaitForFinish.
+func (c *ActorClient) startTimeout(options ActorStartOptions) time.Duration {
+	return extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
 }
 
 // startWithBody is the shared implementation of Start and StartRaw: it applies the run-start
 // options as query parameters and posts the given body, falling back to defaultContentType only
-// when the caller did not set options.ContentType.
-func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultContentType string, options ActorStartOptions) (ActorRun, error) {
+// when the caller did not set options.ContentType. timeout bounds each start request.
+//
+// A start request that times out is not retried: it may already have created the run, and a
+// retry would then start a second, billed one.
+func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultContentType string, options ActorStartOptions, timeout time.Duration) (ActorRun, error) {
 	params := NewQueryParams()
 	options.apply(params)
 	contentType := defaultContentType
 	if options.ContentType != nil && *options.ContentType != "" {
 		contentType = *options.ContentType
 	}
-	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
 	return startWaitingForResources(ctx, options.WaitForResources, func() (ActorRun, error) {
-		return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentType, timeout)
+		return postWithBody[ActorRun](ctx, c.ctx.withoutTimeoutRetry(), "runs", params, body, contentType, timeout)
 	})
 }
 
@@ -167,23 +181,39 @@ func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultCon
 //
 // waitSecs bounds the wait; nil waits indefinitely. It returns the finished run (or the
 // still-running run if the wait budget was exhausted).
+//
+// While it waits, it redirects the run's log to os.Stderr (or to options.Log.Output), prefixed
+// with the Actor name and the run ID, like the reference client's call(): see [StreamedLog], and
+// set options.Log.Disabled to turn it off.
+//
+// Neither the start request nor the polls have a client-side timeout of their own (matching the
+// reference client's call(), whose default timeout is noTimeout): ctx bounds the whole call.
 func (c *ActorClient) Call(ctx context.Context, input any, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.Start(ctx, input, options)
+	body, err := marshalInput(input)
 	if err != nil {
 		return ActorRun{}, err
 	}
-	// Use the root client's run client so polling targets the canonical run route.
-	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
+	return c.callWithBody(ctx, body, contentTypeJSON, options, waitSecs)
 }
 
 // CallRaw starts the Actor with a raw request body ([ActorClient.StartRaw]) and waits for it to
 // finish, exactly like [ActorClient.Call] but for a non-JSON input.
 func (c *ActorClient) CallRaw(ctx context.Context, input []byte, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.StartRaw(ctx, input, options)
+	return c.callWithBody(ctx, input, "application/octet-stream", options, waitSecs)
+}
+
+// callWithBody is the shared implementation of Call and CallRaw.
+func (c *ActorClient) callWithBody(ctx context.Context, body []byte, defaultContentType string, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
+	run, err := c.startWithBody(ctx, body, defaultContentType, options, noRequestTimeout)
 	if err != nil {
 		return ActorRun{}, err
 	}
-	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
+	// Use the root client's run client so polling targets the canonical run route.
+	runClient := c.root.Run(run.ID)
+	streamed := startLogRedirection(ctx, runClient, options.Log)
+	finished, err := runClient.WaitForFinish(ctx, waitSecs)
+	stopLogRedirection(ctx, streamed, options.Log)
+	return finished, err
 }
 
 // Build builds the given version of the Actor and returns the created build.
@@ -195,7 +225,8 @@ func (c *ActorClient) Build(ctx context.Context, versionNumber string, options A
 		AddBool("useCache", options.UseCache).
 		AddInt("waitForFinish", options.WaitForFinish)
 	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
-	return postWithBody[Build](ctx, c.ctx, "builds", params, nil, contentTypeJSON, timeout)
+	// A build that timed out is not retried: it may already have been created.
+	return postWithBody[Build](ctx, c.ctx.withoutTimeoutRetry(), "builds", params, nil, contentTypeJSON, timeout)
 }
 
 // DefaultBuild resolves the Actor's default build and returns a client for it.
@@ -203,6 +234,9 @@ func (c *ActorClient) Build(ctx context.Context, versionNumber string, options A
 // waitForFinish optionally bounds how long (in seconds) the API waits for the build to
 // finish before responding, matching the reference client's defaultBuild(options).
 func (c *ActorClient) DefaultBuild(ctx context.Context, waitForFinish *int64) (*BuildClient, error) {
+	if c.ctx.idErr != nil {
+		return nil, c.ctx.idErr
+	}
 	params := NewQueryParams()
 	params.AddInt("waitForFinish", waitForFinish)
 	url := params.applyToURL(c.ctx.subURL("builds/default"))
@@ -237,6 +271,9 @@ func (c *ActorClient) ValidateInput(ctx context.Context, input any) (json.RawMes
 // On success it returns the raw JSON validation result from the API (a JSON object reporting
 // whether the input is valid and, if not, the schema violations).
 func (c *ActorClient) ValidateInputForBuild(ctx context.Context, input any, build string) (json.RawMessage, error) {
+	if c.ctx.idErr != nil {
+		return nil, c.ctx.idErr
+	}
 	body, err := json.Marshal(input)
 	if err != nil {
 		return nil, err
