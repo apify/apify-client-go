@@ -234,7 +234,7 @@ func (s *StreamedLog) isStopping() bool {
 func (s *StreamedLog) streamLog(parent, streamCtx context.Context) error {
 	err := s.redirect(parent, streamCtx)
 	var lost *logReadError
-	if errors.As(err, &lost) && !(isContextError(lost.err) && parent.Err() != nil) {
+	if errors.As(err, &lost) && (!isContextError(lost.err) || parent.Err() == nil) {
 		// The log was not redirected: the caller must hear of it, unless the cause is the end of
 		// the caller's own context, which ends the redirection on purpose.
 		return lost.err
