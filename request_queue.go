@@ -14,6 +14,8 @@ type ListRequestsOptions struct {
 	// Limit is the maximum number of requests to return.
 	Limit *int64
 	// ExclusiveStartID lists requests after this ID.
+	//
+	// Deprecated: the API deprecated the exclusiveStartId parameter. Use Cursor.
 	ExclusiveStartID *string
 	// Cursor is an opaque pagination cursor (alternative to ExclusiveStartID).
 	Cursor *string
@@ -380,20 +382,33 @@ func (c *RequestQueueClient) UnlockRequests(ctx context.Context) (json.RawMessag
 }
 
 // PaginateRequests returns a lazy iterator over all requests in the queue, fetching pages
-// of up to pageLimit requests at a time (nil for the server default).
+// of up to pageLimit requests at a time (nil for the server default). To cap the total, start
+// from a cursor or filter the states, use [RequestQueueClient.PaginateRequestsWithOptions].
 func (c *RequestQueueClient) PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator {
-	return &RequestQueueRequestsIterator{client: c, pageLimit: pageLimit}
+	return c.PaginateRequestsWithOptions(ListRequestsOptions{}, pageLimit)
+}
+
+// PaginateRequestsWithOptions is [RequestQueueClient.PaginateRequests] with listing options, like
+// the reference client's paginateRequests: Limit caps the number of requests yielded across all
+// pages (nil or ptr(0) means all of them), Cursor (or the deprecated ExclusiveStartID) sets where
+// to start, and Filter applies to every page. The page size is the separate chunkSize argument
+// (nil for the server default). Invalid options are reported by the first call of Next.
+func (c *RequestQueueClient) PaginateRequestsWithOptions(options ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator {
+	return &RequestQueueRequestsIterator{client: c, options: options, chunkSize: chunkSize}
 }
 
 // RequestQueueRequestsIterator lazily iterates over a request queue's requests, fetching one
 // page at a time via the cursor-based listing endpoint.
 type RequestQueueRequestsIterator struct {
 	client    *RequestQueueClient
-	pageLimit *int64
+	options   ListRequestsOptions
+	chunkSize *int64
 
 	buffer     []RequestQueueRequest
 	pos        int
 	nextCursor string
+	capped     bool  // whether a total cap (options.Limit) is in effect
+	remaining  int64 // requests the cap still allows; only meaningful when capped
 	started    bool
 	exhausted  bool
 }
@@ -407,7 +422,7 @@ type requestsPage struct {
 // Next returns the next request, or (nil, nil) when the iterator is exhausted.
 func (it *RequestQueueRequestsIterator) Next(ctx context.Context) (*RequestQueueRequest, error) {
 	for it.pos >= len(it.buffer) {
-		if it.exhausted || (it.started && it.nextCursor == "") {
+		if it.exhausted {
 			return nil, nil
 		}
 		if err := it.fetchPage(ctx); err != nil {
@@ -419,13 +434,33 @@ func (it *RequestQueueRequestsIterator) Next(ctx context.Context) (*RequestQueue
 	return &req, nil
 }
 
-// fetchPage loads the next page of requests into the buffer.
+// fetchPage loads the next page of requests into the buffer. The page size is the smaller of the
+// remaining total cap and the chunk size, so the last page is never over-fetched.
 func (it *RequestQueueRequestsIterator) fetchPage(ctx context.Context) error {
-	params := NewQueryParams()
-	params.AddInt("limit", it.pageLimit)
-	if it.nextCursor != "" {
-		params.AddString("cursor", &it.nextCursor)
+	opts := it.options
+	if !it.started {
+		if err := opts.validate(); err != nil {
+			return err
+		}
+		if l := opts.Limit; l != nil && *l > 0 {
+			it.capped = true
+			it.remaining = *l
+		}
+	} else {
+		opts.ExclusiveStartID = nil
+		opts.Cursor = &it.nextCursor
 	}
+	var capLeft, chunk int64
+	if it.capped {
+		capLeft = it.remaining
+	}
+	if it.chunkSize != nil {
+		chunk = *it.chunkSize
+	}
+	opts.Limit = pageLimitPtr(minForLimitParam(capLeft, chunk))
+
+	params := NewQueryParams()
+	opts.apply(params)
 	it.client.withClientKey(params)
 
 	raw, err := getResourceRequired[requestsPage](ctx, it.client.ctx, "requests", params, it.client.ctx.mediumTimeout())
@@ -435,12 +470,18 @@ func (it *RequestQueueRequestsIterator) fetchPage(ctx context.Context) error {
 	it.started = true
 	it.buffer = raw.Items
 	it.pos = 0
+	it.nextCursor = ""
 	if raw.NextCursor != nil {
 		it.nextCursor = *raw.NextCursor
-	} else {
-		it.nextCursor = ""
 	}
-	if len(raw.Items) == 0 && it.nextCursor == "" {
+	if it.capped {
+		it.remaining -= int64(len(it.buffer))
+		if it.remaining < 0 { // a server that returned more than asked for
+			it.buffer = it.buffer[:int64(len(it.buffer))+it.remaining]
+			it.remaining = 0
+		}
+	}
+	if it.nextCursor == "" || (it.capped && it.remaining == 0) {
 		it.exhausted = true
 	}
 	return nil

@@ -19,7 +19,7 @@ Single dataset: `client.Dataset(id)`:
 | `Delete(ctx) error` | Delete the dataset. |
 | `ListItems(ctx, DatasetListItemsOptions) (PaginationList[json.RawMessage], error)` | Read items. |
 | `IterateItems(DatasetListItemsOptions, chunkSize *int64) *ListIterator[json.RawMessage]` | Lazy iterator over items (`Limit` caps total, `chunkSize` is page size); `IterateDatasetItems[T]` decodes into your type. |
-| `PushItems(ctx, items any) error` | Append one item or a slice of items. |
+| `PushItems(ctx, items any) error` | Append one item or a slice of items. They must serialize to a JSON object or an array of objects, the only shapes the API accepts; anything else (a string, a number, a slice of strings, `nil`) fails before any request is sent. Pass a `json.RawMessage` for already serialized JSON. A push that times out is not retried, because the API may already have stored the items. |
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
 | `DownloadItemsStream(ctx, DownloadItemsFormat, DatasetDownloadOptions) (io.ReadCloser, error)` | Like `DownloadItems`, but as a stream for a large export; close when done. |
 | `GetStatistics(ctx) (json.RawMessage, error)` | Dataset statistics. |
@@ -36,6 +36,8 @@ The `Dataset` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List
 | `CreatedAt` | `*time.Time` | When the dataset was created. |
 | `ModifiedAt` | `*time.Time` | When the dataset was last modified. |
 | `ItemCount` | `int64` | Number of items currently stored. |
+| `ConsoleURL` | `string` | URL of the dataset in the Apify Console (normalized). Empty on items from `List`/`Iterate`. |
+| `ItemsPublicURL` | `string` | Public URL of the dataset's items (normalized); signed for a private dataset. Empty on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 `DatasetListItemsOptions` controls filtering, projection, and pagination of the items
@@ -167,13 +169,15 @@ Single store: `client.KeyValueStore(id)`:
 | `Delete(ctx) error` | Delete the store. |
 | `ListKeys(ctx, ListKeysOptions) (KeyValueStoreKeysPage, error)` | List one page of keys. |
 | `IterateKeys(ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator` | Lazy iterator over keys (cursor-based). `Limit` caps the total yielded; `chunkSize` is the page size; `Prefix`/`Collection`/`Signature` filter every page; `ExclusiveStartKey` sets where to start. |
-| `GetRecord(ctx, key) (*KeyValueStoreRecord, bool, error)` | Read a record. |
+| `GetRecord(ctx, key) (*KeyValueStoreRecord, bool, error)` | Read a record. The value is the raw bytes, never parsed: decode it according to the `ContentType` the API reports. |
 | `GetRecordWithOptions(ctx, key, GetRecordOptions)` | Read with options. |
 | `GetRecordStream(ctx, key) (*KeyValueStoreRecordStream, bool, error)` | Like `GetRecord`, but the value is a stream for a large record; close when done. |
 | `GetRecordStreamWithOptions(ctx, key, GetRecordOptions)` | Stream with options. |
-| `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes. |
+| `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes, sent as they are: the client does not parse or convert the value, whatever the content type (so `application/json` bytes must already be valid JSON). |
+| `SetRecordRawWithOptions(ctx, key, value []byte, contentType string, SetRecordOptions) error` | Like `SetRecordRaw`, with `ContentEncoding` (the value is already compressed, as with `SetRecordRawWithEncoding`) and `DoNotRetryTimeouts` (an upload that times out fails at once instead of being retried). |
 | `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
 | `SetRecordJSON(ctx, key, value any) error` | Write JSON. |
+| `SetRecordJSONWithOptions(ctx, key, value any, SetRecordOptions) error` | Like `SetRecordJSON`, with the per-call `SetRecordOptions`. |
 | `RecordExists(ctx, key) (bool, error)` | HEAD check. |
 | `DeleteRecord(ctx, key) error` | Delete a record. |
 | `GetRecordPublicURL(ctx, key) (string, error)` | Signed public record URL. |
@@ -188,6 +192,9 @@ The `KeyValueStore` value returned by `Get`/`GetOrCreate`/`Update` and listed by
 | `UserID` | `string` | ID of the user who owns the store. |
 | `CreatedAt` | `*time.Time` | When the store was created. |
 | `ModifiedAt` | `*time.Time` | When the store was last modified. |
+| `ConsoleURL` | `string` | URL of the store in the Apify Console (normalized). Empty on items from `List`/`Iterate`, which do not carry it. |
+| `KeysPublicURL` | `string` | Public URL listing the store's keys (normalized); signed for a private store. Empty on items from `List`/`Iterate`. |
+| `RecordsPublicURL` | `string` | Public URL prefix of the store's records (normalized). Empty on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 Option structs (all fields optional):
@@ -226,8 +233,9 @@ when done.
 | `NextExclusiveStartKey` | `string` | Key to pass to fetch the next page. |
 | `Items` | `[]KeyValueStoreKey` | The listed keys. |
 
-Each `KeyValueStoreKey` element has `Key` (`string`) and `Size` (`int64`, the record size in
-bytes), plus an `Extra` (`map[string]json.RawMessage`) catch-all.
+Each `KeyValueStoreKey` element has `Key` (`string`), `Size` (`int64`, the record size in
+bytes) and `RecordPublicURL` (`string`, the public URL of the record, normalized), plus an
+`Extra` (`map[string]json.RawMessage`) catch-all.
 
 ```go
 store, _ := client.KeyValueStores().GetOrCreate(ctx, "")
@@ -281,6 +289,7 @@ Single queue: `client.RequestQueue(id)`:
 | `DeleteRequest(ctx, id) error` | Delete a request. |
 | `ListRequests(ctx, ListRequestsOptions) (json.RawMessage, error)` | Paginated list. Returns the raw API response (`{ "items": [...], "nextCursor": ... }`); unmarshal into your own type, or use `PaginateRequests` for typed iteration. |
 | `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
+| `PaginateRequestsWithOptions(ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator` | The same with `Limit` (caps the total across pages), `Cursor` (where to start) and `Filter` (every page); `chunkSize` is the page size. |
 | `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests, auto-split into batches that respect the API's 25-request and (effective) 9 MiB payload-size limits. Fails before sending anything if any single request is too large for a batch of its own. Unlike the reference client, does not itself retry a batch's `UnprocessedRequests` — inspect the result and retry those explicitly if needed. |
 | `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
 | `ListAndLockHead(ctx, lockSecs int64, limit *int64) (json.RawMessage, error)` | Fetch the head of the queue and lock the returned requests for `lockSecs` seconds. Returns the raw API response. |
@@ -299,6 +308,7 @@ The `RequestQueue` value returned by `Get`/`GetOrCreate`/`Update` and listed by 
 | `CreatedAt` | `*time.Time` | When the queue was created. |
 | `ModifiedAt` | `*time.Time` | When the queue was last modified. |
 | `TotalRequestCount` | `int64` | Total number of requests ever added. |
+| `ConsoleURL` | `string` | URL of the queue in the Apify Console (normalized). Empty on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 `RequestQueueRequest` is the request payload/record. `URL` is required; `ID` is assigned by the
@@ -363,6 +373,22 @@ _, _ = queue.ListRequests(ctx, apify.ListRequestsOptions{
 it := queue.PaginateRequests(apify.Ptr(int64(100)))
 for {
 	req, err := it.Next(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if req == nil {
+		break
+	}
+	fmt.Println(req.URL)
+}
+
+// Iterate over at most 50 pending requests, 25 per page.
+pending := queue.PaginateRequestsWithOptions(apify.ListRequestsOptions{
+	Limit:  apify.Ptr(int64(50)),
+	Filter: []string{apify.RequestFilterPending},
+}, apify.Ptr(int64(25)))
+for {
+	req, err := pending.Next(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -97,7 +97,7 @@ func TestActorCRUDFlow(t *testing.T) {
 	if _, err := actor.Builds().List(ctx, apify.ListOptions{}); err != nil {
 		t.Fatalf("builds list: %v", err)
 	}
-	if _, err := actor.Versions().List(ctx, apify.ListOptions{}); err != nil {
+	if _, err := actor.Versions().List(ctx); err != nil {
 		t.Fatalf("versions list: %v", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestActorVersionCRUDFlow(t *testing.T) {
 	if _, ok, err := actor.Version("0.1").Get(ctx); err != nil || !ok {
 		t.Fatalf("get version: ok=%v err=%v", ok, err)
 	}
-	if _, err := actor.Versions().List(ctx, apify.ListOptions{}); err != nil {
+	if _, err := actor.Versions().List(ctx); err != nil {
 		t.Fatalf("list versions: %v", err)
 	}
 	if _, err := actor.Version("0.1").Update(ctx, map[string]any{"buildTag": "beta", "sourceType": "SOURCE_FILES", "sourceFiles": []any{}}); err != nil {

@@ -23,6 +23,7 @@ Browse public Actors with `client.Store()`:
 | `IncludeUnrunnableActors` | `*bool` | Include Actors the current user cannot run. |
 | `AllowsAgenticUsers` | `*bool` | Filter to Actors that allow agentic users. |
 | `ResponseFormat` | `*string` | Select the response format. Accepted values: `full`, `agent`. |
+| `IncludeInputSchema` | `*bool` | Add to each Actor an `inputSchema` field with a compact version of its default build's input schema. With it set, the API defaults `Limit` to 10 and does not accept a larger one. |
 
 Each item is an `ActorStoreListItem`:
 
@@ -32,6 +33,8 @@ Each item is an `ActorStoreListItem`:
 | `Name` | `string` | Technical name of the Actor. |
 | `Username` | `string` | Username of the Actor's owner. |
 | `Title` | `string` | Human-readable title (may be empty; fall back to `Name`). |
+| `URL` | `*string` | URL of the Actor's page in the Apify Store, normalized. `nil` when there is none. |
+| `UserPictureURL` | `*string` | URL of the owner's profile picture, normalized. `nil` when there is none. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 ```go
@@ -56,10 +59,10 @@ for {
 | Method | Description |
 | --- | --- |
 | `Get(ctx) (User, bool, error)` | Account details (private for `Me()`, public otherwise). |
-| `MonthlyUsage(ctx) (json.RawMessage, error)` | Current month's usage (`Me()` only). |
-| `MonthlyUsageWithOptions(ctx, MonthlyUsageOptions) (json.RawMessage, error)` | Usage for the period containing `Date` (`YYYY-MM-DD`; empty means current) (`Me()` only). |
-| `Limits(ctx) (json.RawMessage, error)` | Current account's limits (`Me()` only). |
-| `UpdateLimits(ctx, newLimits any) error` | Update the account's limits (`Me()` only). |
+| `MonthlyUsage(ctx) (json.RawMessage, error)` | Current month's usage. |
+| `MonthlyUsageWithOptions(ctx, MonthlyUsageOptions) (json.RawMessage, error)` | Usage for the period containing `Date` (`YYYY-MM-DD`; empty means current). |
+| `Limits(ctx) (json.RawMessage, error)` | The account's limits. |
+| `UpdateLimits(ctx, newLimits any) error` | Update the account's limits. |
 
 The `User` value returned by `Get` carries the account's public fields; for `Me()` the API
 also returns private account details, which are preserved in `Extra`:
@@ -68,9 +71,10 @@ also returns private account details, which are preserved in `Extra`:
 |---|---|---|
 | `ID` | `string` | Unique user ID. |
 | `Username` | `string` | The user's username. |
+| `Profile` | `*UserProfile` | The public profile: `Name`, `PictureURL` and `WebsiteURL` (both `*string`, normalized URLs), and an `Extra` map for the other fields. `nil` if the API does not return one. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (private details for `Me()`). |
 
-The usage/limits methods return an error if called on a non-`Me()` client.
+The usage and limits methods work on `Me()` and on `User(id)` (by ID or username). The API serves them only for your own account or for the organization your API token belongs to, and rejects tokens with limited permissions.
 
 `MonthlyUsage` reports usage for the current month and returns the raw JSON usage report from
 the API — a JSON object with the account's usage breakdown and totals for the period.
@@ -113,14 +117,15 @@ fmt.Println(string(usage)) // raw JSON usage report for the current month
 | `Raw` | `*bool` | Return the unprocessed log content (no platform post-processing). |
 | `Download` | `*bool` | Set `Content-Disposition` so the log is served as a download. |
 
-For convenient live redirection of a run's log, `client.Run(id).GetStreamedLog(ctx)` returns
-a raw live stream directly.
+`client.Run(id).GetStreamedLog(ctx)` is deprecated: despite the name it returns the raw live
+stream, like `Log().StreamWithOptions` with `Raw` set. To redirect the log message by message to
+a writer, with a prefix, use `NewStreamedLog`; see [log redirection](runs.md#log-redirection).
 
 ```go
 // Read the whole log.
 logText, ok, err := client.Run(runID).Log().Get(ctx)
 
-// Or stream it live (log redirection).
+// Or stream it live, as raw bytes.
 stream, err := client.Run(runID).Log().Stream(ctx)
 if err != nil {
 	log.Fatal(err)
