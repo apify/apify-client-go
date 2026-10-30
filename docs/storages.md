@@ -387,7 +387,14 @@ pending := queue.PaginateRequestsWithOptions(apify.ListRequestsOptions{
 	Limit:  apify.Ptr(int64(50)),
 	Filter: []string{apify.RequestFilterPending},
 }, apify.Ptr(int64(25)))
-for req, err := pending.Next(ctx); req != nil && err == nil; req, err = pending.Next(ctx) {
+for {
+	req, err := pending.Next(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if req == nil {
+		break
+	}
 	fmt.Println(req.URL)
 }
 ```

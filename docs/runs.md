@@ -160,18 +160,18 @@ if err := streamed.Stop(ctx); err != nil {
 | `Disabled` | `bool` | Turns the redirection off in `ActorStartOptions.Log`. |
 
 The log is split into messages at the timestamps the platform puts in front of each of them, so a
-message that spans several lines is written as one, even when its lines arrive in separate
-reads; the last message is therefore written when the next one starts or the log ends. `Start` begins the redirection in the
-background, and it also ends when the `ctx` it got is done. `Stop` gives the messages in flight up
-to one second, then aborts the stream; if the stream delivered nothing yet, it reads the whole log
-in one request, so a short run that finished before the stream connected is not lost. The `ctx`
-given to `Stop` bounds that wait and that read: when it is done first, `Stop` returns its error
-and the rest of the log is not redirected, unless the `ctx` given to `Start` ended first, which
-ends the redirection on purpose and is not an error. When both end at about the same time,
-either result is possible. A second `Stop` while one is running returns an error. A log that has
-no bytes yet (the run has not logged anything) is reopened, pausing from 500ms up to 5s, until its
-first bytes arrive. `Stop` returns the error that ended the redirection early, if any; `Call`
-reports it on the redirection's output and goes on.
+message that spans several lines is written as one, even when its lines arrive in separate reads;
+the last message is therefore written when the next one starts or the log ends. `Start` begins the
+redirection in the background, and it also ends when the `ctx` it got is done. `Stop` gives the
+messages in flight up to one second, then aborts the stream; if the stream delivered nothing yet,
+it reads the whole log in one request, so a short run that finished before the stream connected is
+not lost. The `ctx` given to `Stop` bounds that wait and that read: when it is done first, `Stop`
+returns its error and the rest of the log is not redirected, unless the `ctx` given to `Start`
+ended first, which ends the redirection on purpose and is not an error. When both end at about the
+same time, either result is possible. A second `Stop` while one is running returns an error. A log
+that has no bytes yet (the run has not logged anything) is reopened, pausing from 500ms up to 5s,
+until its first bytes arrive. `Stop` returns the error that ended the redirection early, if any;
+`Call` reports it on the redirection's output and goes on.
 
 ## Live iteration of dataset items
 

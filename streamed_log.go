@@ -26,6 +26,8 @@ const (
 	stopGrace = time.Second
 	// logRedirectPrefixSeparator ends the default message prefix, which names the Actor and the run.
 	logRedirectPrefixSeparator = " -> "
+	// logMarkerOverlapBytes is the length of a timestamp together with the end of line before it.
+	logMarkerOverlapBytes = 25
 	// logReadChunkBytes is the size of the buffer the log stream is read through.
 	logReadChunkBytes = 32 * 1024
 )
@@ -34,6 +36,10 @@ const (
 // log is split into messages at these markers, so a message that spans several lines (a stack
 // trace, say) is redirected as one.
 var logMessageMarker = regexp.MustCompile(`(?:\n|^)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)`)
+
+// logMessageStart matches the timestamp that starts a message in the middle of the buffer, with
+// the end of line before it.
+var logMessageStart = regexp.MustCompile(`\n\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z`)
 
 // StreamedLogOptions configures [RunClient.NewStreamedLog] and, through
 // [ActorStartOptions.Log], the log redirection of [ActorClient.Call].
@@ -76,6 +82,7 @@ type StreamedLog struct {
 	wake         chan struct{}
 	done         chan error
 	buffer       bytes.Buffer
+	scanned      int // how much of the buffer was searched for message timestamps
 }
 
 // NewStreamedLog creates the redirection of this run's log, which does nothing until
@@ -140,6 +147,7 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 	s.wake = make(chan struct{})
 	s.done = make(chan error, 1)
 	s.buffer.Reset()
+	s.scanned = 0
 	go func() {
 		s.done <- s.streamLog(ctx, streamCtx)
 	}()
@@ -325,18 +333,26 @@ func (s *StreamedLog) consumeStream(stream io.Reader) (bool, error) {
 // consume adds data to the buffer and redirects every message that is known to be complete: the
 // ones followed by the timestamp of the next message. The last message stays in the buffer, since
 // its continuation lines (a stack trace, say) may arrive in a later read; [StreamedLog.flush]
-// writes it when the log ends.
+// writes it when the log ends. Only the new data is searched for timestamps, so a large message
+// is not scanned again on every read.
 func (s *StreamedLog) consume(data []byte) {
+	from := max(s.scanned-logMarkerOverlapBytes, 0) // a timestamp may be split across reads
 	s.buffer.Write(data)
-	text := s.buffer.String()
-	markers := logMessageMarker.FindAllStringIndex(text, -1)
-	if len(markers) < 2 {
+	buffered := s.buffer.Bytes()
+	s.scanned = len(buffered)
+	found := logMessageStart.FindAllIndex(buffered[from:], -1)
+	if len(found) == 0 {
 		return
 	}
-	last := markers[len(markers)-1][0]
-	s.redirectMessages(text[:last])
-	s.buffer.Reset()
-	s.buffer.WriteString(text[last:])
+	// The newest timestamp starts the message that stays; everything before it is complete.
+	last := from + found[len(found)-1][0]
+	if last == 0 {
+		return
+	}
+	complete := string(buffered[:last])
+	s.buffer.Next(last)
+	s.scanned = s.buffer.Len()
+	s.redirectMessages(complete)
 }
 
 // flush redirects whatever is left in the buffer when the log ends: the last message, or a last
@@ -344,6 +360,7 @@ func (s *StreamedLog) consume(data []byte) {
 func (s *StreamedLog) flush() {
 	text := s.buffer.String()
 	s.buffer.Reset()
+	s.scanned = 0
 	switch {
 	case strings.TrimSpace(text) == "":
 	case logMessageMarker.MatchString(text):

@@ -445,12 +445,13 @@ func TestStreamedLogStopReportsALogCutOffByItsContext(t *testing.T) {
 	}
 }
 
-// Without a Stop context to cut it off, a live stream ends after the grace period: that is how a
-// redirection ends normally, and it is not an error.
+// A message whose continuation lines arrive in a later read is redirected whole, and so is one
+// whose timestamp is split across reads.
 func TestStreamedLogKeepsAMessageWhoseLinesArriveInSeparateReads(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{""}, streamChunks: []string{
 		"2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n",
-		"    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n",
+		"    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n2026-10-30T10:0",
+		"0:02.000Z split\n",
 	}}
 	out := &syncBuffer{}
 	ctx := context.Background()
@@ -461,11 +462,11 @@ func TestStreamedLogKeepsAMessageWhoseLinesArriveInSeparateReads(t *testing.T) {
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return strings.Contains(out.String(), "next") })
+	waitFor(t, func() bool { return strings.Contains(out.String(), "split") })
 	if err := streamed.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
-	want := "2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n"
+	want := "2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n2026-10-30T10:00:02.000Z split\n"
 	if got := out.String(); got != want {
 		t.Fatalf("redirected log:\n%q\nwant:\n%q", got, want)
 	}
@@ -498,6 +499,8 @@ func TestStreamedLogStopKeepsReadingTheMessagesInFlight(t *testing.T) {
 	}
 }
 
+// Without a Stop context to cut it off, a live stream ends after the grace period: that is how a
+// redirection ends normally, and it is not an error.
 func TestStreamedLogStopOfALiveStreamAfterTheGracePeriodIsNotAnError(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{sampleLog}, holdStream: true}
 	out := &syncBuffer{}
@@ -696,5 +699,35 @@ func waitFor(t *testing.T, condition func() bool) {
 			t.Fatal("timed out waiting for the condition")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// One large message must not be scanned again on every read: Stop gives the log only a second.
+// The bound is loose to allow the race detector (0.2s without it); scanning again on every read
+// takes about 9s without it.
+func TestStreamedLogRedirectsALargeMessageQuickly(t *testing.T) {
+	const lines = 4 << 20 / 8
+	var log strings.Builder
+	log.WriteString("2026-10-30T10:00:00.000Z big\n")
+	for i := 0; i < lines; i++ {
+		log.WriteString("line 1\n")
+	}
+	log.WriteString("2026-10-30T10:00:01.000Z next\n")
+	out := &syncBuffer{}
+	streamed := &StreamedLog{output: out, fromStart: true}
+	body := []byte(log.String())
+
+	started := time.Now()
+	for len(body) > 0 {
+		n := min(logReadChunkBytes, len(body))
+		streamed.consume(body[:n])
+		body = body[n:]
+	}
+	streamed.flush()
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("redirecting 4 MiB took %v", elapsed)
+	}
+	if got := strings.Count(out.String(), "\n"); got != lines+2 {
+		t.Fatalf("redirected %d lines, want %d", got, lines+2)
 	}
 }

@@ -422,7 +422,7 @@ type requestsPage struct {
 // Next returns the next request, or (nil, nil) when the iterator is exhausted.
 func (it *RequestQueueRequestsIterator) Next(ctx context.Context) (*RequestQueueRequest, error) {
 	for it.pos >= len(it.buffer) {
-		if it.exhausted || (it.started && it.nextCursor == "") {
+		if it.exhausted {
 			return nil, nil
 		}
 		if err := it.fetchPage(ctx); err != nil {
