@@ -165,7 +165,9 @@ background, and it also ends when the `ctx` it got is done. `Stop` gives the mes
 to one second, then aborts the stream; if the stream delivered nothing yet, it reads the whole log
 in one request, so a short run that finished before the stream connected is not lost. The `ctx`
 given to `Stop` bounds that wait and that read: when it is done first, `Stop` returns its error
-and the rest of the log is not redirected. A second `Stop` while one is running returns an error. A log that
+and the rest of the log is not redirected, unless the `ctx` given to `Start` is done too, which
+ends the redirection on purpose and is not an error. A second `Stop` while one is running returns
+an error. A log that
 has no bytes yet (the run has not logged anything) is reopened, pausing from 500ms up to 5s,
 until its first bytes arrive. `Stop` returns the error that ended the redirection early, if any;
 `Call` reports it on the redirection's output and goes on.

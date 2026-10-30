@@ -151,8 +151,9 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 // request instead, so a short run that finished before the stream connected is not lost. It
 // returns the error that made the redirection stop early, if any. ctx bounds the wait for it,
 // the final read of the whole log included: when ctx is done first, Stop gives up on the rest of
-// the log and returns the error of ctx. It returns an error if the redirection is not running or
-// is already being stopped.
+// the log and returns the error of ctx, unless the context given to Start is done too, which ends
+// the redirection on purpose. It returns an error if the redirection is not running or is already
+// being stopped.
 func (s *StreamedLog) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.running {
@@ -187,9 +188,8 @@ func (s *StreamedLog) Stop(ctx context.Context) error {
 		}
 	}
 	cancel()
-	// A read cut short by the context of this call reports a plain cancellation: name the cause,
-	// unless the context of Start, which ends the redirection on purpose, ended as well.
-	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, context.Canceled) && startCtx.Err() == nil {
+	// A read cut short by the context of this call reports a plain cancellation: name the cause.
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, context.Canceled) {
 		err = ctxErr
 	}
 

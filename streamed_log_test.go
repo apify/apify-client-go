@@ -501,19 +501,51 @@ func TestStreamedLogStopAfterTheStartContextEndedIsNotAnError(t *testing.T) {
 	}
 }
 
-// A Call whose context ends while the log stream is still open reports no redirection error.
+// A Call whose context ends while the log stream is still open, and has delivered lines, reports
+// no redirection error. It is a smoke test of the whole path: whether the redirection is still
+// running when the call stops it depends on timing, so the deterministic guard of this behavior is
+// TestStreamedLogStopAfterTheStartContextEndedIsNotAnError.
 func TestCallWhoseContextEndsWithAnOpenLogStreamReportsNoError(t *testing.T) {
 	for range 10 {
 		out := &syncBuffer{}
-		backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, holdStream: true}, pollDelay: 300 * time.Millisecond}
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+		backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, holdStream: true}, pollDelay: time.Minute}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			defer cancel()
+			deadline := time.Now().Add(10 * time.Second)
+			for !strings.Contains(out.String(), "last message") && time.Now().Before(deadline) {
+				time.Sleep(2 * time.Millisecond)
+			}
+		}()
 		_, err := testClient(backend, 0).Actor("actor1").Call(ctx, nil, ActorStartOptions{Log: &StreamedLogOptions{Output: out, Prefix: Ptr("")}}, Ptr(int64(0)))
-		cancel()
 		if err == nil {
 			t.Fatal("expected the call to end with the error of its context")
 		}
 		if strings.Contains(out.String(), "Log redirection stopped due to error") {
 			t.Fatalf("the end of the context of the call is not a redirection error: %q", out.String())
+		}
+	}
+}
+
+// Stop never returns a bare cancellation: the Start context ending just after the Stop context
+// (as Call does) gives either the error of the Stop context or nil.
+func TestStreamedLogStopNeverReturnsABareCancellation(t *testing.T) {
+	for range 40 {
+		backend := &logBackend{streamBodies: []string{""}, blockFullLog: true}
+		parent, cancelParent := context.WithCancel(context.Background())
+		streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(parent, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := streamed.Start(parent); err != nil {
+			t.Fatal(err)
+		}
+		stopCtx, cancelStop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		context.AfterFunc(stopCtx, cancelParent)
+		err = streamed.Stop(stopCtx)
+		cancelStop()
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected nil or the error of the Stop context, got %v", err)
 		}
 	}
 }
