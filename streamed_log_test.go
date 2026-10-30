@@ -481,6 +481,43 @@ func TestStreamedLogStartContextEndingIsNotAnErrorOfStop(t *testing.T) {
 	})
 }
 
+// The end of the context given to Start ends the redirection on purpose: Stop with the same
+// context, as Call does, reports no error for an open stream that is cut off by it.
+func TestStreamedLogStopAfterTheStartContextEndedIsNotAnError(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{sampleLog}, holdStream: true}
+	out := &syncBuffer{}
+	parent, cancel := context.WithCancel(context.Background())
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(parent, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(parent); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(out.String(), "last message") })
+	cancel()
+	if err := streamed.Stop(parent); err != nil {
+		t.Fatalf("the end of the Start context is not an error, got %v", err)
+	}
+}
+
+// A Call whose context ends while the log stream is still open reports no redirection error.
+func TestCallWhoseContextEndsWithAnOpenLogStreamReportsNoError(t *testing.T) {
+	for range 10 {
+		out := &syncBuffer{}
+		backend := &callLogBackend{logBackend: logBackend{streamBodies: []string{sampleLog}, holdStream: true}, pollDelay: 300 * time.Millisecond}
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+		_, err := testClient(backend, 0).Actor("actor1").Call(ctx, nil, ActorStartOptions{Log: &StreamedLogOptions{Output: out, Prefix: Ptr("")}}, Ptr(int64(0)))
+		cancel()
+		if err == nil {
+			t.Fatal("expected the call to end with the error of its context")
+		}
+		if strings.Contains(out.String(), "Log redirection stopped due to error") {
+			t.Fatalf("the end of the context of the call is not a redirection error: %q", out.String())
+		}
+	}
+}
+
 func TestNewStreamedLogOfAMissingRunIsNotFound(t *testing.T) {
 	backend := &mockBackend{responses: constant(404, `{"error":{"type":"record-not-found","message":"m"}}`)}
 	streamed, found, err := testClient(backend, 0).Run("gone").NewStreamedLog(context.Background(), StreamedLogOptions{})

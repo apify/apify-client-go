@@ -236,7 +236,7 @@ func normalizeAuthority(authority string, rules authorityRules) (string, error) 
 	}
 	if port != "" {
 		number, err := parsePort(port)
-		if err != nil || !rules.allowPort {
+		if err != nil {
 			return "", fmt.Errorf("invalid port %q", port)
 		}
 		port = strconv.Itoa(number)

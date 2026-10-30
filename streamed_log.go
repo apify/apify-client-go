@@ -70,6 +70,7 @@ type StreamedLog struct {
 	mu           sync.Mutex // serializes writes to output and guards the fields below
 	running      bool
 	stopping     bool
+	startCtx     context.Context // the context of the Start call, which ends the redirection
 	stopCtx      context.Context // the context of the Stop call, which bounds the final read
 	cancelStream context.CancelFunc
 	wake         chan struct{}
@@ -133,6 +134,7 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 	streamCtx, cancel := context.WithCancel(ctx)
 	s.running = true
 	s.stopping = false
+	s.startCtx = ctx
 	s.stopCtx = nil
 	s.cancelStream = cancel
 	s.wake = make(chan struct{})
@@ -164,7 +166,7 @@ func (s *StreamedLog) Stop(ctx context.Context) error {
 	s.stopping = true
 	s.stopCtx = ctx
 	close(s.wake)
-	cancel, done := s.cancelStream, s.done
+	cancel, done, startCtx := s.cancelStream, s.done, s.startCtx
 	s.mu.Unlock()
 
 	timer := time.AfterFunc(stopGrace, cancel)
@@ -179,14 +181,15 @@ func (s *StreamedLog) Stop(ctx context.Context) error {
 			// The redirection is still running: cutting it off loses the rest of the log, which
 			// the caller must be able to tell from a complete one.
 			cancel()
-			if err = <-done; err == nil {
+			if err = <-done; err == nil && startCtx.Err() == nil {
 				err = ctx.Err()
 			}
 		}
 	}
 	cancel()
-	// A read cut short by the context of this call reports a plain cancellation: name the cause.
-	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, context.Canceled) {
+	// A read cut short by the context of this call reports a plain cancellation: name the cause,
+	// unless the context of Start, which ends the redirection on purpose, ended as well.
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, context.Canceled) && startCtx.Err() == nil {
 		err = ctxErr
 	}
 
