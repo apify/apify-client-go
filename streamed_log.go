@@ -70,6 +70,7 @@ type StreamedLog struct {
 	mu           sync.Mutex // serializes writes to output and guards the fields below
 	running      bool
 	stopping     bool
+	stopCtx      context.Context // the context of the Stop call, which bounds the final read
 	cancelStream context.CancelFunc
 	wake         chan struct{}
 	done         chan error
@@ -78,21 +79,24 @@ type StreamedLog struct {
 
 // NewStreamedLog creates the redirection of this run's log, which does nothing until
 // [StreamedLog.Start]. With the default prefix it fetches the run and its Actor to name them, and
-// it returns (nil, nil) if the run does not exist.
-func (c *RunClient) NewStreamedLog(ctx context.Context, options StreamedLogOptions) (*StreamedLog, error) {
+// the bool reports whether the run exists: it is false (with a nil [StreamedLog]) for a run that
+// does not. A non-nil [StreamedLogOptions.Prefix] skips the lookups, so the bool is then always
+// true.
+func (c *RunClient) NewStreamedLog(ctx context.Context, options StreamedLogOptions) (*StreamedLog, bool, error) {
 	prefix := ""
 	if options.Prefix != nil {
 		prefix = *options.Prefix
 	} else {
 		run, present, err := getResourceWithTimeout[ActorRun](ctx, c.ctx, "", NewQueryParams(), c.ctx.longTimeout())
 		if err != nil || !present {
-			return nil, err
+			return nil, false, err
 		}
 		actorName := ""
 		if run.ActID != "" {
-			actor, found, err := c.root.Actor(run.ActID).Get(ctx)
+			actorClient := c.root.Actor(run.ActID)
+			actor, found, err := getResourceWithTimeout[Actor](ctx, actorClient.ctx, "", NewQueryParams(), actorClient.ctx.longTimeout())
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			if found {
 				actorName = actor.Name
@@ -115,7 +119,7 @@ func (c *RunClient) NewStreamedLog(ctx context.Context, options StreamedLogOptio
 		prefix:    prefix,
 		startedAt: time.Now(),
 		fromStart: options.FromStart == nil || *options.FromStart,
-	}, nil
+	}, true, nil
 }
 
 // Start begins the redirection in the background. The redirection also ends when ctx is done.
@@ -129,6 +133,7 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 	streamCtx, cancel := context.WithCancel(ctx)
 	s.running = true
 	s.stopping = false
+	s.stopCtx = nil
 	s.cancelStream = cancel
 	s.wake = make(chan struct{})
 	s.done = make(chan error, 1)
@@ -142,15 +147,22 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 // Stop ends the redirection. It gives the messages already in flight up to one second, then
 // aborts the log stream; if the stream delivered nothing yet, it reads the whole log in one
 // request instead, so a short run that finished before the stream connected is not lost. It
-// returns the error that made the redirection stop early, if any. ctx bounds the final read of
-// the whole log.
+// returns the error that made the redirection stop early, if any. ctx bounds the wait for it,
+// the final read of the whole log included: when ctx is done first, Stop gives up on the rest of
+// the log and returns the error of ctx. It returns an error if the redirection is not running or
+// is already being stopped.
 func (s *StreamedLog) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.running {
 		s.mu.Unlock()
 		return errors.New("StreamedLog: not started")
 	}
+	if s.stopping {
+		s.mu.Unlock()
+		return errors.New("StreamedLog: already stopping")
+	}
 	s.stopping = true
+	s.stopCtx = ctx
 	close(s.wake)
 	cancel, done := s.cancelStream, s.done
 	s.mu.Unlock()
@@ -165,11 +177,29 @@ func (s *StreamedLog) Stop(ctx context.Context) error {
 		err = <-done
 	}
 	cancel()
+	// A read cut short by the context of this call reports a plain cancellation: name the cause.
+	if ctxErr := ctx.Err(); ctxErr != nil && (err == nil || errors.Is(err, context.Canceled)) {
+		err = ctxErr
+	}
 
 	s.mu.Lock()
 	s.running = false
 	s.mu.Unlock()
 	return err
+}
+
+// finalReadContext returns the context of the final read of the whole log: it ends with the
+// context of the redirection and with the one of the Stop call.
+func (s *StreamedLog) finalReadContext(parent context.Context) (context.Context, context.CancelFunc) {
+	s.mu.Lock()
+	stopCtx := s.stopCtx
+	s.mu.Unlock()
+	readCtx, cancel := context.WithCancel(parent)
+	stopWatching := context.AfterFunc(stopCtx, cancel)
+	return readCtx, func() {
+		stopWatching()
+		cancel()
+	}
 }
 
 func (s *StreamedLog) isStopping() bool {
@@ -197,8 +227,11 @@ func (s *StreamedLog) redirect(parent, streamCtx context.Context) error {
 
 	for !gotBytes {
 		if s.isStopping() {
-			// The stream's context ends with the grace period, which must not cut this read short.
-			body, _, err := s.log.GetBufferWithOptions(parent, options)
+			// The stream's context ends with the grace period, which must not cut this read
+			// short: it ends with the context of the caller's Stop instead.
+			readCtx, cancelRead := s.finalReadContext(parent)
+			body, _, err := s.log.GetBufferWithOptions(readCtx, options)
+			cancelRead()
 			if err != nil {
 				return err
 			}
@@ -324,13 +357,16 @@ func startLogRedirection(ctx context.Context, run *RunClient, options *StreamedL
 	if settings.Disabled {
 		return nil
 	}
-	streamed, err := run.NewStreamedLog(ctx, settings)
-	if err == nil && streamed != nil {
+	streamed, found, err := run.NewStreamedLog(ctx, settings)
+	if err == nil && found {
 		err = streamed.Start(ctx)
 	}
 	if err != nil {
 		reportLogRedirectionError(settings.Output, err)
 		return nil
+	}
+	if !found {
+		return nil // the run is gone: there is no log to redirect
 	}
 	return streamed
 }

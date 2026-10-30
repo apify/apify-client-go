@@ -20,7 +20,7 @@ with `client.Run(id)`, and an Actor's or task's runs with `client.Actor(id).Runs
 | `StartedBefore` | `*string` | Only runs started before this ISO-8601 timestamp. |
 | `Deployment` | `[]string` | Only Actor Standby runs served by these pools (`SINGLE_TENANT`, `MULTI_TENANT_FREE_USERS`, `MULTI_TENANT_PAYING_USERS`, `MULTI_TENANT_OWNER_PAID`); sent as a comma-separated list. The API requires `Status` to hold only non-terminal statuses (`READY`, `RUNNING`, `TIMING-OUT`, `ABORTING`) with it. |
 
-The time filters apply only to Actor- and task-scoped collections, and `Deployment` only to the account-wide and Actor-scoped ones.
+`StartedAfter`, `StartedBefore` and `Deployment` apply only to the account-wide (`client.Runs()`) and Actor-scoped (`client.Actor(id).Runs()`) collections, not to a task's.
 
 ## Single run
 
@@ -42,7 +42,7 @@ The time filters apply only to Actor- and task-scoped collections, and `Deployme
 | `RequestQueue() *RequestQueueClient` | The run's default request queue. |
 | `Log() *LogClient` | The run's log. |
 | `GetStreamedLog(ctx) (io.ReadCloser, error)` | Live stream of the run's raw log, as bytes. |
-| `NewStreamedLog(ctx, StreamedLogOptions) (*StreamedLog, error)` | Redirects the run's log message by message to a writer; see [Log redirection](#log-redirection). `(nil, nil)` for a run that does not exist (with the default prefix). |
+| `NewStreamedLog(ctx, StreamedLogOptions) (*StreamedLog, bool, error)` | Redirects the run's log message by message to a writer; see [Log redirection](#log-redirection). The bool is `false` for a run that does not exist (with the default prefix). |
 | `IterateDatasetItems(RunIterateDatasetItemsOptions) *RunDatasetItemsIterator[json.RawMessage]` | Iterates over the items of the run's default dataset while the run is still producing them; see [Live iteration of dataset items](#live-iteration-of-dataset-items). |
 
 On a client from `LastRun(...)`, `Dataset()`, `KeyValueStore()`, `RequestQueue()` and `Log()` carry
@@ -120,8 +120,8 @@ run's metadata. The commonly used fields:
 | `DefaultKeyValueStoreID` | `string` | ID of the run's default key-value store. |
 | `DefaultRequestQueueID` | `string` | ID of the run's default request queue. |
 | `ContainerURL` | `string` | URL of the run's container (for live access), normalized. |
-| `ConsoleURL` | `string` | URL of the run in the Apify Console, normalized. |
-| `Output` | `map[string]string` | Output links of the run (name to normalized URL), generated from the output schema of the Actor build. `nil` if the build defines none. |
+| `ConsoleURL` | `string` | URL of the run in the Apify Console, normalized. Empty on items from `List`/`Iterate`. |
+| `Output` | `map[string]string` | Output links of the run (name to normalized URL), generated from the output schema of the Actor build. `nil` if the build defines none, and on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 `ActorRun.IsTerminal()` reports whether a run has finished. Status message convenience:
@@ -134,9 +134,12 @@ run's metadata. The commonly used fields:
 change where it goes or turn it off). To redirect the log of any run, create a `StreamedLog`:
 
 ```go
-streamed, err := client.Run(runID).NewStreamedLog(ctx, apify.StreamedLogOptions{Output: os.Stdout})
+streamed, found, err := client.Run(runID).NewStreamedLog(ctx, apify.StreamedLogOptions{Output: os.Stdout})
 if err != nil {
 	log.Fatal(err)
+}
+if !found {
+	log.Fatal("run not found")
 }
 if err := streamed.Start(ctx); err != nil {
 	log.Fatal(err)
@@ -160,7 +163,9 @@ The log is split into messages at the timestamps the platform puts in front of e
 message that spans several lines is written as one. `Start` begins the redirection in the
 background, and it also ends when the `ctx` it got is done. `Stop` gives the messages in flight up
 to one second, then aborts the stream; if the stream delivered nothing yet, it reads the whole log
-in one request, so a short run that finished before the stream connected is not lost. A log that
+in one request, so a short run that finished before the stream connected is not lost. The `ctx`
+given to `Stop` bounds that wait and that read: when it is done first, `Stop` returns its error
+and the rest of the log is not redirected. A second `Stop` while one is running returns an error. A log that
 has no bytes yet (the run has not logged anything) is reopened, pausing from 500ms up to 5s,
 until its first bytes arrive. `Stop` returns the error that ended the redirection early, if any;
 `Call` reports it on the redirection's output and goes on.

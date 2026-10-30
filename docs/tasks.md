@@ -25,7 +25,7 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `ModifiedAt` | `*time.Time` | When the task was last modified. |
 | `IsPublic` | `*bool` | Whether the task is published on its public landing page, derived from `PublicConfig.PublishedAt`; use `Publish`/`Unpublish` to change it. |
 | `PublicConfig` | `*TaskPublicConfig` | Public-facing display configuration of the landing page, set once the task has been configured for publishing. |
-| `StandbyURL` | `*string` | URL of the task's Actor Standby endpoint, normalized. `nil` when the task has none. |
+| `StandbyURL` | `*string` | URL of the task's Actor Standby endpoint, normalized. `nil` when the task has none, and on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 ### `TaskPublicConfig` fields

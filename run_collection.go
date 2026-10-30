@@ -3,9 +3,8 @@ package apify
 import "context"
 
 // RunListOptions adds run-specific filters on top of [ListOptions] for
-// [RunCollectionClient.List]. The startedAfter/startedBefore filters are only honoured by
-// the Actor-scoped and task-scoped run collections, and the deployment filter only by the
-// account-wide and Actor-scoped ones.
+// [RunCollectionClient.List]. The StartedAfter, StartedBefore and Deployment filters are only
+// honoured by the account-wide and Actor-scoped run collections, not by a task's.
 type RunListOptions struct {
 	// Status filters by one or more run statuses (e.g. "SUCCEEDED", "RUNNING"). Sent as a
 	// comma-separated list, as the API accepts.

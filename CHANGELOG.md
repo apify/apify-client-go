@@ -28,14 +28,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `KeyValueStoreKey.RecordPublicURL`, `RequestQueue.ConsoleURL`, `Task.StandbyURL`,
   `ActorStoreListItem.URL`/`UserPictureURL`, `User.Profile` (`UserProfile`) and
   `WebhookDispatch.Webhook` (`WebhookDispatchWebhookSummary`). The URL fields the API specification
-  declares (these, `ActorRun.ContainerURL` and `Webhook.RequestURL`) are returned normalized: the
-  scheme and host are lowercased, a non-ASCII host becomes punycode, a default port is dropped, an
-  empty path becomes `/`, dot segments are resolved and unsafe characters are percent-encoded. A
-  value that is not an absolute URL fails decoding the response.
+  declares (these, `ActorRun.ContainerURL` and `Webhook.RequestURL`) are returned normalized, close
+  to the WHATWG URL serialization: the scheme and host are lowercased, a non-ASCII host becomes
+  punycode, an IPv4 or IPv6 host is written canonically, a default port is dropped, an empty path
+  becomes `/`, dot segments are resolved and unsafe characters are percent-encoded. A value that
+  is not an absolute URL fails decoding the response.
 
 ### Changed
 
 - Bumped `APISpecVersion` to `v2-2026-10-29T100357Z` and `ClientVersion` to `0.14.0`.
+- **Breaking:** `ActorVersionCollectionClient.List` takes no options and `Iterate` takes no
+  arguments, like the environment-variable collection: the versions endpoint documents no query
+  parameters and always returns every version in one response. Matches the reference client,
+  whose versions `list()` takes no arguments.
+- The keys of the new typed fields (`consoleUrl`, `output`, `itemsPublicUrl`, `keysPublicUrl`,
+  `recordsPublicUrl`, `recordPublicUrl`, `standbyUrl`, `url`, `userPictureUrl`, `profile` and a
+  dispatch's `webhook`) are no longer in the `Extra` map of their model.
+- `ListRequestsOptions.ExclusiveStartID` is marked deprecated: the API deprecated the
+  `exclusiveStartId` parameter in favor of `cursor`.
 - `ActorClient.Call`/`CallRaw` and `TaskClient.Call` start the run without a client-side timeout,
   so a slow start is no longer aborted and repeated, which started a second run.
 - A request that timed out is no longer retried when it is not idempotent: `Start`, `StartRaw`
@@ -45,7 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The storages and the log of a run reached through `LastRun`/`LastRunWithOptions`, and their
   public URLs, carry its `status` and `origin` filters, so they address the run the filters
   resolve to instead of the newest run of any status.
-- Added `golang.org/x/net` as a dependency, for the punycode conversion of URL hosts.
 - Documented that `GetRecord` returns the raw bytes without parsing them and that `SetRecordRaw`
   sends them as they are, whatever the content type.
 

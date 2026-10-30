@@ -42,6 +42,8 @@ type logBackend struct {
 	fullLogCalls  int
 	rawOnStream   bool
 	streamTailErr error // makes the stream fail with this error after its body
+	// blockFullLog makes the read of the whole log wait until its request is canceled.
+	blockFullLog bool
 }
 
 type failingReader struct {
@@ -80,6 +82,12 @@ func (b *logBackend) Do(req *http.Request) (*http.Response, error) {
 			return ok(reader)
 		}
 		b.fullLogCalls++
+		if b.blockFullLog {
+			b.mu.Unlock()
+			<-req.Context().Done()
+			b.mu.Lock()
+			return nil, req.Context().Err()
+		}
 		return ok(strings.NewReader(b.fullLog))
 	case strings.HasSuffix(path, "/actors/actor1"):
 		return ok(strings.NewReader(`{"data":{"id":"actor1","name":"hello-world"}}`))
@@ -98,9 +106,9 @@ func TestStreamedLogRedirectsMessagesWithThePrefixOfTheActorAndTheRun(t *testing
 	out := &syncBuffer{}
 	ctx := context.Background()
 
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out})
-	if err != nil || streamed == nil {
-		t.Fatalf("NewStreamedLog: %v, %v", streamed, err)
+	streamed, found, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out})
+	if err != nil || !found {
+		t.Fatalf("NewStreamedLog: %v, %v, %v", streamed, found, err)
 	}
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -126,9 +134,9 @@ func TestStreamedLogPrefixOverrideSkipsTheLookups(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{sampleLog}}
 	out := &syncBuffer{}
 	ctx := context.Background()
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
-	if err != nil || streamed == nil {
-		t.Fatalf("NewStreamedLog: %v, %v", streamed, err)
+	streamed, found, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	if err != nil || !found {
+		t.Fatalf("NewStreamedLog: %v, %v, %v", streamed, found, err)
 	}
 	if err := streamed.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -148,7 +156,7 @@ func TestStreamedLogDropsMessagesBeforeTheStartWhenNotFromStart(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{log}}
 	out := &syncBuffer{}
 	ctx := context.Background()
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr(""), FromStart: Ptr(false)})
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr(""), FromStart: Ptr(false)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +178,7 @@ func TestStreamedLogReopensAnEmptyStream(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{"", "", sampleLog}}
 	out := &syncBuffer{}
 	ctx := context.Background()
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +200,7 @@ func TestStreamedLogStoppedBeforeTheFirstBytesReadsTheWholeLog(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{""}, fullLog: sampleLog}
 	out := &syncBuffer{}
 	ctx := context.Background()
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr("")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +222,7 @@ func TestStreamedLogFlushesALastLineWithoutAnEndOfLine(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{"2026-10-30T10:00:00.000Z one\n2026-10-30T10:00:01.000Z unterminated"}}
 	out := &syncBuffer{}
 	ctx := context.Background()
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr(">")})
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: out, Prefix: Ptr(">")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +241,7 @@ func TestStreamedLogFlushesALastLineWithoutAnEndOfLine(t *testing.T) {
 func TestStreamedLogStartAndStopMustBePaired(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{sampleLog}}
 	ctx := context.Background()
-	streamed, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,11 +259,61 @@ func TestStreamedLogStartAndStopMustBePaired(t *testing.T) {
 	}
 }
 
-func TestNewStreamedLogOfAMissingRunIsNil(t *testing.T) {
+// Two goroutines may call Stop at once: one stops the redirection, the other gets an error
+// instead of closing a channel twice.
+func TestStreamedLogConcurrentStopDoesNotPanic(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{""}, fullLog: sampleLog}
+	ctx := context.Background()
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(ctx, StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	const callers = 8
+	results := make(chan error, callers)
+	for range callers {
+		go func() { results <- streamed.Stop(ctx) }()
+	}
+	succeeded := 0
+	for range callers {
+		if <-results == nil {
+			succeeded++
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("exactly one Stop must succeed, %d did", succeeded)
+	}
+}
+
+// The context of Stop bounds the final read of the whole log, not only the wait for the stream.
+func TestStreamedLogStopContextBoundsTheReadOfTheWholeLog(t *testing.T) {
+	backend := &logBackend{streamBodies: []string{""}, blockFullLog: true}
+	streamed, _, err := testClient(backend, 0).Run("run1").NewStreamedLog(context.Background(), StreamedLogOptions{Output: io.Discard, Prefix: Ptr("")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := streamed.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stopCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = streamed.Stop(stopCtx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected the deadline error of the Stop context, got %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("Stop must return once its context is done, took %v", elapsed)
+	}
+}
+
+func TestNewStreamedLogOfAMissingRunIsNotFound(t *testing.T) {
 	backend := &mockBackend{responses: constant(404, `{"error":{"type":"record-not-found","message":"m"}}`)}
-	streamed, err := testClient(backend, 0).Run("gone").NewStreamedLog(context.Background(), StreamedLogOptions{})
-	if err != nil || streamed != nil {
-		t.Fatalf("expected (nil, nil), got %v, %v", streamed, err)
+	streamed, found, err := testClient(backend, 0).Run("gone").NewStreamedLog(context.Background(), StreamedLogOptions{})
+	if err != nil || found || streamed != nil {
+		t.Fatalf("expected (nil, false, nil), got %v, %v, %v", streamed, found, err)
 	}
 }
 

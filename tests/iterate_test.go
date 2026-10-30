@@ -305,7 +305,7 @@ func TestIterateActorVersions(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.ActorVersion] {
-		return actor.Versions().Iterate(smallPageDesc(), ptr(int64(1)))
+		return actor.Versions().Iterate()
 	}, func(v *apify.ActorVersion) string { return v.VersionNumber }, []string{"0.0", "0.1"}, 100)
 }
 

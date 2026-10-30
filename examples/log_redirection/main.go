@@ -32,9 +32,12 @@ func main() {
 
 	// To redirect the log of a run that was started elsewhere, create the redirection for it and
 	// stop it once the run is done. Starting it for a finished run reads the whole log.
-	streamed, err := client.Run(run.ID).NewStreamedLog(ctx, apify.StreamedLogOptions{Output: os.Stdout})
+	streamed, found, err := client.Run(run.ID).NewStreamedLog(ctx, apify.StreamedLogOptions{Output: os.Stdout})
 	if err != nil {
 		log.Fatalf("create log redirection: %v", err)
+	}
+	if !found {
+		log.Fatal("run not found")
 	}
 	if err := streamed.Start(ctx); err != nil {
 		log.Fatalf("start log redirection: %v", err)

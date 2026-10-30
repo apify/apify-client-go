@@ -27,8 +27,31 @@ func TestNormalizeURL(t *testing.T) {
 		// Userinfo and IPv6 hosts survive.
 		{"https://user:pa ss@Example.com/", "https://user:pa%20ss@example.com/"},
 		{"http://[::1]:80/x", "http://[::1]/x"},
-		// A URL that is not special keeps its path as it is.
+		// A URL that is not special keeps its host and path as they are.
 		{"mailto:Someone@Example.com", "mailto:Someone@Example.com"},
+		{"foo://Example.COM/A", "foo://Example.COM/A"},
+		// A special URL has an authority, whatever the number of slashes after its scheme.
+		{"https:foo", "https://foo/"},
+		{"https:///foo/a", "https://foo/a"},
+		{"https:\\\\foo\\a", "https://foo/a"},
+		// The host is percent-decoded, and numeric hosts are written canonically.
+		{"https://ex%41mple.com/", "https://example.com/"},
+		{"http://0x7f.1/", "http://127.0.0.1/"},
+		{"http://127.1/", "http://127.0.0.1/"},
+		{"http://2130706433/", "http://127.0.0.1/"},
+		{"http://[2001:db8:0:0:0:0:0:1]/", "http://[2001:db8::1]/"},
+		{"http://[0:0:0:0:0:0:0:0]/", "http://[::]/"},
+		{"http://[2001:db8:0:1:0:0:0:1]:8080/", "http://[2001:db8:0:1::1]:8080/"},
+		// file URLs.
+		{"file:///tmp/a", "file:///tmp/a"},
+		{"file://localhost/tmp/a", "file:///tmp/a"},
+		{"file:tmp/a", "file:///tmp/a"},
+		// Tabs and line breaks are removed.
+		{"https://exa\tmple.com/pa\nth", "https://example.com/path"},
+		// More punycode.
+		{"https://m\u00fcnchen.example/", "https://xn--mnchen-3ya.example/"},
+		{"https://\u65e5\u672c\u8a9e.jp/", "https://xn--wgv71a119e.jp/"},
+		{"https://\u30c9\u30e1\u30a4\u30f3\u540d\u4f8b.example/", "https://xn--eckwd4c7cu47r2wf.example/"},
 		// Surrounding whitespace is dropped, a backslash is a slash.
 		{"  https://example.com\\a  ", "https://example.com/a"},
 	}
@@ -49,7 +72,7 @@ func TestNormalizeURL(t *testing.T) {
 }
 
 func TestNormalizeURLRejectsInvalidURLs(t *testing.T) {
-	for _, raw := range []string{"not a url", "/relative/path", "https://", "http://exa mple.com/", "http://example.com:99999/", "http://example.com:abc/", "http://[::1/", "https:foo"} {
+	for _, raw := range []string{"not a url", "/relative/path", "https://", "http://exa mple.com/", "http://example.com:99999/", "http://example.com:abc/", "http://[::1/", "http://1.2.3.4.5/", "http://256.1.1.1/", "http://foo.123/", "https://%ff.example/"} {
 		if got, err := normalizeURL(raw); err == nil {
 			t.Errorf("normalizeURL(%q) = %q, want an error", raw, got)
 		}

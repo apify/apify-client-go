@@ -21,9 +21,8 @@ request queues, tasks, schedules, webhooks, the store, users and logs).
   and request-queue iterators, live iteration of a running Actor's dataset items, dataset
   export, signed public URLs, request-queue locking, and more.
 - Forward-compatible models that keep unknown API fields in an `Extra` map.
-- Two third-party dependencies: `github.com/andybalholm/brotli` (Brotli request-body
-  compression) and `golang.org/x/net/idna` (punycode conversion of hosts when normalizing URL
-  fields); everything else is the Go standard library.
+- A single third-party dependency (`github.com/andybalholm/brotli`, used for Brotli
+  request-body compression); everything else is the Go standard library.
 
 ## Installation
 
@@ -126,19 +125,20 @@ func main() {
 ### Timeouts
 
 Every request the client sends is assigned one of three timeout tiers, matching the kind of
-operation its method performs — `short` for a metadata read/write, `medium` for a listing,
-batch or trigger call, `long` for a download, upload or streaming call — except the polling
-requests behind `WaitForFinish`/`Call`, and the start request of `Call`, which run with no
-client-imposed timeout of their own (the time budget `waitSecs` bounds the overall wait, and the
-`context.Context` the call itself). The duration of
-each tier is configured on the client (see the table above); a timeout still grows with each
-retry, capped at `WithTimeoutMax`.
+operation its method performs: `short` for a metadata read/write, `medium` for a listing, batch or
+trigger call, `long` for a download, upload or streaming call. The duration of each tier is
+configured on the client (see the table above); a timeout still grows with each retry, capped at
+`WithTimeoutMax`.
 
-A single call that needs a different bound already has full control via the
-`context.Context` every method takes: canceling it, or giving it an earlier deadline with
-`context.WithTimeout`, overrides whichever tier the method would otherwise use (the client's
-internal per-attempt deadline is always the *later* of the two to apply — i.e.
-`context.WithTimeout` composes with whichever is sooner).
+Two kinds of request have no client-side timeout of their own: the polling requests behind
+`WaitForFinish` and `Call`, and the start request of `Call`. `waitSecs` bounds how long `Call` and
+`WaitForFinish` wait for the run, and the `context.Context` bounds the whole call.
+
+Every method takes a `context.Context`, and its deadline or cancellation can only shorten a
+request: the request ends when its tier's timeout or the context's deadline passes, whichever is
+sooner. To give one call a shorter bound than its tier, pass a context created with
+`context.WithTimeout`; a context cannot extend a tier, so raise the tier (`WithTimeoutShort`,
+`WithTimeoutMedium`, `WithTimeoutLong`, `WithTimeoutMax`) for a call that needs longer.
 
 A request that timed out is retried like any other transient failure, with a longer timeout,
 except one that is not idempotent, where the timed-out attempt may already have taken effect:
@@ -173,12 +173,14 @@ variable the JavaScript reference client reads); if it is set to a non-empty val
 The fields the API specification declares as URLs (`consoleUrl`, `containerUrl`, `itemsPublicUrl`,
 `keysPublicUrl`, `recordsPublicUrl`, `recordPublicUrl`, `standbyUrl`, the webhook `requestUrl`, a
 run's `output` links, a Store Actor's `url` and `userPictureUrl`, and a user profile's
-`pictureUrl` and `websiteUrl`) are returned in a normalized form, so every Apify client returns
-the same string for the same field: the scheme and host are lowercased, a non-ASCII host becomes
-punycode, a default port is dropped, an empty path becomes `/`, dot segments are resolved, and
-unsafe characters are percent-encoded. Compare a field against a stored URL after normalizing
-the stored one the same way (for example by reading it back from the API). A value that is not
-an absolute URL makes decoding the response fail.
+`pictureUrl` and `websiteUrl`) are returned in a normalized form, close to the WHATWG URL serialization that the JavaScript
+client returns: the scheme and host are lowercased, a non-ASCII host becomes punycode, an IPv4 or
+IPv6 host is written canonically, a default port is dropped, an empty path becomes `/`, dot
+segments are resolved, and unsafe characters are percent-encoded. It covers the http(s), ws(s),
+ftp and file URLs the API returns; it does not apply the full Unicode (UTS #46) mapping to a
+non-ASCII host. Compare a field against a stored URL after normalizing the stored one the same
+way (for example by reading it back from the API). A value that is not an absolute URL makes
+decoding the response fail.
 
 ## Resource clients
 

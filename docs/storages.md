@@ -36,8 +36,8 @@ The `Dataset` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List
 | `CreatedAt` | `*time.Time` | When the dataset was created. |
 | `ModifiedAt` | `*time.Time` | When the dataset was last modified. |
 | `ItemCount` | `int64` | Number of items currently stored. |
-| `ConsoleURL` | `string` | URL of the dataset in the Apify Console (normalized). |
-| `ItemsPublicURL` | `string` | Public URL of the dataset's items (normalized); signed for a private dataset. |
+| `ConsoleURL` | `string` | URL of the dataset in the Apify Console (normalized). Empty on items from `List`/`Iterate`. |
+| `ItemsPublicURL` | `string` | Public URL of the dataset's items (normalized); signed for a private dataset. Empty on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 `DatasetListItemsOptions` controls filtering, projection, and pagination of the items
@@ -192,6 +192,9 @@ The `KeyValueStore` value returned by `Get`/`GetOrCreate`/`Update` and listed by
 | `UserID` | `string` | ID of the user who owns the store. |
 | `CreatedAt` | `*time.Time` | When the store was created. |
 | `ModifiedAt` | `*time.Time` | When the store was last modified. |
+| `ConsoleURL` | `string` | URL of the store in the Apify Console (normalized). Empty on items from `List`/`Iterate`, which do not carry it. |
+| `KeysPublicURL` | `string` | Public URL listing the store's keys (normalized); signed for a private store. Empty on items from `List`/`Iterate`. |
+| `RecordsPublicURL` | `string` | Public URL prefix of the store's records (normalized). Empty on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 Option structs (all fields optional):
@@ -304,7 +307,7 @@ The `RequestQueue` value returned by `Get`/`GetOrCreate`/`Update` and listed by 
 | `CreatedAt` | `*time.Time` | When the queue was created. |
 | `ModifiedAt` | `*time.Time` | When the queue was last modified. |
 | `TotalRequestCount` | `int64` | Total number of requests ever added. |
-| `ConsoleURL` | `string` | URL of the queue in the Apify Console (normalized). |
+| `ConsoleURL` | `string` | URL of the queue in the Apify Console (normalized). Empty on items from `List`/`Iterate`. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 `RequestQueueRequest` is the request payload/record. `URL` is required; `ID` is assigned by the

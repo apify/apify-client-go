@@ -270,13 +270,11 @@ func (c *KeyValueStoreClient) GetRecordStreamWithOptions(ctx context.Context, ke
 	}, true, nil
 }
 
-// SetRecordRaw stores a record with raw bytes and the given content type.
+// SetRecordRaw stores a record with raw bytes and the given content type. The bytes are sent as
+// they are, whatever the content type: the client neither parses nor converts them, so a value
+// stored as application/json must already be valid JSON.
 func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, value []byte, contentType string) error {
-	safeKey, err := safePathSegment(key)
-	if err != nil {
-		return err
-	}
-	return putRaw(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType)
+	return c.setRecord(ctx, key, value, contentType, "", false, false)
 }
 
 // SetRecordRawWithEncoding is like [KeyValueStoreClient.SetRecordRaw], for a value that is
@@ -287,11 +285,26 @@ func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, valu
 // contentEncoding == "") for a value that is not pre-compressed. Mirrors the reference client's
 // setRecord({ contentEncoding }).
 func (c *KeyValueStoreClient) SetRecordRawWithEncoding(ctx context.Context, key string, value []byte, contentType, contentEncoding string) error {
+	return c.setRecord(ctx, key, value, contentType, contentEncoding, true, false)
+}
+
+// setRecord is the shared implementation of the SetRecord methods. preEncoded sends value exactly
+// as given under contentEncoding (which may be empty), skipping the client's own request
+// compression; doNotRetryTimeouts makes an upload attempt that timed out fail at once.
+func (c *KeyValueStoreClient) setRecord(ctx context.Context, key string, value []byte, contentType, contentEncoding string, preEncoded, doNotRetryTimeouts bool) error {
 	safeKey, err := safePathSegment(key)
 	if err != nil {
 		return err
 	}
-	return putRawWithEncoding(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType, contentEncoding)
+	resource := c.ctx
+	if doNotRetryTimeouts {
+		resource = resource.withoutTimeoutRetry()
+	}
+	subPath := "records/" + safeKey
+	if preEncoded {
+		return putRawWithEncoding(ctx, resource, subPath, NewQueryParams(), value, contentType, contentEncoding)
+	}
+	return putRaw(ctx, resource, subPath, NewQueryParams(), value, contentType)
 }
 
 // SetRecordOptions configures [KeyValueStoreClient.SetRecordRawWithOptions] and
@@ -311,18 +324,7 @@ type SetRecordOptions struct {
 // SetRecordRawWithOptions is like [KeyValueStoreClient.SetRecordRaw], with the per-call
 // [SetRecordOptions].
 func (c *KeyValueStoreClient) SetRecordRawWithOptions(ctx context.Context, key string, value []byte, contentType string, options SetRecordOptions) error {
-	safeKey, err := safePathSegment(key)
-	if err != nil {
-		return err
-	}
-	resource := c.ctx
-	if options.DoNotRetryTimeouts {
-		resource = resource.withoutTimeoutRetry()
-	}
-	if options.ContentEncoding != "" {
-		return putRawWithEncoding(ctx, resource, "records/"+safeKey, NewQueryParams(), value, contentType, options.ContentEncoding)
-	}
-	return putRaw(ctx, resource, "records/"+safeKey, NewQueryParams(), value, contentType)
+	return c.setRecord(ctx, key, value, contentType, options.ContentEncoding, options.ContentEncoding != "", options.DoNotRetryTimeouts)
 }
 
 // SetRecordJSON stores a record holding the JSON serialization of value.

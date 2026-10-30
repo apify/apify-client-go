@@ -14,6 +14,8 @@ type ListRequestsOptions struct {
 	// Limit is the maximum number of requests to return.
 	Limit *int64
 	// ExclusiveStartID lists requests after this ID.
+	//
+	// Deprecated: the API deprecated the exclusiveStartId parameter. Use Cursor.
 	ExclusiveStartID *string
 	// Cursor is an opaque pagination cursor (alternative to ExclusiveStartID).
 	Cursor *string
