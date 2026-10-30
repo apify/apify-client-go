@@ -450,8 +450,8 @@ func TestStreamedLogStopReportsALogCutOffByItsContext(t *testing.T) {
 func TestStreamedLogKeepsAMessageWhoseLinesArriveInSeparateReads(t *testing.T) {
 	backend := &logBackend{streamBodies: []string{""}, holdStream: true, streamChunks: []string{
 		"2026-10-30T10:00:00.000Z Error: boom\n    at first (a.js:1)\n",
-		"    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n2026-10-30T10:0",
-		"0:02.000Z split\n",
+		"    at second (b.js:2)\n2026-10-30T10:00:01.000Z next\n2026-10-30T10:00:02.000",
+		"Z split\n",
 	}}
 	out := &syncBuffer{}
 	ctx := context.Background()
