@@ -13,8 +13,8 @@ import (
 // consistent, so a resource can be missing from the first listing right after creation; the
 // helper re-iterates a fresh iterator until it converges.
 const (
-	iterFindAttempts = 8
-	iterFindBackoff  = time.Second
+	iterFindAttempts = 32
+	iterFindBackoff  = 3 * time.Second
 )
 
 // iterateFindIDs repeatedly drains a fresh iterator (from makeIter) and checks that every id
@@ -305,7 +305,7 @@ func TestIterateActorVersions(t *testing.T) {
 	}
 
 	iterateFindIDs(t, ctx, func() *apify.ListIterator[apify.ActorVersion] {
-		return actor.Versions().Iterate(smallPageDesc(), ptr(int64(1)))
+		return actor.Versions().Iterate()
 	}, func(v *apify.ActorVersion) string { return v.VersionNumber }, []string{"0.0", "0.1"}, 100)
 }
 

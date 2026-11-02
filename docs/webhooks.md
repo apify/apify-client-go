@@ -51,7 +51,7 @@ The same values apply to the ad-hoc `ActorStartOptions.Webhooks` element (see
 |---|---|---|
 | `ID` | `string` | Unique webhook ID. |
 | `UserID` | `string` | ID of the user who owns the webhook. |
-| `RequestURL` | `string` | URL the webhook posts to. |
+| `RequestURL` | `string` | URL the webhook posts to, normalized. Empty when the API returns `null`. |
 | `EventTypes` | `[]string` | Events that trigger the webhook. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
@@ -61,6 +61,7 @@ The same values apply to the ad-hoc `ActorStartOptions.Webhooks` element (see
 |---|---|---|
 | `ID` | `string` | Unique dispatch ID. |
 | `WebhookID` | `string` | ID of the webhook that produced this dispatch. |
+| `Webhook` | `*WebhookDispatchWebhookSummary` | Summary of the webhook as it was when the dispatch was created: `ID`, `ActionType`, `IsAdHoc`, `RequestURL` (normalized), and an `Extra` map. `nil` if the API does not return it. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 ## Single webhook

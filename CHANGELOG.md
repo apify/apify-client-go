@@ -5,6 +5,39 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-10-30
+
+### Added
+
+- `RunListOptions.Deployment` and `StoreListOptions.IncludeInputSchema` list parameters.
+- `UserClient` limits and monthly usage methods work on `client.User(id)` too, not only `Me()`.
+- `StreamedLog` (`RunClient.NewStreamedLog`) redirects a run's log to a writer; `ActorClient.Call`
+  and `CallRaw` use it by default, `ActorStartOptions.Log` configures or disables it.
+- `RunClient.IterateDatasetItems` and `IterateRunDatasetItems[T]` iterate a run's dataset while it
+  is still being filled.
+- `KeyValueStoreClient.SetRecordRawWithOptions` and `SetRecordJSONWithOptions`.
+- `RequestQueueClient.PaginateRequestsWithOptions` iterates with `Limit`, `Cursor` and `Filter`.
+- Typed URL fields on the models (`ConsoleURL`, `ItemsPublicURL`, `RecordPublicURL`,
+  `User.Profile`, `WebhookDispatch.Webhook` and others), returned normalized.
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-10-29T100357Z` and `ClientVersion` to `0.14.0`.
+- **Breaking:** `ActorVersionCollectionClient.List` and `Iterate` take no options.
+- The typed URL fields are no longer in the `Extra` map of their model.
+- `ListRequestsOptions.ExclusiveStartID` is deprecated in favor of `Cursor`.
+- `RunClient.GetStreamedLog` is deprecated: it returns the raw stream, use `NewStreamedLog`.
+- `Call` starts the run without a client-side timeout.
+- Requests that are not idempotent (`Start`, `Build`, `PushItems`) are not retried after a timeout.
+- Some `KeyValueStoreClient` and `DatasetClient` methods use the "long" timeout tier.
+- Storages, log and public URLs of a `LastRun` carry its `status` and `origin` filters.
+- Documented that `GetRecord` and `SetRecordRaw` handle raw bytes.
+
+### Fixed
+
+- `DatasetClient.PushItems` rejects values that are not a JSON object or an array of objects.
+- Methods that lacked an ID check now fail on an empty or dot-segment ID.
+
 ## [0.13.1] - 2026-10-26
 
 ### Changed

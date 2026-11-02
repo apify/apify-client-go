@@ -1,6 +1,9 @@
 package apify_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGetOwnAccount(t *testing.T) {
 	client := requireClient(t)
@@ -64,5 +67,54 @@ func TestGetLimits(t *testing.T) {
 	}
 	if len(limits) == 0 {
 		t.Fatal("expected a non-empty limits object")
+	}
+}
+
+// TestGetLimitsAndUsageByUsername reads the limits and the monthly usage through the by-username
+// client: the API serves them for your own account by ID or username as well as through "me".
+func TestGetLimitsAndUsageByUsername(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	me, ok, err := client.Me().Get(ctx)
+	if err != nil || !ok || me.Username == "" {
+		t.Fatalf("Me().Get: ok=%v err=%v username=%q", ok, err, me.Username)
+	}
+	user := client.User(me.Username)
+	limits, err := user.Limits(ctx)
+	if err != nil {
+		t.Fatalf("User(%q).Limits: %v", me.Username, err)
+	}
+	if len(limits) == 0 {
+		t.Fatal("expected a non-empty limits object")
+	}
+	usage, err := user.MonthlyUsage(ctx)
+	if err != nil {
+		t.Fatalf("User(%q).MonthlyUsage: %v", me.Username, err)
+	}
+	if len(usage) == 0 {
+		t.Fatal("expected a non-empty monthly usage object")
+	}
+}
+
+// TestUserProfileURLsAreNormalized checks that the profile of the own account is parsed and its
+// URL fields, when set, are absolute URLs.
+func TestUserProfileURLsAreNormalized(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	me, ok, err := client.Me().Get(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Me().Get: ok=%v err=%v", ok, err)
+	}
+	if me.Profile == nil {
+		t.Fatal("expected the profile of the own account")
+	}
+	for name, value := range map[string]*string{"pictureUrl": me.Profile.PictureURL, "websiteUrl": me.Profile.WebsiteURL} {
+		if value != nil && !strings.Contains(*value, "://") {
+			t.Errorf("%s is not an absolute URL: %q", name, *value)
+		}
 	}
 }

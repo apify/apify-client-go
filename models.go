@@ -2,6 +2,7 @@ package apify
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"time"
 )
@@ -96,8 +97,13 @@ type ActorRun struct {
 	DefaultKeyValueStoreID string `json:"defaultKeyValueStoreId"`
 	// DefaultRequestQueueID is the ID of the run's default request queue.
 	DefaultRequestQueueID string `json:"defaultRequestQueueId"`
-	// ContainerURL is the URL of the run's container (for live access).
+	// ContainerURL is the URL of the run's container (for live access), normalized.
 	ContainerURL string `json:"containerUrl"`
+	// ConsoleURL is the URL of the run in the Apify Console, normalized.
+	ConsoleURL string `json:"consoleUrl"`
+	// Output holds the output links of the run (name to URL), generated from the output schema
+	// of the Actor build and normalized. Nil if the build defines no output schema.
+	Output map[string]string `json:"output,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -105,7 +111,14 @@ type ActorRun struct {
 func (r *ActorRun) UnmarshalJSON(data []byte) error {
 	type alias ActorRun
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(r), known, &r.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(r), known, &r.Extra); err != nil {
+		return err
+	}
+	return errors.Join(
+		normalizeURLField("containerUrl", &r.ContainerURL),
+		normalizeURLField("consoleUrl", &r.ConsoleURL),
+		normalizeURLMap("output", r.Output),
+	)
 }
 
 // IsTerminal reports whether the run has reached a terminal (finished) status.
@@ -174,6 +187,9 @@ type Task struct {
 	// PublicConfig is the public-facing display configuration of the task's landing page, set
 	// when the task has been configured for publishing (nil otherwise).
 	PublicConfig *TaskPublicConfig `json:"publicConfig,omitempty"`
+	// StandbyURL is the URL of the task's Actor Standby endpoint, normalized. Nil when the task
+	// has none.
+	StandbyURL *string `json:"standbyUrl,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -181,7 +197,10 @@ type Task struct {
 func (t *Task) UnmarshalJSON(data []byte) error {
 	type alias Task
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(t), known, &t.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(t), known, &t.Extra); err != nil {
+		return err
+	}
+	return normalizeOptionalURLField("standbyUrl", &t.StandbyURL)
 }
 
 // TaskPublicConfig is the public-facing display configuration of a task's public landing page.
@@ -220,6 +239,11 @@ type Dataset struct {
 	ModifiedAt *time.Time `json:"modifiedAt"`
 	// ItemCount is the number of items currently stored.
 	ItemCount int64 `json:"itemCount"`
+	// ConsoleURL is the URL of the dataset in the Apify Console, normalized.
+	ConsoleURL string `json:"consoleUrl"`
+	// ItemsPublicURL is the public URL of the dataset's items, normalized. It carries a
+	// signature for a private dataset.
+	ItemsPublicURL string `json:"itemsPublicUrl"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -227,7 +251,13 @@ type Dataset struct {
 func (d *Dataset) UnmarshalJSON(data []byte) error {
 	type alias Dataset
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(d), known, &d.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(d), known, &d.Extra); err != nil {
+		return err
+	}
+	return errors.Join(
+		normalizeURLField("consoleUrl", &d.ConsoleURL),
+		normalizeURLField("itemsPublicUrl", &d.ItemsPublicURL),
+	)
 }
 
 // KeyValueStore stores arbitrary data records.
@@ -242,6 +272,13 @@ type KeyValueStore struct {
 	CreatedAt *time.Time `json:"createdAt"`
 	// ModifiedAt is when the store was last modified.
 	ModifiedAt *time.Time `json:"modifiedAt"`
+	// ConsoleURL is the URL of the store in the Apify Console, normalized.
+	ConsoleURL string `json:"consoleUrl"`
+	// KeysPublicURL is the public URL listing the store's keys, normalized. It carries a
+	// signature for a private store.
+	KeysPublicURL string `json:"keysPublicUrl"`
+	// RecordsPublicURL is the public URL prefix of the store's records, normalized.
+	RecordsPublicURL string `json:"recordsPublicUrl"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -249,7 +286,14 @@ type KeyValueStore struct {
 func (k *KeyValueStore) UnmarshalJSON(data []byte) error {
 	type alias KeyValueStore
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(k), known, &k.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(k), known, &k.Extra); err != nil {
+		return err
+	}
+	return errors.Join(
+		normalizeURLField("consoleUrl", &k.ConsoleURL),
+		normalizeURLField("keysPublicUrl", &k.KeysPublicURL),
+		normalizeURLField("recordsPublicUrl", &k.RecordsPublicURL),
+	)
 }
 
 // KeyValueStoreKey is a single key listed from a key-value store.
@@ -258,6 +302,9 @@ type KeyValueStoreKey struct {
 	Key string `json:"key"`
 	// Size is the record size in bytes.
 	Size int64 `json:"size"`
+	// RecordPublicURL is the public URL of the record, normalized. It carries a signature for a
+	// private store.
+	RecordPublicURL string `json:"recordPublicUrl"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -265,7 +312,10 @@ type KeyValueStoreKey struct {
 func (k *KeyValueStoreKey) UnmarshalJSON(data []byte) error {
 	type alias KeyValueStoreKey
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(k), known, &k.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(k), known, &k.Extra); err != nil {
+		return err
+	}
+	return normalizeURLField("recordPublicUrl", &k.RecordPublicURL)
 }
 
 // KeyValueStoreKeysPage is a page of keys from a key-value store.
@@ -319,6 +369,8 @@ type RequestQueue struct {
 	ModifiedAt *time.Time `json:"modifiedAt"`
 	// TotalRequestCount is the total number of requests ever added.
 	TotalRequestCount int64 `json:"totalRequestCount"`
+	// ConsoleURL is the URL of the queue in the Apify Console, normalized.
+	ConsoleURL string `json:"consoleUrl"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -326,7 +378,10 @@ type RequestQueue struct {
 func (q *RequestQueue) UnmarshalJSON(data []byte) error {
 	type alias RequestQueue
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(q), known, &q.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(q), known, &q.Extra); err != nil {
+		return err
+	}
+	return normalizeURLField("consoleUrl", &q.ConsoleURL)
 }
 
 // RequestQueueRequest is a single request stored in a request queue.
@@ -418,7 +473,8 @@ type Webhook struct {
 	ID string `json:"id"`
 	// UserID is the ID of the user who owns the webhook.
 	UserID string `json:"userId"`
-	// RequestURL is the URL the webhook posts to.
+	// RequestURL is the URL the webhook posts to, normalized. Empty for a webhook that is not
+	// an HTTP one (the API returns null).
 	RequestURL string `json:"requestUrl"`
 	// EventTypes are the events that trigger the webhook.
 	EventTypes []string `json:"eventTypes"`
@@ -429,7 +485,10 @@ type Webhook struct {
 func (w *Webhook) UnmarshalJSON(data []byte) error {
 	type alias Webhook
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(w), known, &w.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(w), known, &w.Extra); err != nil {
+		return err
+	}
+	return normalizeURLField("requestUrl", &w.RequestURL)
 }
 
 // WebhookDispatch is a single invocation of a webhook.
@@ -438,6 +497,9 @@ type WebhookDispatch struct {
 	ID string `json:"id"`
 	// WebhookID is the ID of the webhook that produced this dispatch.
 	WebhookID string `json:"webhookId"`
+	// Webhook is a summary of the webhook as it was when the dispatch was created. Nil if the
+	// API does not return it.
+	Webhook *WebhookDispatchWebhookSummary `json:"webhook,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -448,12 +510,37 @@ func (d *WebhookDispatch) UnmarshalJSON(data []byte) error {
 	return unmarshalWithExtra(data, (*alias)(d), known, &d.Extra)
 }
 
+// WebhookDispatchWebhookSummary is the summary of a webhook embedded in a [WebhookDispatch].
+type WebhookDispatchWebhookSummary struct {
+	// ID is the ID of the webhook (the API calls the field `_id`).
+	ID string `json:"_id"`
+	// ActionType is the kind of action the webhook runs, e.g. HTTP request or a Slack message.
+	ActionType string `json:"actionType"`
+	// IsAdHoc reports whether the webhook was attached to a single run instead of being saved.
+	IsAdHoc bool `json:"isAdHoc"`
+	// RequestURL is the URL the webhook posts to, normalized. Empty when there is none.
+	RequestURL string `json:"requestUrl"`
+	// Extra holds any other fields returned by the API.
+	Extra Extra `json:"-"`
+}
+
+func (w *WebhookDispatchWebhookSummary) UnmarshalJSON(data []byte) error {
+	type alias WebhookDispatchWebhookSummary
+	known := knownJSONKeys(alias{})
+	if err := unmarshalWithExtra(data, (*alias)(w), known, &w.Extra); err != nil {
+		return err
+	}
+	return normalizeURLField("requestUrl", &w.RequestURL)
+}
+
 // User is an Apify user account.
 type User struct {
 	// ID is the unique user ID.
 	ID string `json:"id"`
 	// Username is the user's username.
 	Username string `json:"username"`
+	// Profile is the user's public profile. Nil if the API does not return it.
+	Profile *UserProfile `json:"profile,omitempty"`
 	// Extra holds any other fields returned by the API (private details for "me").
 	Extra Extra `json:"-"`
 }
@@ -462,6 +549,30 @@ func (u *User) UnmarshalJSON(data []byte) error {
 	type alias User
 	known := knownJSONKeys(alias{})
 	return unmarshalWithExtra(data, (*alias)(u), known, &u.Extra)
+}
+
+// UserProfile is the public profile of a [User].
+type UserProfile struct {
+	// Name is the user's display name.
+	Name string `json:"name"`
+	// PictureURL is the URL of the user's profile picture, normalized. Nil when there is none.
+	PictureURL *string `json:"pictureUrl,omitempty"`
+	// WebsiteURL is the URL of the user's website, normalized. Nil when there is none.
+	WebsiteURL *string `json:"websiteUrl,omitempty"`
+	// Extra holds any other fields returned by the API.
+	Extra Extra `json:"-"`
+}
+
+func (p *UserProfile) UnmarshalJSON(data []byte) error {
+	type alias UserProfile
+	known := knownJSONKeys(alias{})
+	if err := unmarshalWithExtra(data, (*alias)(p), known, &p.Extra); err != nil {
+		return err
+	}
+	return errors.Join(
+		normalizeOptionalURLField("pictureUrl", &p.PictureURL),
+		normalizeOptionalURLField("websiteUrl", &p.WebsiteURL),
+	)
 }
 
 // ActorStoreListItem is an Actor as listed in the Apify Store.
@@ -474,6 +585,11 @@ type ActorStoreListItem struct {
 	Username string `json:"username"`
 	// Title is the human-readable title.
 	Title string `json:"title"`
+	// URL is the URL of the Actor's page in the Apify Store, normalized. Nil when there is none.
+	URL *string `json:"url,omitempty"`
+	// UserPictureURL is the URL of the owner's profile picture, normalized. Nil when there is
+	// none.
+	UserPictureURL *string `json:"userPictureUrl,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -481,7 +597,13 @@ type ActorStoreListItem struct {
 func (a *ActorStoreListItem) UnmarshalJSON(data []byte) error {
 	type alias ActorStoreListItem
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(a), known, &a.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(a), known, &a.Extra); err != nil {
+		return err
+	}
+	return errors.Join(
+		normalizeOptionalURLField("url", &a.URL),
+		normalizeOptionalURLField("userPictureUrl", &a.UserPictureURL),
+	)
 }
 
 // ActorVersion is a single version of an Actor.

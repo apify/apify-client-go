@@ -1,6 +1,7 @@
 package apify_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -128,6 +129,74 @@ func TestRequestQueuePaginateMultiplePages(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("request %s returned %d times (expected once)", url, count)
 		}
+	}
+}
+
+// TestRequestQueuePaginateRequestsWithOptions validates the total cap, the filter and the cursor
+// of the iterator over the requests.
+func TestRequestQueuePaginateRequestsWithOptions(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	rq, err := client.RequestQueues().GetOrCreate(ctx, uniqueName("rq-page-opts"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.RequestQueue(rq.ID).Delete(ctx) }()
+	queue := client.RequestQueue(rq.ID)
+	for i := 0; i < 5; i++ {
+		url := fmt.Sprintf("https://example.com/%d", i)
+		if _, err := queue.AddRequest(ctx, apify.RequestQueueRequest{URL: url, UniqueKey: url}, false); err != nil {
+			t.Fatalf("add request %d: %v", i, err)
+		}
+	}
+
+	drain := func(it *apify.RequestQueueRequestsIterator) []string {
+		t.Helper()
+		var urls []string
+		for {
+			req, err := it.Next(ctx)
+			if err != nil {
+				t.Fatalf("iterate: %v", err)
+			}
+			if req == nil {
+				return urls
+			}
+			urls = append(urls, req.URL)
+		}
+	}
+
+	// Limit caps the total across pages (3 of 5 with 2 per page), and Filter applies to each page.
+	pending := drain(queue.PaginateRequestsWithOptions(apify.ListRequestsOptions{
+		Limit: ptr(int64(3)), Filter: []string{apify.RequestFilterPending},
+	}, ptr(int64(2))))
+	if len(pending) != 3 {
+		t.Fatalf("expected 3 pending requests, got %v", pending)
+	}
+	if locked := drain(queue.PaginateRequestsWithOptions(apify.ListRequestsOptions{
+		Filter: []string{apify.RequestFilterLocked},
+	}, nil)); len(locked) != 0 {
+		t.Fatalf("expected no locked requests, got %v", locked)
+	}
+
+	// Cursor starts the iteration after the first page.
+	raw, err := queue.ListRequests(ctx, apify.ListRequestsOptions{Limit: ptr(int64(2))})
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+	var first struct {
+		NextCursor string `json:"nextCursor"`
+	}
+	if err := json.Unmarshal(raw, &first); err != nil || first.NextCursor == "" {
+		t.Fatalf("expected a next cursor in %s (%v)", raw, err)
+	}
+	if rest := drain(queue.PaginateRequestsWithOptions(apify.ListRequestsOptions{Cursor: &first.NextCursor}, nil)); len(rest) != 3 {
+		t.Fatalf("expected 3 requests after the cursor, got %v", rest)
+	}
+
+	if _, err := queue.PaginateRequestsWithOptions(apify.ListRequestsOptions{Filter: []string{"bogus"}}, nil).Next(ctx); err == nil {
+		t.Fatal("expected an invalid filter to be rejected")
 	}
 }
 

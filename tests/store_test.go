@@ -44,3 +44,22 @@ func TestIterateStore(t *testing.T) {
 		t.Fatalf("expected to iterate at least 12 store actors, got %d", count)
 	}
 }
+
+// TestListStoreIncludeInputSchema asks the Store to add the compact input schema to every Actor:
+// with it set, the API defaults the limit to 10 and accepts nothing above it.
+func TestListStoreIncludeInputSchema(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	page, err := client.Store().List(ctx, apify.StoreListOptions{Limit: ptr(int64(3)), IncludeInputSchema: ptr(true)})
+	if err != nil {
+		t.Fatalf("Store().List with includeInputSchema: %v", err)
+	}
+	if len(page.Items) == 0 {
+		t.Fatal("expected at least one Store Actor")
+	}
+	if len(page.Items) > 10 {
+		t.Fatalf("with includeInputSchema the API returns at most 10 Actors, got %d", len(page.Items))
+	}
+}

@@ -12,22 +12,18 @@ func newActorVersionCollectionClient(hc *httpClient, actorURL string) *ActorVers
 	return &ActorVersionCollectionClient{ctx: newCollectionContext(hc, actorURL, "versions")}
 }
 
-// List lists the Actor's versions.
-func (c *ActorVersionCollectionClient) List(ctx context.Context, options ListOptions) (PaginationList[ActorVersion], error) {
-	params := NewQueryParams()
-	options.apply(params)
-	return listResource[ActorVersion](ctx, c.ctx, "", params)
+// List lists the Actor's versions. The endpoint takes no pagination parameters (per the OpenAPI
+// specification, it always returns every version in one response), so neither does this method.
+func (c *ActorVersionCollectionClient) List(ctx context.Context) (PaginationList[ActorVersion], error) {
+	return listResource[ActorVersion](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Iterate returns a lazy iterator over the Actor's versions. The versions endpoint ignores
-// offset/limit/desc (per the OpenAPI specification, it always returns every version in one
-// response), so options and chunkSize are accepted only for interface symmetry with the other
-// collections' Iterate and have no effect; the iterator drains a single page. Mirrors the
-// reference client's versions().list(), which likewise exposes no pagination options.
-func (c *ActorVersionCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[ActorVersion] {
-	return newUnpaginatedIterator(func(ctx context.Context) (PaginationList[ActorVersion], error) {
-		return c.List(ctx, options)
-	})
+// Iterate returns a lazy iterator over the Actor's versions. The versions endpoint is not
+// offset-paginated (it always returns every version in one response), so there is no
+// Limit/chunkSize control; the iterator drains that one page. Mirrors the reference client's
+// versions().list(), which likewise exposes no pagination options.
+func (c *ActorVersionCollectionClient) Iterate() *ListIterator[ActorVersion] {
+	return newUnpaginatedIterator(c.List)
 }
 
 // Create creates a new Actor version. version is any JSON-serializable version definition.

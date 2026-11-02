@@ -3,28 +3,21 @@ package apify
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 )
 
 // UserClient is a client for accessing user data (/v2/users/{userId} or /v2/users/me).
 //
-// For the current user ("me"), it also exposes account usage and limits. Those endpoints
-// only exist for "me" and return an error if called on another user's client.
+// It also exposes account usage and limits. For another user than the current one, the API only
+// serves them for your own account (by ID or username) or for the organization your API token
+// belongs to, and rejects tokens with limited permissions.
 type UserClient struct {
-	ctx  *resourceContext
-	isMe bool
+	ctx *resourceContext
 }
 
 func newUserClient(hc *httpClient, baseURL, id string) *UserClient {
-	return &UserClient{
-		ctx:  newSingleContext(hc, baseURL, "users", id),
-		isMe: id == meUserPlaceholder,
-	}
+	return &UserClient{ctx: newSingleContext(hc, baseURL, "users", id)}
 }
-
-// errNotMe is returned by the me-only methods when called on another user's client.
-var errNotMe = errors.New("this operation is only available for the current user (use Me())")
 
 // Get fetches the user. For "me" it returns private account details; for other users it
 // returns the public profile. The bool reports whether the user exists.
@@ -32,8 +25,7 @@ func (c *UserClient) Get(ctx context.Context) (User, bool, error) {
 	return getResource[User](ctx, c.ctx, "", NewQueryParams())
 }
 
-// MonthlyUsage fetches the current account's monthly usage for the current month. Only
-// available for "me".
+// MonthlyUsage fetches the account's monthly usage for the current month.
 //
 // It returns the raw JSON usage report from the API (a JSON object with the account's usage
 // breakdown and totals for the period).
@@ -49,11 +41,8 @@ type MonthlyUsageOptions struct {
 }
 
 // MonthlyUsageWithOptions is like [UserClient.MonthlyUsage] but can select another period
-// with [MonthlyUsageOptions.Date]. Only available for "me".
+// with [MonthlyUsageOptions.Date].
 func (c *UserClient) MonthlyUsageWithOptions(ctx context.Context, options MonthlyUsageOptions) (json.RawMessage, error) {
-	if !c.isMe {
-		return nil, errNotMe
-	}
 	params := NewQueryParams()
 	if options.Date != "" {
 		params.AddString("date", &options.Date)
@@ -61,18 +50,15 @@ func (c *UserClient) MonthlyUsageWithOptions(ctx context.Context, options Monthl
 	return getResourceRequired[json.RawMessage](ctx, c.ctx, "usage/monthly", params, c.ctx.shortTimeout())
 }
 
-// Limits fetches the current account's resource limits. Only available for "me".
+// Limits fetches the account's resource limits.
 func (c *UserClient) Limits(ctx context.Context) (json.RawMessage, error) {
-	if !c.isMe {
-		return nil, errNotMe
-	}
 	return getResourceRequired[json.RawMessage](ctx, c.ctx, "limits", NewQueryParams(), c.ctx.shortTimeout())
 }
 
-// UpdateLimits updates the current account's resource limits. Only available for "me".
+// UpdateLimits updates the account's resource limits.
 func (c *UserClient) UpdateLimits(ctx context.Context, newLimits any) error {
-	if !c.isMe {
-		return errNotMe
+	if c.ctx.idErr != nil {
+		return c.ctx.idErr
 	}
 	data, err := json.Marshal(newLimits)
 	if err != nil {

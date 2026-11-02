@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // TaskClient is a client for a specific Actor task.
@@ -99,23 +100,34 @@ func (o TaskStartOptions) apply(q *QueryParams) {
 
 // Start starts the task and returns immediately with the created run. input optionally
 // overrides the task's stored input (nil to use the stored input).
+//
+// A start request that times out is not retried: it may already have created the run, and a
+// retry would then start a second, billed one.
 func (c *TaskClient) Start(ctx context.Context, input any, options TaskStartOptions) (ActorRun, error) {
+	return c.startWithTimeout(ctx, input, options, extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish))
+}
+
+// startWithTimeout is the shared implementation of Start and Call: it starts the task with the
+// given timeout for each start request.
+func (c *TaskClient) startWithTimeout(ctx context.Context, input any, options TaskStartOptions, timeout time.Duration) (ActorRun, error) {
 	params := NewQueryParams()
 	options.apply(params)
 	body, err := marshalInput(input)
 	if err != nil {
 		return ActorRun{}, err
 	}
-	timeout := extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
 	return startWaitingForResources(ctx, options.WaitForResources, func() (ActorRun, error) {
-		return postWithBody[ActorRun](ctx, c.ctx, "runs", params, body, contentTypeJSON, timeout)
+		return postWithBody[ActorRun](ctx, c.ctx.withoutTimeoutRetry(), "runs", params, body, contentTypeJSON, timeout)
 	})
 }
 
 // Call starts the task and waits (client-side polling) for it to finish. waitSecs bounds the
 // wait; nil waits indefinitely.
+//
+// Neither the start request nor the polls have a client-side timeout of their own (matching the
+// reference client's call(), whose default timeout is noTimeout): ctx bounds the whole call.
 func (c *TaskClient) Call(ctx context.Context, input any, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.Start(ctx, input, options)
+	run, err := c.startWithTimeout(ctx, input, options, noRequestTimeout)
 	if err != nil {
 		return ActorRun{}, err
 	}
@@ -136,6 +148,9 @@ func (c *TaskClient) GetInput(ctx context.Context) (json.RawMessage, error) {
 
 // UpdateInput replaces the task's stored input and returns the updated input.
 func (c *TaskClient) UpdateInput(ctx context.Context, input any) (json.RawMessage, error) {
+	if c.ctx.idErr != nil {
+		return nil, c.ctx.idErr
+	}
 	data, err := json.Marshal(input)
 	if err != nil {
 		return nil, err

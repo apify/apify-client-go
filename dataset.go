@@ -1,8 +1,11 @@
 package apify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -163,7 +166,10 @@ func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options Data
 	var result PaginationList[T]
 	params := NewQueryParams()
 	options.apply(params)
-	url := params.applyToURL(c.ctx.subURL("items"))
+	if c.ctx.idErr != nil {
+		return result, c.ctx.idErr
+	}
+	url := c.ctx.mergedParams(params).applyToURL(c.ctx.subURL("items"))
 	resp, err := c.ctx.http.call(ctx, http.MethodGet, url, nil, "", c.ctx.longTimeout())
 	if err != nil {
 		return result, err
@@ -252,15 +258,50 @@ func (c *DatasetClient) DownloadItemsStream(ctx context.Context, format Download
 	return stream, err
 }
 
-// PushItems pushes one or more items to the dataset. items must serialize to a JSON object
-// or an array of objects.
+// PushItems pushes one or more items to the dataset. items must serialize to a JSON object or
+// an array of objects, the only shapes the API accepts: anything else (a bare string, number or
+// boolean, an array holding a non-object, nil) fails with an error before any request is sent.
+// A value that is already serialized JSON can be passed as a [json.RawMessage]; a plain Go string
+// is serialized as a JSON string, which is not a valid item.
+//
+// A push that times out is not retried: the API may already have stored the items, and a retry
+// would then store them a second time.
 func (c *DatasetClient) PushItems(ctx context.Context, items any) error {
 	body, err := json.Marshal(items)
 	if err != nil {
 		return err
 	}
-	_, err = c.ctx.http.call(ctx, http.MethodPost, c.ctx.subURL("items"), body, contentTypeJSONCharset, c.ctx.mediumTimeout())
+	if err := checkItemsShape(body); err != nil {
+		return err
+	}
+	if c.ctx.idErr != nil {
+		return c.ctx.idErr
+	}
+	url := c.ctx.mergedParams(NewQueryParams()).applyToURL(c.ctx.subURL("items"))
+	_, err = c.ctx.withoutTimeoutRetry().http.call(ctx, http.MethodPost, url, body, contentTypeJSONCharset, c.ctx.mediumTimeout())
 	return err
+}
+
+// checkItemsShape reports whether body, a JSON document, is an object or an array of objects.
+func checkItemsShape(body []byte) error {
+	trimmed := bytes.TrimSpace(body)
+	switch {
+	case bytes.HasPrefix(trimmed, []byte("{")):
+		return nil
+	case bytes.HasPrefix(trimmed, []byte("[")):
+		var elements []json.RawMessage
+		if err := json.Unmarshal(trimmed, &elements); err != nil {
+			return err
+		}
+		for i, element := range elements {
+			if !bytes.HasPrefix(bytes.TrimSpace(element), []byte("{")) {
+				return fmt.Errorf("PushItems: item %d is not a JSON object; the API only accepts objects", i)
+			}
+		}
+		return nil
+	default:
+		return errors.New("PushItems: items must be a JSON object or an array of objects")
+	}
 }
 
 // GetStatistics returns statistical information about the dataset.
@@ -300,7 +341,8 @@ func (c *DatasetClient) CreateItemsPublicURLWithFormat(ctx context.Context, opti
 		params.AddString("format", &fmtStr)
 	}
 
-	dataset, present, err := c.Get(ctx)
+	// Fetched with the "long" timeout tier, the reference client's tier for this call.
+	dataset, present, err := getResourceWithTimeout[Dataset](ctx, c.ctx, "", NewQueryParams(), c.ctx.longTimeout())
 	if err != nil {
 		return "", err
 	}
@@ -310,7 +352,7 @@ func (c *DatasetClient) CreateItemsPublicURLWithFormat(ctx context.Context, opti
 			params.AddString("signature", &sig)
 		}
 	}
-	return params.applyToURL(c.ctx.publicURL("items")), nil
+	return c.ctx.mergedParams(params).applyToURL(c.ctx.publicURL("items")), nil
 }
 
 // headerInt parses an integer HTTP header value, returning fallback if absent or invalid.
