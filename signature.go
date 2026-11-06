@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"time"
 )
@@ -80,6 +81,16 @@ func signStorageContent(secretKey, resourceID string, expiresInSecs *int64) stri
 	mac := createHmacSignature(secretKey, message)
 	envelope := version + "." + itoa(expiresAtMillis) + "." + mac
 	return base64.RawURLEncoding.EncodeToString([]byte(envelope))
+}
+
+// validateExpiresInSecs rejects an expiresInSecs that is not positive. A zero or negative expiry
+// gives a URL that is already expired when it is made, which is never what the caller meant;
+// leave expiresInSecs nil for a URL that never expires.
+func validateExpiresInSecs(expiresInSecs *int64) error {
+	if expiresInSecs != nil && *expiresInSecs <= 0 {
+		return fmt.Errorf("expiresInSecs must be positive, got %d (leave it nil for a URL that never expires)", *expiresInSecs)
+	}
+	return nil
 }
 
 // itoa is a tiny int64-to-string helper to keep signStorageContent readable.

@@ -85,10 +85,16 @@ metadata:
 |---|---|---|
 | `Items` | `[]T` | The items in this page. |
 | `Total` | `int64` | Total items available across all pages. |
-| `Count` | `int64` | Number of items actually returned in this page. |
+| `Count` | `int64` | Number of entries on this page. On a page of dataset items, the number of dataset rows the API scanned for it, or the number of items returned when that is larger: filters (`Clean`, `SkipEmpty`, `SkipHidden`) can leave it above `len(Items)`. The next page starts at `Offset + min(Count, Limit)`; the cap matters only with `Unwind`, which can return more items than the rows scanned. |
 | `Offset` | `int64` | Items skipped before this page. |
 | `Limit` | `int64` | Max items the API would return for this request. |
 | `Desc` | `bool` | Whether items are in descending order. |
+
+The `Iterate` methods fetch as many pages as needed, so you do not manage offsets or limits.
+`Limit` caps the total number of items, and `chunkSize` caps the number of items per API call.
+Without `chunkSize`, each call gets the API's default page size, capped by `Limit`. Dataset items
+have no default limit, so iterating `IterateItems` without `chunkSize` loads the whole dataset, or
+all `Limit` items, in one response. To iterate a large dataset, pass `chunkSize`.
 
 > **`Total` can lag right after a write.** The API computes the count asynchronously, so
 > immediately after a `PushItems` (or other write) `Total` may not yet include the new items.
@@ -104,6 +110,7 @@ the [storages](storages.md) page.
 ## Pages
 
 - [Actors](actors.md) — Actors, versions, environment variables.
+- [Server Actors](server_actors.md) — Sending requests to Server Actors (formerly Actor Standby).
 - [Builds](builds.md) — Actor builds.
 - [Runs](runs.md) — Actor runs, their default storages, log redirection and live iteration of dataset items.
 - [Tasks](tasks.md) — Actor tasks.

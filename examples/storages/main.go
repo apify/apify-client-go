@@ -40,9 +40,10 @@ func datasetExample(ctx context.Context, client *apify.ApifyClient) {
 	if err != nil {
 		log.Fatalf("list items: %v", err)
 	}
-	// page.Count is the number of items on this page (not the dataset total, which the API
-	// updates asynchronously and can briefly lag right after a push).
-	fmt.Printf("Dataset %s has %d items on this page\n", ds.ID, page.Count)
+	// len(page.Items) is the number of items on this page. (page.Count is the number of rows the
+	// API scanned for it, and page.Total the dataset total, which the API updates asynchronously
+	// and can briefly lag right after a push.)
+	fmt.Printf("Dataset %s has %d items on this page\n", ds.ID, len(page.Items))
 }
 
 func keyValueStoreExample(ctx context.Context, client *apify.ApifyClient) {

@@ -178,19 +178,19 @@ func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options Data
 	if err := json.Unmarshal(resp.body, &items); err != nil {
 		return result, err
 	}
-	count := int64(len(items))
+	returned := int64(len(items))
 	result.Items = items
-	result.Count = count
-	result.Total = headerInt(resp.header, "X-Apify-Pagination-Total", count)
+	result.Total = headerInt(resp.header, "X-Apify-Pagination-Total", returned)
 	result.Offset = headerInt(resp.header, "X-Apify-Pagination-Offset", 0)
-	result.Limit = headerInt(resp.header, "X-Apify-Pagination-Limit", count)
+	result.Limit = headerInt(resp.header, "X-Apify-Pagination-Limit", returned)
 	// The API applies Offset/Limit to the dataset's rows before Clean/SkipEmpty/SkipHidden/
-	// Unwind reshape them, so Count (items returned) can land on either side of the rows
-	// scanned. X-Apify-Pagination-Count reports the scanned number; IterateDatasetItems
-	// advances and stops by it instead of Count, so a filter can't make it re-scan rows a
-	// previous page already covered, and Unwind can't make it skip rows. Falls back to Count
-	// when the header is missing.
-	result.scanned = headerInt(resp.header, "X-Apify-Pagination-Count", count)
+	// Unwind reshape them, so the items returned can land on either side of the rows scanned.
+	// X-Apify-Pagination-Count reports the scanned number, and Count carries it so that
+	// IterateDatasetItems advances and stops by it: a filter can't make it re-scan rows a
+	// previous page already covered, and Unwind can't make it skip rows. The scanned number is
+	// derived from the dataset's item count, which lags a fresh push, so it can fall below the
+	// items returned; the larger of the two is taken.
+	result.Count = maxInt64(headerInt(resp.header, "X-Apify-Pagination-Count", returned), returned)
 	if options.Desc != nil {
 		result.Desc = *options.Desc
 	}
@@ -323,8 +323,9 @@ func (c *DatasetClient) GetStatistics(ctx context.Context) (json.RawMessage, err
 // It mirrors the reference client's createItemsPublicUrl: it fetches the dataset, and if the
 // dataset exposes a URL-signing secret key (i.e. it is private), appends an HMAC-SHA256
 // signature so the URL grants access without an API token. expiresInSecs optionally bounds
-// the validity of a signed URL (nil for non-expiring). The URL is built from the configured
-// public base URL.
+// the validity of a signed URL (nil for non-expiring); it must be positive, and a zero or
+// negative value is an error returned before any request is sent. The URL is built from the
+// configured public base URL.
 func (c *DatasetClient) CreateItemsPublicURL(ctx context.Context, options DatasetListItemsOptions, expiresInSecs *int64) (string, error) {
 	return c.CreateItemsPublicURLWithFormat(ctx, options, expiresInSecs, "")
 }
@@ -332,8 +333,11 @@ func (c *DatasetClient) CreateItemsPublicURL(ctx context.Context, options Datase
 // CreateItemsPublicURLWithFormat is like [DatasetClient.CreateItemsPublicURL], but lets the
 // caller choose the format the items are served in (JSON, CSV, XLSX, ...) via a `format` query
 // parameter on the generated URL. An empty format defaults to "json", matching the endpoint's
-// own default.
+// own default. As there, expiresInSecs must be positive when set.
 func (c *DatasetClient) CreateItemsPublicURLWithFormat(ctx context.Context, options DatasetListItemsOptions, expiresInSecs *int64, format DownloadItemsFormat) (string, error) {
+	if err := validateExpiresInSecs(expiresInSecs); err != nil {
+		return "", err
+	}
 	params := NewQueryParams()
 	options.apply(params)
 	if format != "" {
