@@ -87,12 +87,14 @@ func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverRe
 	call.headers = headers
 
 	sendBody, contentEncoding := call.body, ""
-	if call.headers.Get("Content-Encoding") == "" {
+	// A Content-Encoding header of the caller, even one without values (which removes the label),
+	// says that the body is theirs to encode.
+	if _, encodedByCaller := call.headers["Content-Encoding"]; !encodedByCaller {
 		// The Content-Type that goes on the wire decides whether the body is worth compressing,
 		// and the caller's header wins over the one the client derived from the body.
 		contentType := call.contentType
-		if fromCaller := call.headers.Get("Content-Type"); fromCaller != "" {
-			contentType = fromCaller
+		if _, set := call.headers["Content-Type"]; set {
+			contentType = call.headers.Get("Content-Type")
 		}
 		sendBody, contentEncoding = maybeCompressRequestBody(call.body, contentType, call.compressors)
 	}

@@ -461,6 +461,23 @@ func TestActorServerRequestCompression(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a Content-Encoding header of the caller without values leaves the body untouched too", func(t *testing.T) {
+		f := newServerFixture(t)
+		body := bytes.Repeat([]byte("x"), 5000)
+		_, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/items", ActorServerRequestOptions{
+			Method: "POST", Body: body, Headers: http.Header{"Content-Encoding": {}}, Compression: Ptr(RequestCompressionGzip),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		requests := f.requests(serverTestPrefix + "/")
+		if len(requests) != 1 {
+			t.Fatalf("expected 1 request, got %d", len(requests))
+		}
+		if r := requests[0]; r.header.Get("Content-Encoding") != "" || !bytes.Equal(r.body, body) {
+			t.Fatalf("expected the body as it is, got encoding %q and %d bytes", r.header.Get("Content-Encoding"), len(r.body))
+		}
+	})
 	t.Run("a Content-Encoding header of the caller leaves the body untouched", func(t *testing.T) {
 		f := newServerFixture(t)
 		body := bytes.Repeat([]byte("x"), 5000)
