@@ -86,8 +86,8 @@ func (it *ListIterator[T]) Next(ctx context.Context) (*T, error) {
 // shrinks while the loop runs (e.g. a dataset a running Actor keeps pushing to). Draining an
 // uncapped iterator therefore always ends with one extra request that finds an empty page.
 //
-// Advancing the offset uses the page's Count, or the item count when that is smaller, capped at
-// the limit requested for that page. A page of dataset items can return more or fewer items
+// Advancing the offset uses the larger of the page's Count and its item count (see scannedRows),
+// capped at the limit requested for that page. A page of dataset items can return more or fewer items
 // than the rows it scanned (see ListDatasetItems), and its Count is the scanned number. The
 // cap matters because Unwind can make the item count exceed what was requested; advancing past
 // the requested limit would skip rows the next request should have read.

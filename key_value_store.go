@@ -384,8 +384,12 @@ func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string
 // CreateKeysPublicURL builds a public URL for listing this store's keys.
 //
 // As with GetRecordPublicURL, a signature is appended for private stores. expiresInSecs
-// optionally bounds the validity of a signed URL (nil for non-expiring).
+// optionally bounds the validity of a signed URL (nil for non-expiring); it must be positive, and
+// a zero or negative value is an error returned before any request is sent.
 func (c *KeyValueStoreClient) CreateKeysPublicURL(ctx context.Context, expiresInSecs *int64) (string, error) {
+	if err := validateExpiresInSecs(expiresInSecs); err != nil {
+		return "", err
+	}
 	params := NewQueryParams()
 	store, present, err := c.getForPublicURL(ctx)
 	if err != nil {

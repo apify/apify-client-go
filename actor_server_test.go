@@ -246,6 +246,46 @@ func TestActorServerRequestDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+// redirectCheckingBackend is the custom backend of the README: a plain *http.Client that honors
+// FollowsRedirects.
+type redirectCheckingBackend struct{ inner *http.Client }
+
+func (b *redirectCheckingBackend) Do(req *http.Request) (*http.Response, error) {
+	if FollowsRedirects(req) {
+		return b.inner.Do(req)
+	}
+	client := *b.inner
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return client.Do(req)
+}
+
+// A custom backend that checks FollowsRedirects, as the README's example does, keeps the token
+// away from the target of a redirect too. API calls still follow redirects through it.
+func TestActorServerRequestDoesNotFollowRedirectsThroughACustomBackend(t *testing.T) {
+	var tokenReceived atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Apify-Authorization") != "" {
+			tokenReceived.Store(true)
+		}
+	}))
+	defer other.Close()
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/", http.StatusFound)
+	}))
+	defer redirecting.Close()
+
+	f := newServerFixture(t)
+	f.setActor(map[string]any{"standbyUrl": redirecting.URL})
+	client := f.client(WithHTTPBackend(&redirectCheckingBackend{inner: http.DefaultClient}))
+	resp, err := client.Actor(serverTestActorID).Server().Request(context.Background(), "/", ActorServerRequestOptions{})
+	if err != nil || resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected the redirect as it is, got %+v, %v", resp, err)
+	}
+	if tokenReceived.Load() {
+		t.Fatal("the token reached the redirect target")
+	}
+}
+
 func TestActorServerClientFetchesTheServerURLOnce(t *testing.T) {
 	f := newServerFixture(t)
 	actor := f.client().Actor(serverTestActorID)
@@ -377,6 +417,20 @@ func TestActorServerRequestCompression(t *testing.T) {
 		plain, _ := io.ReadAll(zr)
 		if !bytes.Contains(plain, []byte(`"items"`)) {
 			t.Fatalf("decompressed body: %q", plain[:20])
+		}
+	})
+	t.Run("a Content-Type of the caller that is already compressed is not compressed again", func(t *testing.T) {
+		f := newServerFixture(t)
+		body := bytes.Repeat([]byte("x"), 5000)
+		_, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/items", ActorServerRequestOptions{
+			Method: "POST", Body: body, Headers: http.Header{"Content-Type": {"image/png"}}, Compression: Ptr(RequestCompressionGzip),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := f.requests(serverTestPrefix + "/")[0]
+		if r.header.Get("Content-Encoding") != "" || !bytes.Equal(r.body, body) {
+			t.Fatalf("expected the body as it is, got encoding %q and %d bytes", r.header.Get("Content-Encoding"), len(r.body))
 		}
 	})
 	t.Run("a Content-Encoding header of the caller leaves the body untouched", func(t *testing.T) {

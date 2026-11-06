@@ -114,13 +114,16 @@ spec, err := server.GetOpenAPISpec(ctx)
 if err != nil {
 	log.Fatal(err)
 }
+fmt.Println("server:", serverURL)
+if spec == nil {
+	log.Fatal("the Actor's definition has no web server schema")
+}
 var document struct {
 	Paths map[string]json.RawMessage `json:"paths"`
 }
 if err := json.Unmarshal(spec, &document); err != nil {
 	log.Fatal(err)
 }
-fmt.Println("server:", serverURL)
 for path := range document.Paths {
 	fmt.Println("endpoint:", path)
 }

@@ -12,13 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ActorClient.Server()` returns an `ActorServerClient` for Server Actors (formerly Actor Standby):
   `GetURL`, `GetOpenAPISpec`, `Request` and `RequestStream`. `ActorClient.Standby()` is a
   deprecated alias.
-- `ErrNotServerActor`, and `FollowsRedirects` for custom `HTTPBackend`s: the requests to a Server
-  Actor do not follow redirects, so the token never reaches another host.
+- `ErrNotServerActor`, and `FollowsRedirects`: the requests to a Server Actor do not follow
+  redirects with the default `HTTPBackend`, so the token never reaches another host. A custom
+  `HTTPBackend` that follows redirects has to check `FollowsRedirects` itself.
 - `Actor.StandbyURL` (normalized) and `ActorVersion.ActorPath`, the Actor's directory inside the
   uploaded source of a `SOURCE_FILES` or `TARBALL` version.
 
 ### Changed
 
+- `DatasetClient.CreateItemsPublicURL`, `CreateItemsPublicURLWithFormat` and
+  `KeyValueStoreClient.CreateKeysPublicURL` reject an `expiresInSecs` of zero or below, which gave
+  a URL that never expires or one that was already expired. Pass nil for a permanent URL.
 - Bumped `APISpecVersion` to `v2-2026-11-04T151257Z` and `ClientVersion` to `0.15.0`.
 - `PaginationList.Count` of a page from `DatasetClient.ListItems` is the number of rows the API
   scanned, or the number of items returned when that is larger. With filters it can be above

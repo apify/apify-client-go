@@ -254,7 +254,8 @@ same way, with no separate option needed.
 The transport is replaceable. Implement `HTTPBackend` (a single `Do` method) to integrate a
 custom client, proxy, or test double, and pass it with `WithHTTPBackend`. A backend that follows
 redirects must not follow them for a request that `apify.FollowsRedirects(req)` reports false for,
-as the requests to a [Server Actor](docs/server_actors.md) carry a token meant for one host only:
+as the requests to a [Server Actor](docs/server_actors.md) carry a token meant for one host only,
+and a redirect to another host would send it there:
 
 ```go
 package main
@@ -269,7 +270,13 @@ import (
 type myBackend struct{ inner *http.Client }
 
 func (b *myBackend) Do(req *http.Request) (*http.Response, error) {
-	return b.inner.Do(req)
+	if apify.FollowsRedirects(req) {
+		return b.inner.Do(req)
+	}
+	// This request carries a token meant for one host only, so a redirect is returned as it is.
+	client := *b.inner
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return client.Do(req)
 }
 
 func main() {

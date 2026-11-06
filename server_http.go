@@ -1,7 +1,6 @@
 package apify
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -79,7 +78,13 @@ type serverResponse struct {
 func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverResponse, error) {
 	sendBody, contentEncoding := call.body, ""
 	if call.headers.Get("Content-Encoding") == "" {
-		sendBody, contentEncoding = maybeCompressRequestBody(call.body, call.contentType, call.compressors)
+		// The Content-Type that goes on the wire decides whether the body is worth compressing,
+		// and the caller's header wins over the one the client derived from the body.
+		contentType := call.contentType
+		if fromCaller := call.headers.Get("Content-Type"); fromCaller != "" {
+			contentType = fromCaller
+		}
+		sendBody, contentEncoding = maybeCompressRequestBody(call.body, contentType, call.compressors)
 	}
 
 	delay := c.retry.minDelayBetweenRetries
@@ -96,10 +101,9 @@ func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverRe
 		if resp.stream != nil {
 			_ = resp.stream.Close()
 		}
-		if !sleepWithContext(ctx, randomizedDelay(delay)) {
+		if !c.backoff(ctx, &delay) {
 			return nil, ctx.Err()
 		}
-		delay = minDuration(delay*backoffFactor, c.retry.timeoutMax)
 	}
 }
 
@@ -117,25 +121,11 @@ func (c *httpClient) serverAttempt(ctx context.Context, call serverCall, body []
 		}
 	}
 
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(attemptCtx, call.method, call.url, reader)
+	req, err := c.newRequest(attemptCtx, call.method, call.url, body, call.contentType, contentEncoding, serverAuthorizationHeader)
 	if err != nil {
 		stopTimer()
 		cancel(nil)
 		return nil, err
-	}
-	req.Header.Set("User-Agent", c.userAgent)
-	if c.token != "" {
-		req.Header.Set(serverAuthorizationHeader, "Bearer "+c.token)
-	}
-	if call.contentType != "" {
-		req.Header.Set("Content-Type", call.contentType)
-	}
-	if contentEncoding != "" {
-		req.Header.Set("Content-Encoding", contentEncoding)
 	}
 	for name, values := range call.headers {
 		req.Header[http.CanonicalHeaderKey(name)] = values
