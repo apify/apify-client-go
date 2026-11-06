@@ -52,6 +52,9 @@ const (
 // A non-2xx HTTP status is NOT an error at this layer — return it as a normal
 // *http.Response. Only transport-level failures (connection refused, DNS, timeout)
 // should be returned as an error.
+//
+// A backend that follows redirects must not follow them for a request that [FollowsRedirects]
+// reports false for: such a request carries credentials meant for its original host only.
 type HTTPBackend interface {
 	// Do sends a single HTTP request and returns the response.
 	Do(req *http.Request) (*http.Response, error)
@@ -76,9 +79,16 @@ func NewHTTPBackendWithClient(client *http.Client) *DefaultHTTPBackend {
 	return &DefaultHTTPBackend{client: client}
 }
 
-// Do implements HTTPBackend.
+// Do implements HTTPBackend. It follows redirects like any *http.Client, except for a request
+// that must not (see [FollowsRedirects]), whose redirect response is returned as it is.
 func (b *DefaultHTTPBackend) Do(req *http.Request) (*http.Response, error) {
-	return b.client.Do(req)
+	if FollowsRedirects(req) {
+		return b.client.Do(req)
+	}
+	// A copy shares the transport and the cookie jar, so the connection pool stays shared.
+	client := *b.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return client.Do(req)
 }
 
 // retryConfig configures the retry/timeout behaviour of the httpClient.

@@ -19,7 +19,7 @@ request queues, tasks, schedules, webhooks, the store, users and logs).
 - Replaceable HTTP transport (the `HTTPBackend` interface) with a default implementation.
 - Convenience helpers: start-and-wait with live log redirection, build/run polling, lazy store
   and request-queue iterators, live iteration of a running Actor's dataset items, dataset
-  export, signed public URLs, request-queue locking, and more.
+  export, signed public URLs, request-queue locking, requests to Server Actors, and more.
 - Forward-compatible models that keep unknown API fields in an `Extra` map.
 - A single third-party dependency (`github.com/andybalholm/brotli`, used for Brotli
   request-body compression); everything else is the Go standard library.
@@ -199,6 +199,7 @@ decoding the response fail.
 | `client.Store()` | `*StoreCollectionClient` | Browse and iterate the Apify Store. |
 | `client.Me()` / `client.User(id)` | `*UserClient` | Account details, usage and limits (for your own account or your organization with `User(id)`). |
 | `client.Log(buildOrRunID)` | `*LogClient` | Read or stream a build/run log. |
+| `client.Actor(id).Server()` | `*ActorServerClient` | Send requests to a Server Actor (formerly Actor Standby) and get its URL and OpenAPI specification. See [docs/server_actors.md](docs/server_actors.md). |
 
 ## Error handling
 
@@ -251,7 +252,9 @@ same way, with no separate option needed.
 ## Custom HTTP transport
 
 The transport is replaceable. Implement `HTTPBackend` (a single `Do` method) to integrate a
-custom client, proxy, or test double, and pass it with `WithHTTPBackend`:
+custom client, proxy, or test double, and pass it with `WithHTTPBackend`. A backend that follows
+redirects must not follow them for a request that `apify.FollowsRedirects(req)` reports false for,
+as the requests to a [Server Actor](docs/server_actors.md) carry a token meant for one host only:
 
 ```go
 package main
@@ -282,7 +285,7 @@ func main() {
 
 - `apify.ClientVersion` — the semantic version of this library.
 - `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-10-29T100357Z`).
+  (`v2-2026-11-04T151257Z`).
 
 ### Releasing
 
@@ -326,7 +329,7 @@ APIFY_TOKEN=<your-token> go run ./examples/run_store_actor
 ## Documentation
 
 Per-resource guides are in [`docs/`](docs):
-[actors](docs/actors.md), [builds](docs/builds.md), [runs](docs/runs.md),
+[actors](docs/actors.md), [server Actors](docs/server_actors.md), [builds](docs/builds.md), [runs](docs/runs.md),
 [tasks](docs/tasks.md), [storages](docs/storages.md), [schedules](docs/schedules.md),
 [webhooks](docs/webhooks.md), [misc (store, users, logs)](docs/misc.md).
 

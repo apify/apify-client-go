@@ -60,6 +60,9 @@ type Actor struct {
 	CreatedAt *time.Time `json:"createdAt"`
 	// ModifiedAt is when the Actor was last modified.
 	ModifiedAt *time.Time `json:"modifiedAt"`
+	// StandbyURL is the URL of the Actor's server, normalized, which [ActorServerClient] sends
+	// requests to. Nil when the Actor is not a Server Actor.
+	StandbyURL *string `json:"standbyUrl,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }
@@ -67,7 +70,10 @@ type Actor struct {
 func (a *Actor) UnmarshalJSON(data []byte) error {
 	type alias Actor
 	known := knownJSONKeys(alias{})
-	return unmarshalWithExtra(data, (*alias)(a), known, &a.Extra)
+	if err := unmarshalWithExtra(data, (*alias)(a), known, &a.Extra); err != nil {
+		return err
+	}
+	return normalizeOptionalURLField("standbyUrl", &a.StandbyURL)
 }
 
 // ActorRun is a single execution of an Actor.
@@ -612,6 +618,11 @@ type ActorVersion struct {
 	VersionNumber string `json:"versionNumber"`
 	// SourceType is how the version's source is provided (e.g. "SOURCE_FILES").
 	SourceType string `json:"sourceType"`
+	// ActorPath is the Actor's directory inside the uploaded source of a SOURCE_FILES or
+	// TARBALL (zip archive) version, relative to the upload root, with "/" separators. Nil when
+	// the upload root is the Actor's directory. For a TARBALL version, the API returns it only
+	// to users with write access to the Actor.
+	ActorPath *string `json:"actorPath,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
 }

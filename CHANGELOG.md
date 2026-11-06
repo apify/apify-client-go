@@ -5,6 +5,28 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-11-06
+
+### Added
+
+- `ActorClient.Server()` returns an `ActorServerClient` for Server Actors (formerly Actor Standby):
+  `GetURL`, `GetOpenAPISpec`, `Request` and `RequestStream`. `ActorClient.Standby()` is a
+  deprecated alias.
+- `ErrNotServerActor`, and `FollowsRedirects` for custom `HTTPBackend`s: the requests to a Server
+  Actor do not follow redirects, so the token never reaches another host.
+- `Actor.StandbyURL` (normalized) and `ActorVersion.ActorPath`, the Actor's directory inside the
+  uploaded source of a `SOURCE_FILES` or `TARBALL` version.
+
+### Changed
+
+- Bumped `APISpecVersion` to `v2-2026-11-04T151257Z` and `ClientVersion` to `0.15.0`.
+- `PaginationList.Count` of a page from `DatasetClient.ListItems` is the number of rows the API
+  scanned, or the number of items returned when that is larger. With filters it can be above
+  `len(Items)`. Iterators step by `Count`, capped at the requested limit.
+- `standbyUrl` is no longer in the `Extra` map of `Actor`, and `actorPath` is no longer in the
+  `Extra` map of `ActorVersion`.
+- Documented that `TARBALL` is a zip archive, and the `actorPath` rules.
+
 ## [0.14.0] - 2026-10-30
 
 ### Added

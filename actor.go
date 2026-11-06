@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -101,6 +102,9 @@ type ActorClient struct {
 	ctx     *resourceContext
 	baseURL string
 	id      string
+
+	serverOnce sync.Once
+	server     *ActorServerClient
 }
 
 func newActorClient(root *ApifyClient, hc *httpClient, baseURL, id string) *ActorClient {
