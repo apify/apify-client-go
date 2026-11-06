@@ -260,7 +260,7 @@ func (b *redirectCheckingBackend) Do(req *http.Request) (*http.Response, error) 
 }
 
 // A custom backend that checks FollowsRedirects, as the README's example does, keeps the token
-// away from the target of a redirect too. API calls still follow redirects through it.
+// away from the target of a redirect too.
 func TestActorServerRequestDoesNotFollowRedirectsThroughACustomBackend(t *testing.T) {
 	var tokenReceived atomic.Bool
 	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -431,6 +431,30 @@ func TestActorServerRequestCompression(t *testing.T) {
 		r := f.requests(serverTestPrefix + "/")[0]
 		if r.header.Get("Content-Encoding") != "" || !bytes.Equal(r.body, body) {
 			t.Fatalf("expected the body as it is, got encoding %q and %d bytes", r.header.Get("Content-Encoding"), len(r.body))
+		}
+	})
+	t.Run("lower-case header names of the caller count too", func(t *testing.T) {
+		f := newServerFixture(t)
+		body := bytes.Repeat([]byte("x"), 5000)
+		server := f.client().Actor(serverTestActorID).Server()
+		ctx := context.Background()
+		_, err := server.Request(ctx, "/items", ActorServerRequestOptions{
+			Method: "POST", Body: body, Headers: http.Header{"content-type": {"image/png"}}, Compression: Ptr(RequestCompressionGzip),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = server.Request(ctx, "/items", ActorServerRequestOptions{
+			Method: "POST", Body: body, Headers: http.Header{"content-encoding": {"br"}}, Compression: Ptr(RequestCompressionGzip),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, r := range f.requests(serverTestPrefix + "/") {
+			wantEncoding := []string{"", "br"}[i]
+			if r.header.Get("Content-Encoding") != wantEncoding || !bytes.Equal(r.body, body) {
+				t.Errorf("request %d: expected the body as it is under encoding %q, got encoding %q and %d bytes", i, wantEncoding, r.header.Get("Content-Encoding"), len(r.body))
+			}
 		}
 	})
 	t.Run("a Content-Encoding header of the caller leaves the body untouched", func(t *testing.T) {

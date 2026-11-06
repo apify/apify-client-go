@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `DatasetClient.CreateItemsPublicURL`, `CreateItemsPublicURLWithFormat` and
   `KeyValueStoreClient.CreateKeysPublicURL` reject an `expiresInSecs` of zero or below, which gave
-  a URL that never expires or one that was already expired. Pass nil for a permanent URL.
+  a URL that was already expired. Pass nil for a URL that never expires.
 - Bumped `APISpecVersion` to `v2-2026-11-04T151257Z` and `ClientVersion` to `0.15.0`.
 - `PaginationList.Count` of a page from `DatasetClient.ListItems` is the number of rows the API
   scanned, or the number of items returned when that is larger. With filters it can be above

@@ -41,8 +41,8 @@ func TestStorageContentSignatureNonExpiring(t *testing.T) {
 	}
 }
 
-// A signed public URL needs a positive expiry: zero is read as "never expires" and a negative
-// value is already expired, so both are rejected before any request is sent.
+// A signed public URL needs a positive expiry: zero and a negative value give a URL that is
+// already expired, so both are rejected before any request is sent.
 func TestPublicURLsRejectANonPositiveExpiry(t *testing.T) {
 	ctx := context.Background()
 	for _, expiry := range []int64{0, -1} {

@@ -241,8 +241,9 @@ func (c *httpClient) backoff(ctx context.Context, delay *time.Duration) bool {
 }
 
 // applyAuthHeaders sets the User-Agent and (if a token is configured) Authorization headers
-// that every request to the API must carry. It is the single place those headers are set, so
-// the buffered request path and the raw streaming path (LogClient.Stream) stay in sync.
+// that every request to the API must carry. Together with [httpClient.applyAuthHeadersAs] it is
+// the single place those headers are set, so the buffered request path and the raw streaming
+// path (LogClient.Stream) stay in sync.
 func (c *httpClient) applyAuthHeaders(req *http.Request) {
 	c.applyAuthHeadersAs(req, "Authorization")
 }

@@ -76,6 +76,16 @@ type serverResponse struct {
 // included) is never retried since the Actor may have handled the request already, the token
 // goes in X-Apify-Authorization, and redirects are not followed.
 func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverResponse, error) {
+	// Header names are case-insensitive, so canonicalize the caller's once: the lookups below
+	// and the headers on the wire then agree on what the caller set.
+	headers := http.Header{}
+	for name, values := range call.headers {
+		for _, value := range values {
+			headers.Add(name, value)
+		}
+	}
+	call.headers = headers
+
 	sendBody, contentEncoding := call.body, ""
 	if call.headers.Get("Content-Encoding") == "" {
 		// The Content-Type that goes on the wire decides whether the body is worth compressing,
@@ -128,7 +138,7 @@ func (c *httpClient) serverAttempt(ctx context.Context, call serverCall, body []
 		return nil, err
 	}
 	for name, values := range call.headers {
-		req.Header[http.CanonicalHeaderKey(name)] = values
+		req.Header[name] = values
 	}
 
 	resp, err := c.backend.Do(req)

@@ -83,10 +83,11 @@ func signStorageContent(secretKey, resourceID string, expiresInSecs *int64) stri
 	return base64.RawURLEncoding.EncodeToString([]byte(envelope))
 }
 
-// validateExpiresInSecs rejects an expiresInSecs that is not positive. The signer reads an
-// expiry of 0 as "never expires" in the shared signature format, and a negative one gives a URL
-// that is already expired, so neither is what the caller meant; leave expiresInSecs nil for a
-// URL that never expires. Mirrors the reference client's argument validation.
+// validateExpiresInSecs rejects an expiresInSecs that is not positive. A zero or negative expiry
+// gives a URL that is already expired when it is made, which is never what the caller meant
+// (the reference client reads a zero as "never expires", so a caller may expect that); leave
+// expiresInSecs nil for a URL that never expires. Mirrors the reference client's argument
+// validation.
 func validateExpiresInSecs(expiresInSecs *int64) error {
 	if expiresInSecs != nil && *expiresInSecs <= 0 {
 		return fmt.Errorf("expiresInSecs must be positive, got %d (leave it nil for a URL that never expires)", *expiresInSecs)
