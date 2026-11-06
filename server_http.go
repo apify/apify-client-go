@@ -77,12 +77,12 @@ type serverResponse struct {
 // goes in X-Apify-Authorization, and redirects are not followed.
 func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverResponse, error) {
 	// Header names are case-insensitive, so canonicalize the caller's once: the lookups below
-	// and the headers on the wire then agree on what the caller set.
+	// and the headers on the wire then agree on what the caller set. A name with no values stays,
+	// since it removes the header of that name that the client would set.
 	headers := http.Header{}
 	for name, values := range call.headers {
-		for _, value := range values {
-			headers.Add(name, value)
-		}
+		key := http.CanonicalHeaderKey(name)
+		headers[key] = append(headers[key], values...)
 	}
 	call.headers = headers
 

@@ -450,7 +450,11 @@ func TestActorServerRequestCompression(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, r := range f.requests(serverTestPrefix + "/") {
+		requests := f.requests(serverTestPrefix + "/")
+		if len(requests) != 2 {
+			t.Fatalf("expected 2 requests, got %d", len(requests))
+		}
+		for i, r := range requests {
 			wantEncoding := []string{"", "br"}[i]
 			if r.header.Get("Content-Encoding") != wantEncoding || !bytes.Equal(r.body, body) {
 				t.Errorf("request %d: expected the body as it is under encoding %q, got encoding %q and %d bytes", i, wantEncoding, r.header.Get("Content-Encoding"), len(r.body))
@@ -471,6 +475,25 @@ func TestActorServerRequestCompression(t *testing.T) {
 			t.Fatalf("expected the body untouched under gzip, got %d bytes", len(r.body))
 		}
 	})
+}
+
+// A header of the caller with no values removes the header the client would set.
+func TestActorServerRequestRemovesAHeaderOfTheClient(t *testing.T) {
+	f := newServerFixture(t)
+	headers := http.Header{"x-apify-authorization": nil, "User-Agent": {}}
+	if _, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/", ActorServerRequestOptions{Headers: headers}); err != nil {
+		t.Fatal(err)
+	}
+	requests := f.requests(serverTestPrefix + "/")
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(requests))
+	}
+	if token := requests[0].header.Get("X-Apify-Authorization"); token != "" {
+		t.Fatalf("the token header must be removed, got %q", token)
+	}
+	if strings.HasPrefix(requests[0].header.Get("User-Agent"), "ApifyClient/") {
+		t.Fatalf("the User-Agent must be removed, got %q", requests[0].header.Get("User-Agent"))
+	}
 }
 
 func TestActorServerRequestBodyForms(t *testing.T) {

@@ -48,7 +48,7 @@ fmt.Println(results)
 |---|---|---|
 | `Method` | `string` | The HTTP method, in upper case. Defaults to `GET`. An unknown method fails before any request is sent. |
 | `Params` | `url.Values` | Query parameters. |
-| `Headers` | `http.Header` | Additional headers. They reach the Actor's server as they are and win over the headers the client sets. |
+| `Headers` | `http.Header` | Additional headers. They reach the Actor's server as they are and win over the headers the client sets; a header with no values removes the client's header of that name. |
 | `Body` | `any` | A `string` or `[]byte` is sent as it is. A `json.RawMessage` and any other value are sent as JSON with `Content-Type: application/json`, unless `Headers` sets a content type. |
 | `Compression` | `*apify.RequestCompression` | Compresses a body of 1 KiB or more. Nil by default, which sends the body uncompressed, since the Actor's server may not decode a compressed body. Set it only if the server decodes the resulting `Content-Encoding`. A `Content-Encoding` header in `Headers` sends the body untouched. |
 

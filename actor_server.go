@@ -67,7 +67,8 @@ type ActorServerRequestOptions struct {
 	// Params are the query parameters of the request.
 	Params url.Values
 	// Headers are additional headers of the request. They reach the Actor's server as they are,
-	// Authorization included, and win over the headers the client sets.
+	// Authorization included, and win over the headers the client sets. A header with no values
+	// removes the client's header of that name.
 	Headers http.Header
 	// Body is the request body. A string or []byte is sent as it is, without a Content-Type
 	// unless Headers sets one. A [json.RawMessage] and any other value are sent as JSON, with
