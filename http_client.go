@@ -52,6 +52,9 @@ const (
 // A non-2xx HTTP status is NOT an error at this layer — return it as a normal
 // *http.Response. Only transport-level failures (connection refused, DNS, timeout)
 // should be returned as an error.
+//
+// A backend that follows redirects must not follow them for a request that [FollowsRedirects]
+// reports false for: such a request carries credentials meant for its original host only.
 type HTTPBackend interface {
 	// Do sends a single HTTP request and returns the response.
 	Do(req *http.Request) (*http.Response, error)
@@ -76,9 +79,16 @@ func NewHTTPBackendWithClient(client *http.Client) *DefaultHTTPBackend {
 	return &DefaultHTTPBackend{client: client}
 }
 
-// Do implements HTTPBackend.
+// Do implements HTTPBackend. It follows redirects like any *http.Client, except for a request
+// that must not (see [FollowsRedirects]), whose redirect response is returned as it is.
 func (b *DefaultHTTPBackend) Do(req *http.Request) (*http.Response, error) {
-	return b.client.Do(req)
+	if FollowsRedirects(req) {
+		return b.client.Do(req)
+	}
+	// A copy shares the transport and the cookie jar, so the connection pool stays shared.
+	client := *b.client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return client.Do(req)
 }
 
 // retryConfig configures the retry/timeout behaviour of the httpClient.
@@ -204,33 +214,70 @@ func (c *httpClient) doRetryLoop(ctx context.Context, method, url string, sendBo
 			return nil, lastErr
 		}
 
-		// Sleep with exponential backoff before the next attempt. The base delay doubles each
-		// retry (matching the reference client's async-retry factor of 2). Two intentional and
-		// documented divergences from the reference JS client:
-		//   - Jitter: the actual sleep is drawn uniformly from [delay, 2*delay). The reference
-		//     does not jitter, but the Apify API docs explicitly prescribe it ("wait for a period
-		//     of time chosen randomly from the interval DELAY to 2*DELAY milliseconds") to avoid
-		//     synchronized retries (thundering herd), so we follow the API guidance here.
-		//   - Cap: the base delay is capped at the overall request timeout as a safety net (the
-		//     reference leaves it uncapped). With the default settings this cap is never reached
-		//     within maxRetries, so it does not change observable behaviour.
-		if !sleepWithContext(ctx, randomizedDelay(delay)) {
+		if !c.backoff(ctx, &delay) {
 			return nil, ctx.Err()
 		}
-		delay = minDuration(delay*backoffFactor, c.retry.timeoutMax)
 	}
 
 	return nil, lastErr
 }
 
+// backoff sleeps before the next attempt of a retried request and doubles delay for the one
+// after, matching the reference client's async-retry factor of 2. It returns false when ctx ended
+// during the sleep. Two intentional and documented divergences from the reference JS client:
+//   - Jitter: the actual sleep is drawn uniformly from [delay, 2*delay). The reference does not
+//     jitter, but the Apify API docs explicitly prescribe it ("wait for a period of time chosen
+//     randomly from the interval DELAY to 2*DELAY milliseconds") to avoid synchronized retries
+//     (thundering herd), so we follow the API guidance here.
+//   - Cap: the base delay is capped at the overall request timeout as a safety net (the
+//     reference leaves it uncapped). With the default settings this cap is never reached within
+//     maxRetries, so it does not change observable behaviour.
+func (c *httpClient) backoff(ctx context.Context, delay *time.Duration) bool {
+	if !sleepWithContext(ctx, randomizedDelay(*delay)) {
+		return false
+	}
+	*delay = minDuration(*delay*backoffFactor, c.retry.timeoutMax)
+	return true
+}
+
 // applyAuthHeaders sets the User-Agent and (if a token is configured) Authorization headers
-// that every request to the API must carry. It is the single place those headers are set, so
-// the buffered request path and the raw streaming path (LogClient.Stream) stay in sync.
+// that every request to the API must carry. Together with [httpClient.applyAuthHeadersAs] it is
+// the single place those headers are set, so the buffered request path and the raw streaming
+// path (LogClient.Stream) stay in sync.
 func (c *httpClient) applyAuthHeaders(req *http.Request) {
+	c.applyAuthHeadersAs(req, "Authorization")
+}
+
+// applyAuthHeadersAs is [httpClient.applyAuthHeaders] with the token in the header called
+// tokenHeader, for the requests whose Authorization header is not the client's to use (see
+// serverAuthorizationHeader).
+func (c *httpClient) applyAuthHeadersAs(req *http.Request, tokenHeader string) {
 	req.Header.Set("User-Agent", c.userAgent)
 	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set(tokenHeader, "Bearer "+c.token)
 	}
+}
+
+// newRequest builds a request of the client: the body, the User-Agent header, the token in
+// tokenHeader and the content headers. A non-empty contentEncoding says that body is already
+// compressed with it.
+func (c *httpClient) newRequest(ctx context.Context, method, url string, body []byte, contentType, contentEncoding, tokenHeader string) (*http.Request, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		return nil, err
+	}
+	c.applyAuthHeadersAs(req, tokenHeader)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if contentEncoding != "" {
+		req.Header.Set("Content-Encoding", contentEncoding)
+	}
+	return req, nil
 }
 
 // doAttempt performs a single HTTP round-trip with the given per-attempt timeout.
@@ -245,22 +292,10 @@ func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []b
 	}
 	defer cancel()
 
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(attemptCtx, method, url, reader)
+	req, err := c.newRequest(attemptCtx, method, url, body, contentType, contentEncoding, "Authorization")
 	if err != nil {
 		// A malformed request is a programming/argument error, not a transport error.
 		return nil, &APIError{StatusCode: 0, Type: "invalid-request", Message: err.Error(), Attempt: 1, HTTPMethod: method, Path: extractPath(url)}
-	}
-
-	c.applyAuthHeaders(req)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	if contentEncoding != "" {
-		req.Header.Set("Content-Encoding", contentEncoding)
 	}
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)

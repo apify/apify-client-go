@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	apify "github.com/apify/apify-client-go"
 )
@@ -200,5 +201,57 @@ func TestDatasetPushCompressedBody(t *testing.T) {
 	if got.Blob != blob {
 		t.Fatalf("stored blob does not round-trip: got %d bytes (prefix %q), want %d bytes",
 			len(got.Blob), got.Blob[:min(len(got.Blob), len(marker))], len(blob))
+	}
+}
+
+// TestDatasetListItemsCountWithFilter checks that, with a filter, Count of a page reports the rows
+// the API scanned and not only the items it returned, and that iteration still yields every item.
+func TestDatasetListItemsCountWithFilter(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	ds, err := client.Datasets().GetOrCreate(ctx, uniqueName("ds-count"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.Dataset(ds.ID).Delete(ctx) }()
+	dataset := client.Dataset(ds.ID)
+
+	if err := dataset.PushItems(ctx, []map[string]any{{"n": 1}, {}, {"n": 3}, {}}); err != nil {
+		t.Fatalf("push items: %v", err)
+	}
+	// The dataset's item count, which the scanned rows derive from, lags a fresh push.
+	options := apify.DatasetListItemsOptions{SkipEmpty: ptr(true)}
+	var page apify.PaginationList[json.RawMessage]
+	deadline := time.Now().Add(time.Minute)
+	for {
+		page, err = dataset.ListItems(ctx, options)
+		if err != nil {
+			t.Fatalf("list items: %v", err)
+		}
+		if page.Count == 4 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if len(page.Items) != 2 || page.Count != 4 {
+		t.Fatalf("expected 2 items out of 4 scanned rows, got items=%d count=%d", len(page.Items), page.Count)
+	}
+
+	it := dataset.IterateItems(options, ptr(int64(1)))
+	yielded := 0
+	for {
+		item, err := it.Next(ctx)
+		if err != nil {
+			t.Fatalf("iterate: %v", err)
+		}
+		if item == nil {
+			break
+		}
+		yielded++
+	}
+	if yielded != 2 {
+		t.Fatalf("expected the iterator to yield the 2 non-empty items, got %d", yielded)
 	}
 }

@@ -193,20 +193,17 @@ type PaginationList[T any] struct {
 	Offset int64 `json:"offset"`
 	// Limit is the maximum number of items the API would return for this request.
 	Limit int64 `json:"limit"`
-	// Count is the number of items actually returned in this page.
+	// Count is the number of entries on this page. On a page from [DatasetClient.ListItems] it is
+	// the number of dataset rows the API scanned for the page (the X-Apify-Pagination-Count
+	// header), or the number of items returned when that is larger. Filters (Clean, SkipEmpty,
+	// SkipHidden) can leave it above len(Items). The next page starts at
+	// Offset + min(Count, Limit); the cap matters only with Unwind, which can return more items
+	// than the rows scanned.
 	Count int64 `json:"count"`
 	// Desc reports whether the items are in descending order.
 	Desc bool `json:"desc"`
 	// Items are the items of this page.
 	Items []T `json:"items"`
-	// scanned is the number of underlying rows the API scanned to produce this page, if the
-	// endpoint reports one distinct from Count (currently only dataset items, via the
-	// X-Apify-Pagination-Count header). Zero means "not reported"; [ListIterator] then falls
-	// back to Count, which is correct for every endpoint that does not reshape its rows.
-	//
-	// Unexported and so never (un)marshaled: it is paging plumbing for ListIterator, not part
-	// of this type's public, JSON-mirroring shape.
-	scanned int64
 }
 
 // osTokenOverrides maps Go's runtime.GOOS values to the platform names the reference Apify JS

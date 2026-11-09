@@ -32,6 +32,7 @@ var docFiles = []string{
 	"README.md",
 	"docs/README.md",
 	"docs/actors.md",
+	"docs/server_actors.md",
 	"docs/builds.md",
 	"docs/runs.md",
 	"docs/tasks.md",
@@ -117,10 +118,12 @@ func assembleProgram(s snippet) string {
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
 	b.WriteString("\t\"context\"\n")
+	b.WriteString("\t\"encoding/json\"\n")
 	b.WriteString("\t\"fmt\"\n")
 	b.WriteString("\t\"io\"\n")
 	b.WriteString("\t\"log\"\n")
 	b.WriteString("\t\"net/http\"\n")
+	b.WriteString("\t\"net/url\"\n")
 	b.WriteString("\t\"os\"\n")
 	b.WriteString("\t\"time\"\n\n")
 	b.WriteString("\tapify \"github.com/apify/apify-client-go\"\n")
@@ -128,10 +131,12 @@ func assembleProgram(s snippet) string {
 	// Reference the imports that a given fragment may not use, so the wrapper never fails on
 	// unused imports regardless of which snippet it carries.
 	b.WriteString("var (\n")
+	b.WriteString("\t_ = json.Valid\n")
 	b.WriteString("\t_ = fmt.Sprint\n")
 	b.WriteString("\t_ = io.EOF\n")
 	b.WriteString("\t_ = log.Print\n")
 	b.WriteString("\t_ = http.MethodGet\n")
+	b.WriteString("\t_ = url.Values{}\n")
 	b.WriteString("\t_ = os.Stdout\n")
 	b.WriteString("\t_ = time.Second\n")
 	b.WriteString(")\n\n")

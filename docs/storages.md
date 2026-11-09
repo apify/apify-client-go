@@ -23,7 +23,7 @@ Single dataset: `client.Dataset(id)`:
 | `DownloadItems(ctx, DownloadItemsFormat, DatasetDownloadOptions) ([]byte, error)` | Export items (JSON, JSONL, CSV, XLSX, XML, RSS, HTML — see the format constants below). |
 | `DownloadItemsStream(ctx, DownloadItemsFormat, DatasetDownloadOptions) (io.ReadCloser, error)` | Like `DownloadItems`, but as a stream for a large export; close when done. |
 | `GetStatistics(ctx) (json.RawMessage, error)` | Dataset statistics. |
-| `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL, served as `json`. |
+| `CreateItemsPublicURL(ctx, DatasetListItemsOptions, expiresInSecs *int64) (string, error)` | Signed public items URL, served as `json`. `expiresInSecs` must be positive (nil for a URL that never expires); zero or a negative value is an error returned before any request. |
 | `CreateItemsPublicURLWithFormat(ctx, DatasetListItemsOptions, expiresInSecs *int64, DownloadItemsFormat) (string, error)` | Like `CreateItemsPublicURL`, but lets the URL serve another export format (CSV, XLSX, ...). An empty format defaults to `json`. |
 
 The `Dataset` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
@@ -181,7 +181,7 @@ Single store: `client.KeyValueStore(id)`:
 | `RecordExists(ctx, key) (bool, error)` | HEAD check. |
 | `DeleteRecord(ctx, key) error` | Delete a record. |
 | `GetRecordPublicURL(ctx, key) (string, error)` | Signed public record URL. |
-| `CreateKeysPublicURL(ctx, expiresInSecs *int64) (string, error)` | Signed public key-list URL. |
+| `CreateKeysPublicURL(ctx, expiresInSecs *int64) (string, error)` | Signed public key-list URL. `expiresInSecs` must be positive (nil for a URL that never expires); zero or a negative value is an error returned before any request. |
 
 The `KeyValueStore` value returned by `Get`/`GetOrCreate`/`Update` and listed by `List`/`Iterate`:
 

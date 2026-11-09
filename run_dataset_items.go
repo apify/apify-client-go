@@ -28,7 +28,8 @@ type RunIterateDatasetItemsOptions struct {
 	// fewer items are yielded when filters drop some, more when Unwind splits a row into several.
 	// Items.Desc is not supported, because the rows are read by offset from the oldest.
 	Items DatasetListItemsOptions
-	// ChunkSize is the maximum number of dataset rows requested per API call (default 1000).
+	// ChunkSize is the maximum number of dataset rows requested per API call. Unlike the other
+	// iterators, this one applies a default of 1000 when it is unset.
 	ChunkSize *int64
 	// PollIntervalSecs is how long to wait for the run to finish between polls, in seconds
 	// (default 5).
@@ -191,11 +192,11 @@ func (it *RunDatasetItemsIterator[T]) liveStep(ctx context.Context) error {
 
 	if it.position < it.roundItemCount {
 		pageLimit := minInt64(it.pageSize, it.roundItemCount-it.position)
-		items, _, err := it.listPage(ctx, it.position, pageLimit)
+		page, err := it.listPage(ctx, it.position, pageLimit)
 		if err != nil {
 			return err
 		}
-		it.buffer = items
+		it.buffer = page.Items
 		it.position += pageLimit
 		return nil
 	}
@@ -224,15 +225,15 @@ func (it *RunDatasetItemsIterator[T]) tailStep(ctx context.Context) error {
 	if it.hasEnd {
 		pageLimit = minInt64(it.pageSize, it.end-it.position)
 	}
-	items, scanned, err := it.listPage(ctx, it.position, pageLimit)
+	page, err := it.listPage(ctx, it.position, pageLimit)
 	if err != nil {
 		return err
 	}
-	it.buffer = items
+	it.buffer = page.Items
 
 	// A page that Clean, SkipEmpty or Unwind emptied past a lagging itemCount reports no scanned
-	// rows either, so a plain read confirms the dataset really has no more rows.
-	if len(items) == 0 && scanned == 0 {
+	// rows either (its Count is 0), so a plain read confirms the dataset really has no more rows.
+	if page.Count == 0 {
 		confirmed, err := it.confirmNoMoreRows(ctx)
 		if err != nil {
 			return err
@@ -265,14 +266,10 @@ func (it *RunDatasetItemsIterator[T]) confirmNoMoreRows(ctx context.Context) (bo
 }
 
 // listPage reads the page of the dataset that starts at offset and holds at most limit rows,
-// returning its items and the number of rows the API scanned for it.
-func (it *RunDatasetItemsIterator[T]) listPage(ctx context.Context, offset, limit int64) ([]T, int64, error) {
+// returning it with its Count (the number of rows the API scanned for it).
+func (it *RunDatasetItemsIterator[T]) listPage(ctx context.Context, offset, limit int64) (PaginationList[T], error) {
 	options := it.options.Items
 	options.Offset = &offset
 	options.Limit = &limit
-	page, err := ListDatasetItems[T](ctx, it.dataset, options)
-	if err != nil {
-		return nil, 0, err
-	}
-	return page.Items, page.scanned, nil
+	return ListDatasetItems[T](ctx, it.dataset, options)
 }

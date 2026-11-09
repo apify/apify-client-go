@@ -71,6 +71,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `IsPublic` | `bool` | Whether the Actor is public in Apify Store. |
 | `CreatedAt` | `*time.Time` | When the Actor was created. |
 | `ModifiedAt` | `*time.Time` | When the Actor was last modified. |
+| `StandbyURL` | `*string` | URL of the Actor's server (normalized), set for a Server Actor. See [Server Actors](server_actors.md). |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API. |
 
 ## Single Actor
@@ -94,6 +95,7 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `Runs() *RunCollectionClient` | This Actor's runs. |
 | `Version(n) *ActorVersionClient` / `Versions() *ActorVersionCollectionClient` | Client for a single Actor version (by version number), or a collection client for listing and creating this Actor's versions. |
 | `Webhooks() *WebhookCollectionClient` | This Actor's webhooks. |
+| `Server() *ActorServerClient` | Client for the Actor's server interface (a Server Actor, formerly Actor Standby): its URL, its OpenAPI specification and requests to it. `Standby()` is a deprecated alias. See [Server Actors](server_actors.md). |
 
 > **Note — two different `Build`s.** `Actor.Build(ctx, versionNumber, ActorBuildOptions)` here
 > *starts* a build of a version and returns the resulting `Build`. It is unrelated to the
@@ -211,8 +213,9 @@ take a free-form definition (`any`) serialized to JSON:
 | Field | Meaning |
 |---|---|
 | `versionNumber` | `MAJOR.MINOR`, for example `"0.1"`. Required on create. |
-| `sourceType` | Where the source lives: `SOURCE_FILES`, `GIT_REPO`, `TARBALL` or `GITHUB_GIST`. Required on create. `SOURCE_CODE` can appear in responses but is not accepted in requests. |
+| `sourceType` | Where the source lives: `SOURCE_FILES`, `GIT_REPO`, `TARBALL` (a zip archive) or `GITHUB_GIST`. Required on create. `SOURCE_CODE` can appear in responses but is not accepted in requests. |
 | `sourceFiles`, `gitRepoUrl`, `tarballUrl`, `gitHubGistUrl` | The source, matching `sourceType`. |
+| `actorPath` | For `SOURCE_FILES` and `TARBALL` versions: the Actor's directory inside the uploaded source, relative to the upload root, with `/` separators (1 to 255 characters, no leading, trailing or repeated `/`, no `.` or `..` segments), for example `actors/typescript-actor`. It lets a monorepo Actor be pushed from an upload of the whole repository. The upload root is the Actor's directory when it is omitted or `null`. The API rejects it for `GIT_REPO` and `GITHUB_GIST`. An update that sends `sourceType`, `sourceFiles` or `tarballUrl` without `actorPath` removes the stored path, so send it again with every upload; `null` removes it too, and an update of other fields keeps it. It is `ActorVersion.ActorPath` in responses; for a `TARBALL` version, only users with write access to the Actor get it. |
 | `envVars` | List of `{name, value, isSecret}`. Each entry needs `name` and `value`. |
 | `applyEnvVarsToBuild`, `buildTag` | Optional build settings. |
 

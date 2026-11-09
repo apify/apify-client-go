@@ -173,3 +173,50 @@ func TestActorEnvVarCRUDFlow(t *testing.T) {
 		t.Fatalf("delete env var: %v", err)
 	}
 }
+
+// TestActorVersionActorPath checks that a multi-file version keeps the Actor's directory inside
+// the upload, and that an update which sends the source without it removes it again.
+func TestActorVersionActorPath(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	created, err := client.Actors().Create(ctx, minimalActor(uniqueName("path")))
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	defer func() { _ = client.Actor(created.ID).Delete(ctx) }()
+	actor := client.Actor(created.ID)
+
+	version, err := actor.Versions().Create(ctx, map[string]any{
+		"versionNumber": "0.1",
+		"sourceType":    "SOURCE_FILES",
+		"buildTag":      "latest",
+		"sourceFiles":   []any{},
+		"actorPath":     "actors/typescript-actor",
+	})
+	if err != nil {
+		t.Fatalf("create version: %v", err)
+	}
+	if version.ActorPath == nil || *version.ActorPath != "actors/typescript-actor" {
+		t.Fatalf("created version: ActorPath = %v", version.ActorPath)
+	}
+
+	// An update of other fields keeps the path.
+	updated, err := actor.Version("0.1").Update(ctx, map[string]any{"buildTag": "beta"})
+	if err != nil {
+		t.Fatalf("update build tag: %v", err)
+	}
+	if updated.ActorPath == nil || *updated.ActorPath != "actors/typescript-actor" {
+		t.Fatalf("an update of the build tag must keep the path, got %v", updated.ActorPath)
+	}
+
+	// An update that sends the source without the path removes it.
+	updated, err = actor.Version("0.1").Update(ctx, map[string]any{"sourceType": "SOURCE_FILES", "sourceFiles": []any{}})
+	if err != nil {
+		t.Fatalf("update source: %v", err)
+	}
+	if updated.ActorPath != nil {
+		t.Fatalf("an update of the source without actorPath must remove it, got %q", *updated.ActorPath)
+	}
+}
