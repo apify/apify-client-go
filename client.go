@@ -1,7 +1,7 @@
 // Package apify is the Go client of the Apify API (https://docs.apify.com/api/v2).
 //
 // Start from an [ApifyClient] and go on to the resource clients: Actors, runs, datasets,
-// key-value stores, request queues, tasks, schedules, webhooks, the Store, users and logs.
+// key-value stores, request queues, tasks, schedules, webhooks, the Store, users, and logs.
 //
 // # Quick start
 //

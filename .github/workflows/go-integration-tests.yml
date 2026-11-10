@@ -1,6 +1,6 @@
 name: Go integration tests
 
-# Runs for changes to Go code, docs or this workflow, and can be dispatched from any branch.
+# Runs for changes to Go code, docs, or this workflow, and can be dispatched from any branch.
 on:
   pull_request:
     branches: [master]

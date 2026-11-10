@@ -15,7 +15,8 @@ Webhooks notify external services when events occur. Access the webhook collecti
 An Actor's or task's webhooks are also listable via `client.Actor(id).Webhooks()` /
 `client.Task(id).Webhooks()`.
 
-`Create` (and `Update`) take a JSON object (`any`) with the webhook fields of the Apify API. The commonly used input keys are:
+`Create` (and `Update`) take a JSON object (`any`) with the webhook fields of the Apify API.
+The commonly used input keys are:
 
 | Key | Type | Meaning |
 |---|---|---|

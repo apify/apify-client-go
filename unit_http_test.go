@@ -340,6 +340,23 @@ func TestWithRequestCompressionZstd(t *testing.T) {
 	}
 }
 
+// zstdCompress is safe for concurrent use and round-trips.
+func TestZstdCompressConcurrently(t *testing.T) {
+	body := []byte(strings.Repeat("compress me ", 500))
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := zstdCompress(body)
+			if err != nil || len(out) >= len(body) {
+				t.Errorf("compressed %d bytes to %d: %v", len(body), len(out), err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 // WithRequestCompression(RequestCompressionGzip) must use gzip only, even for a body brotli
 // would otherwise have compressed first.
 func TestWithRequestCompressionGzipOnly(t *testing.T) {

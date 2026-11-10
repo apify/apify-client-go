@@ -327,14 +327,14 @@ func gzipCompress(body []byte) ([]byte, error) {
 	return compressBody(body, func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) })
 }
 
-// zstdEncoder compresses every zstd request body. A nil writer makes it a stateless encoder that is
-// safe for concurrent use, which is cheaper than a new encoder for each request.
+// zstdEncoder compresses every zstd request body with EncodeAll, which is safe for concurrent use
+// and cheaper than a new encoder for each request.
 var zstdEncoder = newZstdEncoder()
 
 func newZstdEncoder() *zstd.Encoder {
-	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
+	encoder, err := zstd.NewWriter(nil)
 	if err != nil {
-		// Only invalid options fail, and these are constant.
+		// Only invalid options fail, and none are passed.
 		panic(err)
 	}
 	return encoder

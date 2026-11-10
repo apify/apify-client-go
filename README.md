@@ -7,7 +7,7 @@
 An idiomatic Go client for the [Apify API](https://docs.apify.com/api/v2).
 
 Start from an `ApifyClient` and go on to the resources: Actors, runs, datasets, key-value
-stores, request queues, tasks, schedules, webhooks, the Store, users and logs.
+stores, request queues, tasks, schedules, webhooks, the Store, users, and logs.
 
 ## Features
 
@@ -154,22 +154,23 @@ request is not aborted client-side while the server is correctly honoring it.
 
 Request bodies of 1 KiB or more are compressed before sending, to save upload bandwidth. By
 default (`RequestCompressionAuto`) the client prefers brotli and falls back to gzip when brotli
-errors or does not shrink the body; `WithRequestCompression` with `RequestCompressionBrotli`, `RequestCompressionGzip` or
-`RequestCompressionZstd` pins it to one codec, with no fallback (a body that codec does not
-shrink is sent uncompressed rather than failing). A body whose content type is already
-compressed, such as images, audio, video and archives, is not compressed, except for raw formats
+errors or does not shrink the body. `WithRequestCompression` with `RequestCompressionBrotli`,
+`RequestCompressionGzip`, or `RequestCompressionZstd` pins it to one codec, with no fallback: a
+body that codec does not shrink is sent uncompressed. A body whose content type is already
+compressed, such as images, audio, video, and archives, is not compressed, except for raw formats
 like `image/bmp`.
 
 The `User-Agent` header reports an `isAtHome` flag indicating whether the client runs on the
-Apify platform. It is driven solely by the `APIFY_IS_AT_HOME` environment variable (the same
-variable); if it is set to a non-empty value, the flag is `true`, otherwise `false`.
+Apify platform. It is driven solely by the `APIFY_IS_AT_HOME` environment variable: if it is set
+to a non-empty value, the flag is `true`, otherwise `false`.
 
 ### URL fields
 
 The fields the API specification declares as URLs (`consoleUrl`, `containerUrl`, `itemsPublicUrl`,
 `keysPublicUrl`, `recordsPublicUrl`, `recordPublicUrl`, `standbyUrl`, the webhook `requestUrl`, a
 run's `output` links, a Store Actor's `url` and `userPictureUrl`, and a user profile's
-`pictureUrl` and `websiteUrl`) are returned in a normalized form, close to the WHATWG URL serialization: the scheme and host are lowercased, a non-ASCII host becomes punycode, an IPv4 or
+`pictureUrl` and `websiteUrl`) are returned in a normalized form, close to the WHATWG URL
+serialization: the scheme and host are lowercased, a non-ASCII host becomes punycode, an IPv4 or
 IPv6 host is written canonically, a default port is dropped, an empty path becomes `/`, dot
 segments are resolved, and unsafe characters are percent-encoded. It covers the http(s), ws(s),
 ftp and file URLs the API returns; it does not apply the full Unicode (UTS #46) mapping to a

@@ -135,8 +135,7 @@ func scannedRows[T any](page PaginationList[T], requestedLimit int64) int64 {
 }
 
 // remainingLimitParam returns the number of items still allowed by the caller's Limit, for use
-// minForLimitParam returns the smaller of a and b, ignoring a value of 0 or below, which means
-// unset. It returns 0 when neither is set.
+// as a minForLimitParam input, where 0 means unset. It is meaningful only once hasLimit is set.
 func (it *ListIterator[T]) remainingLimitParam() int64 {
 	if !it.hasLimit {
 		return 0
@@ -161,7 +160,8 @@ func (it *ListIterator[T]) chunkVal() int64 {
 	return *it.chunkSize
 }
 
-// minForLimitParam
+// minForLimitParam returns the smaller of a and b, ignoring a value of 0 or below, which means
+// unset. It returns 0 when neither is set.
 func minForLimitParam(a, b int64) int64 {
 	if a <= 0 {
 		return maxInt64(b, 0)

@@ -81,11 +81,23 @@ func decodeBody(req *http.Request) []byte {
 	case "br":
 		reader = brotli.NewReader(req.Body)
 	case "gzip":
-		reader, _ = gzip.NewReader(req.Body)
+		gz, err := gzip.NewReader(req.Body)
+		if err != nil {
+			return nil
+		}
+		reader = gz
 	case "zstd":
-		reader, _ = zstd.NewReader(req.Body)
+		zr, err := zstd.NewReader(req.Body)
+		if err != nil {
+			return nil
+		}
+		defer zr.Close()
+		reader = zr
 	}
-	data, _ := io.ReadAll(reader)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil
+	}
 	return data
 }
 
@@ -176,25 +188,81 @@ func TestBatchAddRequestsSendsAtMostMaxParallelBatchesAtOnce(t *testing.T) {
 	}
 }
 
-func TestBatchAddRequestsReturnsTheErrorWithTheResultOfTheOtherBatches(t *testing.T) {
-	failure := errors.New("connection refused")
+func TestBatchAddRequestsLeavesTheRequestsOfAFailedBatchUnprocessed(t *testing.T) {
 	backend := &batchBackend{fail: func(call int) error {
 		if call == 0 {
-			return failure
+			return errors.New("connection refused")
 		}
 		return nil
 	}}
 	options := BatchAddRequestsOptions{MaxParallel: Ptr(int64(1))}
 	result, err := testClient(backend, 0).RequestQueue("q1").BatchAddRequestsWithOptions(context.Background(), uniqueRequests(30), options)
-	if !errors.Is(err, failure) {
-		t.Fatalf("err = %v", err)
+	if err != nil {
+		t.Fatalf("a failed batch is not an error of the call: %v", err)
 	}
 	if len(result.UnprocessedRequests) != 25 || len(result.ProcessedRequests) != 5 {
-		t.Fatalf("the failed batch must be unprocessed and the other one added: processed %d, unprocessed %d",
-			len(result.ProcessedRequests), len(result.UnprocessedRequests))
+		t.Fatalf("processed %d, unprocessed %d", len(result.ProcessedRequests), len(result.UnprocessedRequests))
 	}
 	if first := result.UnprocessedRequests[0]; first.UniqueKey != "key-aa" || first.URL == "" || first.Method != "GET" {
 		t.Fatalf("an unprocessed request keeps its method, unique key and URL: %+v", first)
+	}
+}
+
+func TestBatchAddRequestsKeepsWhatWasAddedWhenARetryFails(t *testing.T) {
+	backend := &batchBackend{
+		reject: func(call int, requests []RequestQueueRequest) map[string]bool {
+			if call == 0 {
+				return map[string]bool{"key-ab": true, "key-ac": true}
+			}
+			return nil
+		},
+		fail: func(call int) error {
+			if call == 1 {
+				return errors.New("connection reset")
+			}
+			return nil
+		},
+	}
+	result, err := testClient(backend, 0).RequestQueue("q1").BatchAddRequestsWithOptions(context.Background(), uniqueRequests(4), fastBatchOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ProcessedRequests) != 2 || len(result.UnprocessedRequests) != 2 {
+		t.Fatalf("processed %d, unprocessed %d", len(result.ProcessedRequests), len(result.UnprocessedRequests))
+	}
+	for _, r := range result.UnprocessedRequests {
+		if r.UniqueKey != "key-ab" && r.UniqueKey != "key-ac" {
+			t.Fatalf("an added request is reported as unprocessed: %+v", r)
+		}
+	}
+}
+
+func TestBatchAddRequestsReturnsTheErrorWhenTheContextEndsDuringARequest(t *testing.T) {
+	backend := &batchBackend{delay: 100 * time.Millisecond, fail: func(int) error { return context.DeadlineExceeded }}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := testClient(backend, 0).RequestQueue("q1").BatchAddRequests(ctx, uniqueRequests(2), false)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBatchAddRequestsReturnsAnErrorForAnUndecodableResponse(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":`)}
+	_, err := testClient(backend, 0).RequestQueue("q1").BatchAddRequests(context.Background(), uniqueRequests(1), false)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestUnprocessedRetryDelayStaysWithinTheCap(t *testing.T) {
+	client := testClient(&batchBackend{}, 0).RequestQueue("q1")
+	minDelay := 500 * time.Millisecond
+	for _, attempt := range []int{0, 1, 5, 40, 200} {
+		delay := client.unprocessedRetryDelay(minDelay, attempt)
+		if delay < minDelay || delay >= 2*client.ctx.http.retry.timeoutMax {
+			t.Fatalf("attempt %d: delay %v", attempt, delay)
+		}
 	}
 }
 

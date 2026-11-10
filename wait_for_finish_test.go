@@ -103,7 +103,6 @@ func TestWaitForFinishReturnsNotFoundWhenBudgetExhaustedWhileCurrently404(t *tes
 
 // An INDEFINITE WaitForFinish (nil waitSecs) against a permanent 404 must NOT hang forever:
 // it polls through 404s on a pure time bound, so a cancelled context unblocks it promptly.
-// This is the regression test for the waitForFinish hang bug.
 func TestWaitForFinishIndefiniteDoesNotHangOn404(t *testing.T) {
 	backend := &mockBackend{responses: notFound()}
 	client := testClient(backend, 0)

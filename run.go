@@ -213,8 +213,7 @@ func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error 
 const chargeIdempotencyHeader = "idempotency-key"
 
 // generateIdempotencyKey builds a per-charge idempotency key of the form
-// "{runId}-{eventName}-{timestampMillis}-{random}". It need not be cryptographically secure — only
-// unique enough to avoid collisions within a request.
+// "{runId}-{eventName}-{timestampMillis}-{random}". It must be unique, not secure.
 func (c *RunClient) generateIdempotencyKey(eventName string) string {
 	return c.id + "-" + eventName + "-" +
 		strconv.FormatInt(time.Now().UnixMilli(), 10) + "-" +

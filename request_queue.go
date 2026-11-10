@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
-	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -290,7 +288,7 @@ type batchAddSettings struct {
 	minDelay    time.Duration
 }
 
-// resolve fills in the defaults and rejects values that the API cannot make sense of.
+// resolve fills in the defaults and rejects invalid values.
 func (o BatchAddRequestsOptions) resolve() (batchAddSettings, error) {
 	settings := batchAddSettings{
 		forefront:   o.Forefront,
@@ -330,10 +328,10 @@ func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []Re
 // requests that the API did not process again, up to MaxUnprocessedRequestsRetries times. It fails
 // before sending anything if one request is too large for a batch.
 //
-// The result lists the requests that were added and those that are still unprocessed. When a batch
-// fails with an error, the error is returned with the result of all batches, in which the requests
-// of the failed batch that were not added are unprocessed. When ctx ends, the error of ctx is
-// returned.
+// The result lists the requests that were added and those that are still unprocessed. A batch
+// that fails with an API or transport error is not an error of the call: its requests that were
+// not added are unprocessed. The call returns an error for a response that cannot be decoded, and
+// the error of ctx, with the result so far, when ctx ends.
 func (c *RequestQueueClient) BatchAddRequestsWithOptions(ctx context.Context, requests []RequestQueueRequest, options BatchAddRequestsOptions) (BatchAddResult, error) {
 	var merged BatchAddResult
 	settings, err := options.resolve()
@@ -371,7 +369,7 @@ func (c *RequestQueueClient) BatchAddRequestsWithOptions(ctx context.Context, re
 	return merged, firstErr
 }
 
-// batchOutcome is the result of one batch and the error that ended it early, if any.
+// batchOutcome is the result of one batch and the error that fails the whole call, if any.
 type batchOutcome struct {
 	result BatchAddResult
 	err    error
@@ -386,8 +384,11 @@ func (c *RequestQueueClient) addBatchWithRetries(ctx context.Context, batch []se
 	for attempt := 0; attempt <= settings.maxRetries; attempt++ {
 		response, err := c.batchAddChunk(ctx, remaining, settings.forefront)
 		if err != nil {
-			outcome.err = err
+			// An API or transport error leaves the rest of the batch unprocessed.
 			outcome.result.UnprocessedRequests = unprocessedOf(remaining)
+			if ctx.Err() != nil || isResponseDecodingError(err) {
+				outcome.err = err
+			}
 			return outcome
 		}
 		outcome.result.ProcessedRequests = append(outcome.result.ProcessedRequests, response.ProcessedRequests...)
@@ -399,7 +400,7 @@ func (c *RequestQueueClient) addBatchWithRetries(ctx context.Context, batch []se
 		if len(remaining) == 0 || attempt == settings.maxRetries {
 			return outcome
 		}
-		if !sleepWithContext(ctx, unprocessedRetryDelay(settings.minDelay, attempt)) {
+		if !sleepWithContext(ctx, c.unprocessedRetryDelay(settings.minDelay, attempt)) {
 			outcome.err = ctx.Err()
 			outcome.result.UnprocessedRequests = unprocessedOf(remaining)
 			return outcome
@@ -408,10 +409,21 @@ func (c *RequestQueueClient) addBatchWithRetries(ctx context.Context, batch []se
 	return outcome
 }
 
-// unprocessedRetryDelay returns the delay before the retry that follows attempt: the base delay
-// doubled for each earlier retry, times a random factor in [1, 2).
-func unprocessedRetryDelay(minDelay time.Duration, attempt int) time.Duration {
-	return time.Duration((1 + rand.Float64()) * float64(minDelay) * math.Pow(backoffFactor, float64(attempt)))
+// unprocessedRetryDelay returns the delay before the retry that follows attempt: minDelay doubled
+// for each earlier retry, capped at the maximum request timeout and randomized.
+func (c *RequestQueueClient) unprocessedRetryDelay(minDelay time.Duration, attempt int) time.Duration {
+	delay := minDelay
+	for i := 0; i < attempt; i++ {
+		delay = minDuration(delay*backoffFactor, c.ctx.http.retry.timeoutMax)
+	}
+	return randomizedDelay(delay)
+}
+
+// isResponseDecodingError reports whether err comes from decoding a response body.
+func isResponseDecodingError(err error) bool {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr)
 }
 
 // withoutAdded returns the requests of batch whose unique key is not in added.
@@ -542,8 +554,8 @@ func (c *RequestQueueClient) PaginateRequests(pageLimit *int64) *RequestQueueReq
 
 // PaginateRequestsWithOptions is [RequestQueueClient.PaginateRequests] with listing options. Limit
 // caps the number of requests yielded, and nil or 0 means all. Cursor, or the deprecated
-// ExclusiveStartID, is where to start, and Filter applies to every page. chunkSize is the page size,
-// nil for the default. The first call of Next reports invalid options.
+// ExclusiveStartID, is where to start, and Filter applies to every page. chunkSize is the page
+// size, nil for the default. The first call of Next reports invalid options.
 func (c *RequestQueueClient) PaginateRequestsWithOptions(options ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator {
 	return &RequestQueueRequestsIterator{client: c, options: options, chunkSize: chunkSize}
 }
