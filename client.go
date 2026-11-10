@@ -1,5 +1,4 @@
-// Package apify is the Go client of the Apify API (https://docs.apify.com/api/v2). The README
-// states that the client is experimental and generated and maintained by AI.
+// Package apify is the Go client of the Apify API (https://docs.apify.com/api/v2).
 //
 // Start from an [ApifyClient] and go on to the resource clients: Actors, runs, datasets,
 // key-value stores, request queues, tasks, schedules, webhooks, the Store, users and logs.
@@ -151,7 +150,7 @@ func WithUserAgentSuffix(suffix string) Option {
 // WithRequestCompression selects which codec compresses request bodies (default
 // [RequestCompressionAuto]: brotli, falling back to gzip). A caller that wants a specific
 // codec, with no fallback to another one, can pass [RequestCompressionBrotli],
-// [RequestCompressionGzip] or [RequestCompressionZstd].
+// [RequestCompressionGzip], or [RequestCompressionZstd].
 func WithRequestCompression(algo RequestCompression) Option {
 	return func(c *clientConfig) { c.requestCompression = algo }
 }

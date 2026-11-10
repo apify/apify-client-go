@@ -35,14 +35,16 @@ func (c *TaskClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// Publish publishes the task on its public page by setting IsPublic. The Actor must be public and
-// the task must have its PublicConfig. Publishing a published task does nothing. An Actor can have
-// 10 published tasks and an account 100.
+// Publish publishes the task on its public page by setting IsPublic. The Actor must be public, and
+// the task must have its PublicConfig. It needs write permission to both the task and its Actor.
+// Publishing a published task does nothing. An Actor can have at most 10 published tasks and an
+// account at most 100. Apify support can raise both limits.
 func (c *TaskClient) Publish(ctx context.Context) (Task, error) {
 	return c.Update(ctx, map[string]any{"isPublic": true})
 }
 
-// Unpublish removes the task from its public page by clearing IsPublic. PublicConfig is kept.
+// Unpublish removes the task from its public page by clearing IsPublic. PublicConfig is kept, so
+// the task can be published again. It needs write permission to both the task and its Actor.
 // Unpublishing a task that is not published does nothing.
 func (c *TaskClient) Unpublish(ctx context.Context) (Task, error) {
 	return c.Update(ctx, map[string]any{"isPublic": false})

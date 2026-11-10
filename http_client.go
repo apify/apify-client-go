@@ -22,8 +22,8 @@ const (
 	rateLimitExceededStatusCode = 429
 	// minServerErrorStatusCode is the lowest status that is retried as a server error.
 	minServerErrorStatusCode = 500
-	// maxSuccessStatusCode is the lowest status that is not a success.
-	maxSuccessStatusCode = 300
+	// minNonSuccessStatusCode is the lowest status that is not a success.
+	minNonSuccessStatusCode = 300
 	// backoffFactor multiplies the delay between retries after each attempt.
 	backoffFactor = 2
 	// minCompressRequestBytes is the smallest request body that is compressed.
@@ -166,7 +166,7 @@ func (c *httpClient) doRetryLoop(ctx context.Context, method, url string, sendBo
 		if err != nil {
 			lastErr = err
 			retryable = isTransportErrorRetryable(err) && (!c.doNotRetryTimeouts || !isTimeoutError(err))
-		} else if resp.statusCode < maxSuccessStatusCode {
+		} else if resp.statusCode < minNonSuccessStatusCode {
 			return resp, nil
 		} else {
 			lastErr = buildAPIError(resp.statusCode, resp.body, attempt, method, path)
@@ -281,7 +281,7 @@ const (
 	RequestCompressionBrotli
 	// RequestCompressionGzip uses gzip only. A body it does not shrink is sent uncompressed.
 	RequestCompressionGzip
-	// RequestCompressionZstd uses zstd at its default level only. A body it does not shrink is
+	// RequestCompressionZstd uses zstd only, at its default level. A body it does not shrink is
 	// sent uncompressed.
 	RequestCompressionZstd
 )
@@ -327,13 +327,22 @@ func gzipCompress(body []byte) ([]byte, error) {
 	return compressBody(body, func(w io.Writer) io.WriteCloser { return gzip.NewWriter(w) })
 }
 
+// zstdEncoder compresses every zstd request body. A nil writer makes it a stateless encoder that is
+// safe for concurrent use, which is cheaper than a new encoder for each request.
+var zstdEncoder = newZstdEncoder()
+
+func newZstdEncoder() *zstd.Encoder {
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
+	if err != nil {
+		// Only invalid options fail, and these are constant.
+		panic(err)
+	}
+	return encoder
+}
+
 // zstdCompress compresses body with zstd (Content-Encoding: zstd).
 func zstdCompress(body []byte) ([]byte, error) {
-	return compressBody(body, func(w io.Writer) io.WriteCloser {
-		// NewWriter fails only for invalid options, and none are passed.
-		encoder, _ := zstd.NewWriter(w)
-		return encoder
-	})
+	return zstdEncoder.EncodeAll(body, nil), nil
 }
 
 // maybeCompressRequestBody compresses body if it is at least [minCompressRequestBytes] long and
@@ -457,7 +466,7 @@ func (c *httpClient) attemptTimeout(base time.Duration, attempt int) time.Durati
 	}
 	scaled := base
 	for i := 1; i < attempt; i++ {
-		scaled *= 2
+		scaled *= backoffFactor
 		if scaled >= c.retry.timeoutMax {
 			return c.retry.timeoutMax
 		}

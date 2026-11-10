@@ -42,6 +42,31 @@ if err := response.JSON(&results); err != nil {
 fmt.Println(results)
 ```
 
+## Calling a Server Actor from a Server Actor
+
+A multi-tenant Server Actor shares its runs among its users, so the platform tells the requests
+apart by the `X-Actor-Request-ID` header of each request it forwards to the Actor. When your
+Server Actor calls another one while handling a request, pass that header in `ParentRequestID`.
+The client sends it as the same header, so the called Actor charges at the pricing tier of your
+incoming request. Use a client created with the run's `APIFY_TOKEN`. For details, see
+[Compose multi-tenant Server Actors](https://docs.apify.com/platform/actors/development/programming-interface/standby#compose-server-actors).
+
+```go
+handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	response, err := client.Actor("username/other-actor").Server().Request(r.Context(), "/search", apify.ActorServerRequestOptions{
+		Params:          url.Values{"q": {"apify"}},
+		ParentRequestID: r.Header.Get("X-Actor-Request-ID"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(response.StatusCode)
+	_, _ = w.Write(response.Body)
+})
+_ = handler
+```
+
 ## Request options
 
 | Field | Type | Meaning |

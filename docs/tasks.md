@@ -71,9 +71,8 @@ if err != nil {
 run, err := client.Task(task.ID).Call(ctx, nil, apify.TaskStartOptions{}, apify.Ptr(int64(120)))
 ```
 
-`TaskStartOptions` mirrors `ActorStartOptions` (see [actors.md](actors.md)) but omits the
-Actor-only `ContentType` and `ForcePermissionLevel`, which the task run endpoint does not
-accept.
+`TaskStartOptions` is `ActorStartOptions` (see [actors.md](actors.md)) without the `ContentType`
+and `ForcePermissionLevel` fields, which the task run endpoint does not accept.
 
 `LastRun(status)` / `LastRunWithOptions(LastRunOptions{Status, Origin})` resolve the task's most
 recent run, optionally narrowed by status and/or origin. `LastRunOptions` is the same type used

@@ -13,10 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ActorServerRequestOptions.ParentRequestID`, sent as the `X-Actor-Request-ID` header, so that a
   Server Actor calling another one passes its caller's pricing tier on.
 - `zstd` in the documented `Content-Encoding` values of `SetRecordRawWithEncoding`.
+- `RequestQueueClient.BatchAddRequestsWithOptions` with `BatchAddRequestsOptions`.
+  `BatchAddRequests` now sends the requests that the API did not process again (3 retries by
+  default) and sends up to 5 batches at once. If a batch fails with an error, the error is
+  returned together with the result of all batches.
+- `RequestQueueOperationInfo.UniqueKey`.
 
 ### Changed
 
-- Shortened and corrected the documentation and code comments.
+- Shortened and corrected the documentation and code comments, and split the tests of
+  `review_fixes_test.go` by subject.
 - Bumped `APISpecVersion` to `v2-2026-11-09T143926Z` and `ClientVersion` to `0.16.0`.
 
 ## [0.15.0] - 2026-11-06

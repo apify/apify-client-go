@@ -6,9 +6,10 @@ import "context"
 // from the Iterate method of a collection client, and call Next until it returns (nil, nil).
 //
 // The Limit of the list options caps the total number of items yielded, and nil or 0 means all of
-// them. The chunkSize argument of Iterate is the page size, which defaults to the page size of the
-// API, so iterating dataset items without a chunkSize or Limit loads the whole dataset at once.
-// The Offset of the options is the starting point.
+// them. The chunkSize argument of Iterate is the page size. If it is unset, the page size is the
+// default of the API, capped by the remaining Limit. Dataset items have no default limit, so
+// iterating them without a chunkSize or Limit loads the whole dataset in one response. The Offset
+// of the options is where the iteration starts.
 type ListIterator[T any] struct {
 	// fetch fetches one page starting at offset. limit is the per-page limit to request
 	// (0 means "unset", i.e. let the server choose). The collection's Iterate method bakes the
@@ -134,8 +135,8 @@ func scannedRows[T any](page PaginationList[T], requestedLimit int64) int64 {
 }
 
 // remainingLimitParam returns the number of items still allowed by the caller's Limit, for use
-// as a minForLimitParam input (0 meaning "unset"). Only meaningful once hasLimit is set; loadPage
-// never calls it otherwise.
+// minForLimitParam returns the smaller of a and b, ignoring a value of 0 or below, which means
+// unset. It returns 0 when neither is set.
 func (it *ListIterator[T]) remainingLimitParam() int64 {
 	if !it.hasLimit {
 		return 0

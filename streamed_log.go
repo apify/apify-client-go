@@ -62,8 +62,8 @@ type StreamedLogOptions struct {
 // StreamedLog redirects the live log of an Actor run to a writer, one prefixed line per message.
 // Get one from [RunClient.NewStreamedLog], and begin and end the redirection with
 // [StreamedLog.Start] and [StreamedLog.Stop]. Messages logged before the redirection was created
-// are skipped unless FromStart is true. A log that is still empty is reopened until it delivers
-// its first bytes.
+// are skipped if FromStart is false. A log that is still empty is reopened until it delivers its
+// first bytes.
 type StreamedLog struct {
 	log       *LogClient
 	output    io.Writer
@@ -154,8 +154,10 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 
 // Stop ends the redirection and returns the error that stopped it early, if any. Messages in
 // flight get up to one second. If the stream delivered nothing, Stop reads the whole log in one
-// request, so that a short run is not lost. ctx bounds the wait, the final read included. It
-// returns an error if the redirection is not running or is already stopping.
+// request, so that a short run is not lost. ctx bounds the wait, the final read included: when it
+// ends first, Stop returns its error, unless the context given to Start ended first, which ends
+// the redirection on purpose. It returns an error if the redirection is not running or is already
+// stopping.
 func (s *StreamedLog) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.running {

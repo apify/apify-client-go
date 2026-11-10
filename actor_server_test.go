@@ -463,8 +463,8 @@ func TestActorServerRequestCompression(t *testing.T) {
 			t.Fatalf("expected a zstd body, got encoding %q: %v", r.header.Get("Content-Encoding"), err)
 		}
 		defer zr.Close()
-		plain, _ := io.ReadAll(zr)
-		if !bytes.Contains(plain, []byte(`"items"`)) {
+		plain, err := io.ReadAll(zr)
+		if err != nil || !bytes.Contains(plain, []byte(`"items"`)) {
 			t.Fatalf("decompressed body: %q", plain)
 		}
 	})

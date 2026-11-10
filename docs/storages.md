@@ -290,8 +290,9 @@ Single queue: `client.RequestQueue(id)`:
 | `ListRequests(ctx, ListRequestsOptions) (json.RawMessage, error)` | Paginated list. Returns the raw API response (`{ "items": [...], "nextCursor": ... }`); unmarshal into your own type, or use `PaginateRequests` for typed iteration. |
 | `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
 | `PaginateRequestsWithOptions(ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator` | The same with `Limit` (caps the total across pages), `Cursor` (where to start) and `Filter` (every page); `chunkSize` is the page size. |
-| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests, auto-split into batches that respect the API's 25-request and (effective) 9 MiB payload-size limits. Fails before sending anything if any single request is too large for a batch of its own. Unlike the reference client, does not itself retry a batch's `UnprocessedRequests` — inspect the result and retry those explicitly if needed. |
-| `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
+| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests with the default `BatchAddRequestsOptions`. See `BatchAddRequestsWithOptions`. |
+| `BatchAddRequestsWithOptions(ctx, []RequestQueueRequest, BatchAddRequestsOptions) (BatchAddResult, error)` | Add many requests, split into batches within the API limits of 25 requests and 9 MiB, with up to `MaxParallel` (5) batches sent at once. The requests that the API does not process are sent again, up to `MaxUnprocessedRequestsRetries` (3) times, after a delay that starts at `MinDelayBetweenUnprocessedRequestsRetries` (500ms) and doubles. Fails before sending anything if one request is too large for a batch. If a batch fails with an error, the error is returned together with the result of all batches, in which the requests of that batch that were not added are unprocessed. |
+| `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`). Returns the raw API response. |
 | `ListAndLockHead(ctx, lockSecs int64, limit *int64) (json.RawMessage, error)` | Fetch the head of the queue and lock the returned requests for `lockSecs` seconds. Returns the raw API response. |
 | `ProlongRequestLock(ctx, id string, lockSecs int64, forefront bool) (json.RawMessage, error)` | Extend the lock on a request by `lockSecs` seconds; `forefront` controls re-queue position when the lock expires. |
 | `DeleteRequestLock(ctx, id string, forefront bool) error` | Release the lock on a request without modifying it. |
@@ -356,7 +357,7 @@ Return types:
 | Field | Type | Meaning |
 |---|---|---|
 | `ProcessedRequests` | `[]RequestQueueOperationInfo` | Requests the API successfully added. |
-| `UnprocessedRequests` | `[]RequestQueueRequest` | Requests the API did not process. |
+| `UnprocessedRequests` | `[]RequestQueueRequest` | Requests that are still unprocessed after the retries. |
 
 ```go
 rq, _ := client.RequestQueues().GetOrCreate(ctx, "")

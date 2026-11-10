@@ -158,8 +158,7 @@ func TestListIteratorEmptyCollection(t *testing.T) {
 }
 
 func TestListIteratorHonorsStartOffset(t *testing.T) {
-	// Caller-set Offset=4 on a backing collection of 10, page size 3: iteration must start at
-	// item 4 and yield 4..9 (6 items), mirroring the reference's options.offset start point.
+	// An Offset of 4 on a collection of 10 with a page size of 3 starts at item 4 and yields 4..9.
 	var calls [][2]int64
 	it := newListIterator(nil, ptrInt64(3), 4, stubFetcher(10, 1000, &calls))
 	got := drainInts(t, it)

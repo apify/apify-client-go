@@ -23,8 +23,7 @@ func main() {
 	ctx := context.Background()
 
 	// Actor names are unique per account, so use a random suffix to stay collision-free when
-	// this example runs concurrently (e.g. in CI, or alongside the sibling clients' examples on
-	// the same test account).
+	// this example runs concurrently, for example in CI.
 	var suffix [6]byte
 	_, _ = rand.Read(suffix[:])
 	name := "go-example-" + hex.EncodeToString(suffix[:])

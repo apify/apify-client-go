@@ -310,10 +310,11 @@ var httpMethods = map[string]bool{
 // before the Actor sees it. The Headers of the options reach the server as they are.
 //
 // The response is returned whatever its status, so check StatusCode. A 429 or 503 response is
-// retried, and the last one is returned when the retries run out. A redirect is returned as it
-// is, so the token never reaches another host. A transport error, a timeout included, is not
-// retried, since the Actor may have handled the request. The first request to an idle Actor waits
-// for a run to start, so the request uses the "long" timeout tier, which ctx can shorten.
+// retried, and the last one is returned when the retries run out. The Actor's own code can return
+// these statuses too, and then it gets the request again. A redirect is returned as it is, so the
+// token never reaches another host. A transport error, a timeout included, is not retried, since
+// the Actor may have handled the request. The first request to an idle Actor waits for a run to
+// start, so the request uses the "long" timeout tier, which ctx can shorten.
 //
 // It returns an error only when there is no response: the errors of [ActorServerClient.GetURL],
 // invalid options, or a failed or timed-out request. To read the body incrementally, use

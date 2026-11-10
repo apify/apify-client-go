@@ -1,13 +1,7 @@
 name: Publish Go client
 
-# Language-specific publish workflow for the Go client. Go has no central package registry to
-# upload an archive to: a module is "published" by pushing a semver git tag (vX.Y.Z), after which
-# the Go module proxy (proxy.golang.org) and pkg.go.dev pick it up on first request. This workflow
-# is therefore the language-specific distribution standard for Go.
-#
-# It is triggered manually only (workflow_dispatch) so a maintainer deliberately decides when a
-# release is cut. The version is taken from the single source of truth (the ClientVersion constant
-# in version.go) so the published tag can never disagree with the in-code client version.
+# Publishes the Go client by pushing the tag v<ClientVersion>, which the Go module proxy and
+# pkg.go.dev pick up. It runs only when a maintainer triggers it.
 on:
   workflow_dispatch:
     inputs:
@@ -16,14 +10,12 @@ on:
         type: boolean
         default: false
 
-# Never allow two publish runs to race; pushing two release tags concurrently is hard to undo.
+# Two release tags pushed at once are hard to undo.
 concurrency:
   group: go-publish
   cancel-in-progress: false
 
-# The default GITHUB_TOKEN needs write access to push the tag and create the release. No other
-# credentials are required: the Go module proxy reads the public repo directly, so there is no
-# registry token to configure.
+# The GITHUB_TOKEN pushes the tag and creates the release. No other credentials are needed.
 permissions:
   contents: write
 
@@ -34,12 +26,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history so the tag points at the real commit and `git describe`-style tooling works.
+          # Full history, so that the tag points at the real commit.
           fetch-depth: 0
 
-      # A release tag is immutable once the Go module proxy has fetched it, so a release must only
-      # ever be cut from master. Refuse to run from any other ref, even when dispatched manually,
-      # so a maintainer cannot accidentally publish an unmerged feature-branch commit as a version.
+      # A tag is immutable once the module proxy has fetched it, so release from master only.
       - name: Require master branch
         run: |
           if [ "${GITHUB_REF}" != "refs/heads/master" ]; then
@@ -50,12 +40,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Patched toolchain (Go 1.26.10+): earlier releases still trust the compromised
-          # intermediate CA certificates. Keep in step with the `toolchain` line in go.mod.
+          # Earlier releases trust compromised CA certificates. Keep in step with go.mod.
           go-version: '1.26.10'
           cache: true
 
-      # Gate the release on the same quality bar as CI so a broken build can never be tagged.
+      # The checks of CI.
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -77,12 +66,10 @@ jobs:
         run: go build ./...
 
       - name: Unit tests
-        # Offline (mock HTTP backend) tests; prove the retry/error/signature logic without the API.
+        # Offline tests with a mock HTTP backend.
         run: go test . -v
 
-      # Derive the release tag from the single source of truth (version.go). Keeping the tag in lock
-      # step with the in-code ClientVersion means consumers who read the constant and consumers who
-      # `go get` a tag always see the same version.
+      # The tag is the ClientVersion of version.go.
       - name: Resolve version from version.go
         id: version
         run: |
@@ -98,8 +85,7 @@ jobs:
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "Resolved release tag: v${version}"
 
-      # Fail early (before creating any tag) if this version was already released, so a publish run
-      # can never silently no-op or clobber an existing release.
+      # Fail before creating anything if the version was released already.
       - name: Ensure tag does not already exist
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -123,8 +109,6 @@ jobs:
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "${TAG}"
 
-      # Create a GitHub release for the tag. Uses the default GITHUB_TOKEN from repository secrets;
-      # no personal access token or registry credential is needed.
       - name: Create GitHub release
         if: ${{ github.event.inputs.dry_run != 'true' }}
         env:
@@ -135,8 +119,7 @@ jobs:
             --title "${TAG}" \
             --notes "Apify Go client ${TAG}. See CHANGELOG.md for details."
 
-      # Prompt the public Go module proxy to fetch the new version. This is what makes the release
-      # discoverable on pkg.go.dev; it requires no authentication because the repository is public.
+      # Asks the Go module proxy to fetch the version, which lists it on pkg.go.dev.
       - name: Trigger Go module proxy indexing
         if: ${{ github.event.inputs.dry_run != 'true' }}
         env:
@@ -144,7 +127,6 @@ jobs:
         run: |
           module=$(go list -m)
           echo "Requesting ${module}@${TAG} from the Go module proxy to trigger indexing."
-          # Best-effort: the proxy may take a moment to see the freshly pushed tag, so a failure here
-          # is not fatal — the module is still published via the tag and will be indexed on first use.
+          # The proxy may not see the tag yet. That is not fatal, since the tag publishes the module.
           curl -fsSL "https://proxy.golang.org/${module}/@v/${TAG}.info" || \
             echo "::warning::Proxy did not return the version yet; pkg.go.dev will index it on first request."

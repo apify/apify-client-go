@@ -408,7 +408,7 @@ func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *
 	if err != nil {
 		return nil, nil, err
 	}
-	if resp.StatusCode >= maxSuccessStatusCode {
+	if resp.StatusCode >= minNonSuccessStatusCode {
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		apiErr := buildAPIError(resp.StatusCode, body, 1, http.MethodGet, extractPath(url))
