@@ -257,12 +257,22 @@ func TestBatchAddRequestsReturnsAnErrorForAnUndecodableResponse(t *testing.T) {
 
 func TestUnprocessedRetryDelayStaysWithinTheCap(t *testing.T) {
 	client := testClient(&batchBackend{}, 0).RequestQueue("q1")
-	minDelay := 500 * time.Millisecond
-	for _, attempt := range []int{0, 1, 5, 40, 200} {
-		delay := client.unprocessedRetryDelay(minDelay, attempt)
-		if delay < minDelay || delay >= 2*client.ctx.http.retry.timeoutMax {
-			t.Fatalf("attempt %d: delay %v", attempt, delay)
+	timeoutMax := client.ctx.http.retry.timeoutMax
+	for _, minDelay := range []time.Duration{500 * time.Millisecond, 2 * timeoutMax} {
+		for _, attempt := range []int{0, 1, 5, 40, 200} {
+			delay := client.unprocessedRetryDelay(minDelay, attempt)
+			if delay <= 0 || delay >= 2*timeoutMax {
+				t.Fatalf("minDelay %v, attempt %d: delay %v", minDelay, attempt, delay)
+			}
 		}
+	}
+}
+
+func TestBatchAddRequestsReturnsTheErrorOfAnInvalidQueueID(t *testing.T) {
+	backend := &batchBackend{}
+	_, err := testClient(backend, 0).RequestQueue("").BatchAddRequests(context.Background(), uniqueRequests(2), false)
+	if err == nil || backend.calls != 0 {
+		t.Fatalf("err = %v, calls = %d", err, backend.calls)
 	}
 }
 

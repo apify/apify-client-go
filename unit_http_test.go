@@ -340,7 +340,7 @@ func TestWithRequestCompressionZstd(t *testing.T) {
 	}
 }
 
-// zstdCompress is safe for concurrent use and round-trips.
+// zstdCompress is safe for concurrent use and shrinks a compressible body.
 func TestZstdCompressConcurrently(t *testing.T) {
 	body := []byte(strings.Repeat("compress me ", 500))
 	var wg sync.WaitGroup

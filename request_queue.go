@@ -330,10 +330,14 @@ func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []Re
 //
 // The result lists the requests that were added and those that are still unprocessed. A batch
 // that fails with an API or transport error is not an error of the call: its requests that were
-// not added are unprocessed. The call returns an error for a response that cannot be decoded, and
-// the error of ctx, with the result so far, when ctx ends.
+// not added are unprocessed, and the error is not reported. To find out why requests stay
+// unprocessed, add one with [RequestQueueClient.AddRequest]. The call returns an error, with the
+// result so far, when a response cannot be decoded or ctx ends.
 func (c *RequestQueueClient) BatchAddRequestsWithOptions(ctx context.Context, requests []RequestQueueRequest, options BatchAddRequestsOptions) (BatchAddResult, error) {
 	var merged BatchAddResult
+	if c.ctx.idErr != nil {
+		return merged, c.ctx.idErr
+	}
 	settings, err := options.resolve()
 	if err != nil {
 		return merged, err
@@ -412,7 +416,7 @@ func (c *RequestQueueClient) addBatchWithRetries(ctx context.Context, batch []se
 // unprocessedRetryDelay returns the delay before the retry that follows attempt: minDelay doubled
 // for each earlier retry, capped at the maximum request timeout and randomized.
 func (c *RequestQueueClient) unprocessedRetryDelay(minDelay time.Duration, attempt int) time.Duration {
-	delay := minDelay
+	delay := minDuration(minDelay, c.ctx.http.retry.timeoutMax)
 	for i := 0; i < attempt; i++ {
 		delay = minDuration(delay*backoffFactor, c.ctx.http.retry.timeoutMax)
 	}

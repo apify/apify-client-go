@@ -18,9 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `BatchAddRequests` sends the requests that the API did not process again, 3 times by default,
+- `BatchAddRequests` retries the requests that the API did not process, up to 3 times by default,
   and sends up to 5 batches at once. A batch that fails with an API or transport error leaves its
-  requests that were not added in `UnprocessedRequests`, and it is not an error of the call.
+  requests that were not added in `UnprocessedRequests`, and it is not an error of the call. An
+  undecodable response or an ended context is still an error.
 - Shortened and corrected the documentation and code comments.
 - Bumped `APISpecVersion` to `v2-2026-11-09T143926Z` and `ClientVersion` to `0.16.0`.
 
