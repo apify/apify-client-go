@@ -261,7 +261,7 @@ func TestUnprocessedRetryDelayStaysWithinTheCap(t *testing.T) {
 	for _, minDelay := range []time.Duration{500 * time.Millisecond, 2 * timeoutMax} {
 		for _, attempt := range []int{0, 1, 5, 40, 200} {
 			delay := client.unprocessedRetryDelay(minDelay, attempt)
-			if delay <= 0 || delay >= 2*timeoutMax {
+			if delay < minDuration(minDelay, timeoutMax) || delay >= 2*timeoutMax {
 				t.Fatalf("minDelay %v, attempt %d: delay %v", minDelay, attempt, delay)
 			}
 		}

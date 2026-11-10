@@ -276,7 +276,7 @@ type BatchAddRequestsOptions struct {
 	// MaxParallel is how many batches are sent at once. Defaults to 5.
 	MaxParallel *int64
 	// MinDelayBetweenUnprocessedRequestsRetries is the base delay before a retry. It doubles with
-	// each retry and is randomized by up to 100%. Defaults to 500ms.
+	// each retry, is capped at [WithTimeoutMax], and is randomized by up to 100%. Defaults to 500ms.
 	MinDelayBetweenUnprocessedRequestsRetries *time.Duration
 }
 
