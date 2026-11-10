@@ -28,10 +28,9 @@ func (c *BuildCollectionClient) List(ctx context.Context, options ListOptions) (
 	return listResource[Build](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over the builds matching the options, fetching pages on
-// demand. The options' Limit caps the total number of builds yielded (unset means all); the
-// per-page size is chunkSize (nil for the server default). Mirrors the reference client's
-// iterable list().
+// Iterate returns a lazy iterator over the builds matching the options, fetching pages on demand.
+// The options' Limit caps the total number of builds yielded (unset means all); the per-page size
+// is chunkSize (nil for the server default).
 func (c *BuildCollectionClient) Iterate(options ListOptions, chunkSize *int64) *ListIterator[Build] {
 	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[Build], error) {
 		opts := options
@@ -61,9 +60,8 @@ func (c *BuildClient) Get(ctx context.Context) (Build, bool, error) {
 	return c.GetWithWait(ctx, nil)
 }
 
-// GetWithWait fetches the build, optionally asking the API to wait up to waitForFinishSecs
-// seconds (max 60) for the build to finish before responding. Pass nil for an immediate
-// fetch. Mirrors the reference client's get({ waitForFinish }).
+// GetWithWait fetches the build, optionally asking the API to wait up to waitForFinishSecs seconds
+// (max 60) for the build to finish before responding. Pass nil for an immediate fetch.
 func (c *BuildClient) GetWithWait(ctx context.Context, waitForFinishSecs *int64) (Build, bool, error) {
 	params := NewQueryParams()
 	params.AddInt("waitForFinish", waitForFinishSecs)

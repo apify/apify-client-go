@@ -6,12 +6,7 @@ import (
 	"fmt"
 )
 
-// APIError is returned for HTTP requests that reach the Apify API but receive a
-// non-success status code.
-//
-// It mirrors the `ApifyApiError` of the reference JavaScript client and exposes the
-// parsed error Type, the human-readable Message, the HTTP StatusCode, the number of
-// the final Attempt, and the request HTTPMethod/Path.
+// APIError is returned for a request that reaches the API and gets a non-success status.
 type APIError struct {
 	// StatusCode is the HTTP status code of the error response.
 	StatusCode int
@@ -39,12 +34,7 @@ const (
 	statusServerErrorMin = 500
 )
 
-// IsInvalidRequest reports whether this is an HTTP 400 Bad Request, typically because the
-// request failed validation.
-//
-// The reference clients throw a distinct InvalidRequestError subclass for this status; since Go
-// has no exception hierarchy to mirror, these Is* predicates are the idiomatic equivalent
-// classification on the one APIError type.
+// IsInvalidRequest reports whether the status is 400 Bad Request.
 func (e *APIError) IsInvalidRequest() bool { return e.StatusCode == statusInvalidRequest }
 
 // IsUnauthorized reports whether this is an HTTP 401 Unauthorized: the token is missing or

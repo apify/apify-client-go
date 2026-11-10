@@ -49,12 +49,8 @@ func (c *LogClient) GetWithOptions(ctx context.Context, options LogOptions) (str
 	return string(body), ok, err
 }
 
-// GetBuffer fetches the entire log as raw bytes, or (nil, false, nil) if the log does not exist.
-//
-// It is the byte-oriented counterpart of [LogClient.Get]: both fetch the whole log in one
-// response (for incremental reading, use [LogClient.Stream]), and GetBuffer only changes the
-// return type to the undecoded bytes, e.g. for writing the log straight to a file. See
-// [LogClient.Get] for how a 404 is handled.
+// GetBuffer fetches the whole log as bytes, or returns (nil, false, nil) if there is none. It is
+// [LogClient.Get] without the decoding, for example to write the log to a file.
 func (c *LogClient) GetBuffer(ctx context.Context) ([]byte, bool, error) {
 	return c.GetBufferWithOptions(ctx, LogOptions{})
 }
@@ -74,18 +70,11 @@ func (c *LogClient) GetBufferWithOptions(ctx context.Context, options LogOptions
 	return resp.body, true, nil
 }
 
-// Stream opens a live, streaming connection to the log and returns a reader over the log
-// bytes, or (nil, nil) if the log does not exist. The caller is responsible for closing the
-// returned [io.ReadCloser].
+// Stream returns a reader over the live log, or (nil, nil) if there is no log. The caller closes
+// it. The request is not retried.
 //
-// Unlike [LogClient.Get], this bypasses the buffered/retrying transport so the log can be
-// followed in real time as the run produces it (the `stream=1` query parameter). Because the
-// response is consumed incrementally, it is not retried; transient failures surface to the
-// caller. This mirrors the reference clients' streamed-log behaviour used for log redirection.
-//
-// A 404 resolves to (nil, nil) only when this client names the log by its own id
-// (client.Log(id)): a chained client without one, such as run.Log() or build.Log(), returns an
-// error instead, since the run or build itself may be what is missing.
+// A 404 gives (nil, nil) only for client.Log(id). For run.Log() and build.Log() it is an error,
+// since the run or build itself may be missing.
 func (c *LogClient) Stream(ctx context.Context) (io.ReadCloser, error) {
 	return c.StreamWithOptions(ctx, LogOptions{})
 }

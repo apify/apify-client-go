@@ -64,8 +64,7 @@ func (c *KeyValueStoreClient) Get(ctx context.Context) (KeyValueStore, bool, err
 	return getResource[KeyValueStore](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Update updates the store metadata (e.g. name) and returns the updated object. Uses the "long"
-// timeout tier, the reference client's tier for this call.
+// Update updates the store metadata, such as its name, and returns the updated store.
 func (c *KeyValueStoreClient) Update(ctx context.Context, newFields any) (KeyValueStore, error) {
 	return updateResourceWithTimeout[KeyValueStore](ctx, c.ctx, "", newFields, c.ctx.longTimeout())
 }
@@ -82,18 +81,11 @@ func (c *KeyValueStoreClient) ListKeys(ctx context.Context, options ListKeysOpti
 	return getResourceRequired[KeyValueStoreKeysPage](ctx, c.ctx, "keys", params, c.ctx.mediumTimeout())
 }
 
-// IterateKeys returns a lazy iterator over the store's keys, fetching one page at a time on
-// demand via the cursor-based keys endpoint (exclusiveStartKey / nextExclusiveStartKey). It
-// mirrors the reference client's async-iterable listKeys() and follows this client's iteration
-// convention (like the collection Iterate helpers): the options' Limit caps the total number of
-// keys yielded across all pages (unset means all keys), the per-page size is the separate
-// chunkSize argument (nil for the server default), Prefix/Collection/Signature filter every
-// page, and ExclusiveStartKey sets the key to start listing after. Limit uses the "0 == unset"
-// convention: a nil Limit, or Limit set to ptr(0), yields all keys rather than zero keys.
-//
-// Because keys are cursor-paginated (not offset/limit paginated) it uses its own
-// KeyValueStoreKeysIterator rather than the generic ListIterator, sharing the cursor mechanics
-// of RequestQueueClient.PaginateRequests.
+// IterateKeys returns an iterator over the keys of the store, fetching one page at a time. The
+// Limit of the options caps the total number of keys, and nil or 0 means all of them. chunkSize
+// is the page size, nil for the default. Prefix, Collection and Signature filter every page, and
+// ExclusiveStartKey is the key to start after. Keys are paginated by cursor, so it does not use
+// [ListIterator].
 func (c *KeyValueStoreClient) IterateKeys(options ListKeysOptions, chunkSize *int64) *KeyValueStoreKeysIterator {
 	return &KeyValueStoreKeysIterator{client: c, options: options, chunkSize: chunkSize, nextStartKey: options.ExclusiveStartKey}
 }
@@ -202,12 +194,9 @@ func (c *KeyValueStoreClient) RecordExists(ctx context.Context, key string) (boo
 	return headExists(ctx, c.ctx, "records/"+safeKey, NewQueryParams())
 }
 
-// GetRecord fetches a record by key, or (nil, false, nil) if it does not exist. The value
-// holds the raw bytes; the content type is reported in the record.
-//
-// Like the reference client, it requests the record as an attachment (sent on the wire as
-// attachment=1, the truthy form this client's bool serializer uses) so the API returns the
-// record's raw bytes directly rather than redirecting. Use [GetRecordWithOptions] to override.
+// GetRecord fetches a record by key, or returns (nil, false, nil) if there is none. The value is
+// the raw bytes. It requests the record as an attachment, so the API returns the bytes instead
+// of redirecting. Use [KeyValueStoreClient.GetRecordWithOptions] to change that.
 func (c *KeyValueStoreClient) GetRecord(ctx context.Context, key string) (*KeyValueStoreRecord, bool, error) {
 	return c.GetRecordWithOptions(ctx, key, GetRecordOptions{Attachment: ptrBool(true)})
 }
@@ -237,10 +226,9 @@ func (c *KeyValueStoreClient) GetRecordWithOptions(ctx context.Context, key stri
 	}, true, nil
 }
 
-// GetRecordStream is [KeyValueStoreClient.GetRecord], but returns the value as a stream instead
-// of buffering it into memory, so a large record can be read incrementally. The caller is
-// responsible for closing the returned stream. Mirrors the reference client's
-// getRecord(key, { stream: true }).
+// GetRecordStream is [KeyValueStoreClient.GetRecord], but returns the value as a stream instead of
+// buffering it into memory, so a large record can be read incrementally. The caller is responsible
+// for closing the returned stream.
 func (c *KeyValueStoreClient) GetRecordStream(ctx context.Context, key string) (*KeyValueStoreRecordStream, bool, error) {
 	return c.GetRecordStreamWithOptions(ctx, key, GetRecordOptions{Attachment: ptrBool(true)})
 }
@@ -277,13 +265,10 @@ func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, valu
 	return c.setRecord(ctx, key, value, contentType, "", false, false)
 }
 
-// SetRecordRawWithEncoding is like [KeyValueStoreClient.SetRecordRaw], for a value that is
-// already compressed: contentEncoding (e.g. "gzip", "br", "deflate") is sent as the
-// Content-Encoding header and value is uploaded exactly as given. This call always skips the
-// client's own request compression, so the bytes are never compressed twice — unlike
-// SetRecordRaw, which compresses a large-enough body of its own accord. Use SetRecordRaw (or
-// contentEncoding == "") for a value that is not pre-compressed. Mirrors the reference client's
-// setRecord({ contentEncoding }).
+// SetRecordRawWithEncoding is [KeyValueStoreClient.SetRecordRaw] for a value that is already
+// compressed. contentEncoding, such as "gzip", "br", "zstd" or "deflate", is sent as the
+// Content-Encoding header, and the value is uploaded as it is, without the client's own
+// compression.
 func (c *KeyValueStoreClient) SetRecordRawWithEncoding(ctx context.Context, key string, value []byte, contentType, contentEncoding string) error {
 	return c.setRecord(ctx, key, value, contentType, contentEncoding, true, false)
 }
@@ -310,14 +295,14 @@ func (c *KeyValueStoreClient) setRecord(ctx context.Context, key string, value [
 // SetRecordOptions configures [KeyValueStoreClient.SetRecordRawWithOptions] and
 // [KeyValueStoreClient.SetRecordJSONWithOptions].
 type SetRecordOptions struct {
-	// ContentEncoding, when not empty (e.g. "gzip", "br", "deflate"), says the value is already
+	// ContentEncoding, when not empty (e.g. "gzip", "br", "zstd", "deflate"), says the value is already
 	// compressed under that encoding: it is uploaded exactly as given, with the Content-Encoding
 	// header, and the client's own request compression is skipped. See
 	// [KeyValueStoreClient.SetRecordRawWithEncoding].
 	ContentEncoding string
 	// DoNotRetryTimeouts, if true, makes an upload attempt that times out fail at once instead of
-	// being retried (other failures are still retried). Use it when storing the record twice
-	// would be harmful. Matches the reference client's setRecord({ doNotRetryTimeouts }).
+	// being retried (other failures are still retried). Use it when storing the record twice would
+	// be harmful.
 	DoNotRetryTimeouts bool
 }
 
@@ -351,17 +336,13 @@ func (c *KeyValueStoreClient) DeleteRecord(ctx context.Context, key string) erro
 	return deleteResourceAlways(ctx, c.ctx, "records/"+safeKey)
 }
 
-// getForPublicURL fetches the store to read its URL-signing secret, with the "long" timeout tier
-// the reference client uses for its public-URL builders.
+// getForPublicURL fetches the store to read its URL signing secret.
 func (c *KeyValueStoreClient) getForPublicURL(ctx context.Context) (KeyValueStore, bool, error) {
 	return getResourceWithTimeout[KeyValueStore](ctx, c.ctx, "", NewQueryParams(), c.ctx.longTimeout())
 }
 
-// GetRecordPublicURL builds a public URL for fetching the given record.
-//
-// It mirrors the reference client: it fetches the store, and if the store exposes a
-// URL-signing secret key (i.e. it is private), appends an HMAC-SHA256 signature so the URL
-// grants access without an API token. The URL is built from the configured public base URL.
+// GetRecordPublicURL returns a public URL of the record. If the store has a URL signing secret key,
+// the URL is signed, so it works without a token. The URL uses the configured public base URL.
 func (c *KeyValueStoreClient) GetRecordPublicURL(ctx context.Context, key string) (string, error) {
 	safeKey, err := safePathSegment(key)
 	if err != nil {

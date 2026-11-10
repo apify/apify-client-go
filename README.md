@@ -118,7 +118,7 @@ func main() {
 | `WithTimeoutMedium` | `30s` | Duration of the "medium" tier — listing, batch and trigger operations (`List`, `Create`, `Start`, `BatchAddRequests`). |
 | `WithTimeoutLong` | `360s` | Duration of the "long" tier — downloads, uploads and streaming (`ListItems`, `SetRecord`, `Log().Get()`). |
 | `WithTimeoutMax` | `360s` | Caps the timeout of any single request attempt; a tier configured above it is capped too. `WithTimeout` is an alias for this option, kept for callers of the single-timeout API this client had before tiers. |
-| `WithRequestCompression` | `RequestCompressionAuto` | Codec for request-body compression: `RequestCompressionAuto` (brotli, falling back to gzip), `RequestCompressionBrotli`, or `RequestCompressionGzip`. See [Request compression](#request-compression). |
+| `WithRequestCompression` | `RequestCompressionAuto` | Codec for request-body compression: `RequestCompressionAuto` (brotli, falling back to gzip), `RequestCompressionBrotli`, `RequestCompressionGzip`, or `RequestCompressionZstd`. See [Request compression](#request-compression). |
 | `WithUserAgentSuffix` | — | Suffix appended to the `User-Agent` header. |
 | `WithHTTPBackend` | `DefaultHTTPBackend` | Replaceable HTTP transport. |
 
@@ -156,9 +156,9 @@ request is not aborted client-side while the server is correctly honoring it.
 
 Request bodies of 1 KiB or more are compressed before sending, to save upload bandwidth. By
 default (`RequestCompressionAuto`) the client prefers brotli and falls back to gzip when brotli
-errors or does not shrink the body; `WithRequestCompression(RequestCompressionBrotli)` or
-`WithRequestCompression(RequestCompressionGzip)` pins it to one codec, with no fallback to the
-other (a body that codec does not shrink is still sent uncompressed rather than failing).
+errors or does not shrink the body; `WithRequestCompression` with `RequestCompressionBrotli`, `RequestCompressionGzip` or
+`RequestCompressionZstd` pins it to one codec, with no fallback (a body that codec does not
+shrink is sent uncompressed rather than failing).
 Compression is also skipped outright for a body whose content type already carries its own
 compression — images, audio, video, and common archive/office formats (e.g. `.zip`, `.docx`);
 a raw format that happens to share such a media type, like `image/bmp`, is still compressed.
@@ -292,7 +292,7 @@ func main() {
 
 - `apify.ClientVersion` — the semantic version of this library.
 - `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-11-04T151257Z`).
+  (`v2-2026-11-09T143926Z`).
 
 ### Releasing
 

@@ -50,6 +50,7 @@ fmt.Println(results)
 | `Params` | `url.Values` | Query parameters. |
 | `Headers` | `http.Header` | Additional headers. They reach the Actor's server as they are and win over the headers the client sets; a header with no values removes the client's header of that name. |
 | `Body` | `any` | A `string` or `[]byte` is sent as it is. A `json.RawMessage` and any other value are sent as JSON with `Content-Type: application/json`, unless `Headers` sets a content type. |
+| `ParentRequestID` | `string` | The `X-Actor-Request-ID` header of the request your Server Actor is handling. It is sent on as the same header, so the called Actor charges at the pricing tier of that request, and it wins over the same header in `Headers`. Use a client created with the run's `APIFY_TOKEN`. |
 | `Compression` | `*apify.RequestCompression` | Compresses a body of 1 KiB or more. Nil by default, which sends the body uncompressed, since the Actor's server may not decode a compressed body. Set it only if the server decodes the resulting `Content-Encoding`. A `Content-Encoding` header in `Headers` sends the body untouched. |
 
 The response has the `StatusCode`, the `Header` and the `Body` bytes, and `JSON(&v)` decodes the

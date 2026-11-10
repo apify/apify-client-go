@@ -69,12 +69,9 @@ type serverResponse struct {
 	stream io.ReadCloser
 }
 
-// callServer sends call to an Actor's server and returns its response whatever the status.
-//
-// It differs from [httpClient.call] where the server is not the API: an error status is
-// returned instead of raised, only 429 and 503 are retried, a transport error (a timeout
-// included) is never retried since the Actor may have handled the request already, the token
-// goes in X-Apify-Authorization, and redirects are not followed.
+// callServer sends call to an Actor's server and returns the response whatever its status. Unlike
+// [httpClient.call], it retries only 429 and 503, never retries a transport error, sends the
+// token in X-Apify-Authorization and does not follow redirects.
 func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverResponse, error) {
 	// Header names are case-insensitive, so canonicalize the caller's once: the lookups below
 	// and the headers on the wire then agree on what the caller set. A name with no values stays,

@@ -35,32 +35,22 @@ func (c *TaskClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// Publish publishes the task on its public landing page by setting IsPublic through Update.
-//
-// The task's Actor must be public and the task must already have its public display
-// configuration (PublicConfig) set up. Requires write permission to both the task and its
-// Actor. Publishing an already published task does nothing.
-//
-// An Actor can have at most 10 published tasks, and an account at most 100; contact Apify
-// support to raise either limit.
+// Publish publishes the task on its public page by setting IsPublic. The Actor must be public and
+// the task must have its PublicConfig. Publishing a published task does nothing. An Actor can have
+// 10 published tasks and an account 100.
 func (c *TaskClient) Publish(ctx context.Context) (Task, error) {
 	return c.Update(ctx, map[string]any{"isPublic": true})
 }
 
-// Unpublish unpublishes the task from its public landing page by setting IsPublic through
-// Update.
-//
-// The public display configuration (PublicConfig) is preserved, so the task can be published
-// again without re-entering it. Like Publish, Unpublish requires write permission to both the
-// task and its Actor. Unpublishing a task that is not published does nothing.
+// Unpublish removes the task from its public page by clearing IsPublic. PublicConfig is kept.
+// Unpublishing a task that is not published does nothing.
 func (c *TaskClient) Unpublish(ctx context.Context) (Task, error) {
 	return c.Update(ctx, map[string]any{"isPublic": false})
 }
 
-// TaskStartOptions configures starting a task run ([TaskClient.Start]/[TaskClient.Call]).
-//
-// It mirrors [ActorStartOptions] but omits the fields the task run endpoint does not accept
-// (the Actor-only `contentType` and `forcePermissionLevel`), matching the reference client.
+// TaskStartOptions configures [TaskClient.Start] and [TaskClient.Call]. It is [ActorStartOptions]
+// without the fields that the task run endpoint does not accept, `contentType` and
+// `forcePermissionLevel`.
 type TaskStartOptions struct {
 	// Build is the tag or number of the build to run (e.g. "latest", "0.1.2").
 	Build *string
@@ -78,10 +68,8 @@ type TaskStartOptions struct {
 	RestartOnError *bool
 	// Webhooks are ad-hoc webhooks to attach to this run (base64-encoded JSON).
 	Webhooks []any
-	// WaitForResources, if set, retries the start every 10 seconds while the API rejects it for
-	// lack of resources. See [ActorStartOptions.WaitForResources] for the full semantics (same
-	// error types, cooldown and WaitForResourcesIndefinitely sentinel; this field mirrors it for
-	// task starts).
+	// WaitForResources retries the start while the API rejects it for lack of resources. See
+	// [ActorStartOptions.WaitForResources].
 	WaitForResources *int64
 }
 
@@ -121,11 +109,9 @@ func (c *TaskClient) startWithTimeout(ctx context.Context, input any, options Ta
 	})
 }
 
-// Call starts the task and waits (client-side polling) for it to finish. waitSecs bounds the
-// wait; nil waits indefinitely.
-//
-// Neither the start request nor the polls have a client-side timeout of their own (matching the
-// reference client's call(), whose default timeout is noTimeout): ctx bounds the whole call.
+// Call starts the task and waits for it to finish. waitSecs bounds the wait, and nil waits
+// indefinitely. The start request and the polls have no timeout of their own, so ctx bounds the
+// whole call.
 func (c *TaskClient) Call(ctx context.Context, input any, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
 	run, err := c.startWithTimeout(ctx, input, options, noRequestTimeout)
 	if err != nil {
@@ -171,9 +157,8 @@ func (c *TaskClient) LastRun(status string) *RunClient {
 	return c.LastRunWithOptions(LastRunOptions{Status: status})
 }
 
-// LastRunWithOptions returns a client for the last run of this task, optionally filtered by
-// status and/or origin. See LastRunOptions. Mirrors the reference client's
-// lastRun({ status, origin }).
+// LastRunWithOptions returns a client for the last run of this task, optionally filtered by status
+// and/or origin. See LastRunOptions.
 func (c *TaskClient) LastRunWithOptions(options LastRunOptions) *RunClient {
 	client := newRunClient(c.root, c.ctx.http, c.ctx.subURL(""), "runs", "last")
 	client.setLastRunParams(options)

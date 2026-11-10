@@ -167,18 +167,14 @@ func (c *RequestQueueClient) ListAndLockHead(ctx context.Context, lockSecs int64
 	return postWithBody[json.RawMessage](ctx, c.ctx, "head/lock", params, nil, "", c.ctx.mediumTimeout())
 }
 
-// maxRequestsPerBatchOperation is the API limit on requests per batch call. Larger inputs
-// are split into chunks of this size, matching the reference client.
+// maxRequestsPerBatchOperation is the API limit on requests per batch call. Larger inputs are split
+// into chunks of this size.
 const maxRequestsPerBatchOperation = 25
 
-// maxPayloadSizeBytes is the API's maximum request body size for a batch-requests call,
-// matching the published @apify/consts MAX_PAYLOAD_SIZE_BYTES (9 MiB; apify/apify-shared-js).
+// maxPayloadSizeBytes is the maximum request body size of a batch-requests call, 9 MiB.
 const maxPayloadSizeBytes = 9437184
 
-// payloadSizeLimitBytes shaves a small safety margin off maxPayloadSizeBytes (0.01%, matching
-// the reference client's SAFETY_BUFFER_PERCENT), so a batch this client assembles stays under
-// the server's limit even accounting for any rounding differences between the two.
-// 9437184 * 0.0001 = 943.7184, rounded up to 944; 9437184 - 944 = 9436240.
+// payloadSizeLimitBytes is maxPayloadSizeBytes less a 0.01% safety margin, rounded up to 944 bytes.
 const payloadSizeLimitBytes = maxPayloadSizeBytes - 944
 
 // BatchAddResult is the typed result of [RequestQueueClient.BatchAddRequests]: the requests
@@ -256,16 +252,10 @@ func joinAsJSONArray(batch []serializedRequest) []byte {
 	return buf.Bytes()
 }
 
-// BatchAddRequests adds multiple requests to the queue. If forefront is true, they are added
-// to the front of the queue.
-//
-// The input is serialized once and split into batches that respect both the API's 25-request
-// and (effective, after a small safety margin) 9 MiB payload-size limits; the whole call fails
-// before anything is sent if any single request is too large for a batch of its own. The
-// per-batch results are merged into a single [BatchAddResult]. Each batch is still subject to
-// the client's standard retry policy, but unlike the reference client this does not itself
-// retry a batch's unprocessed requests — inspect [BatchAddResult.UnprocessedRequests] and retry
-// those explicitly if needed.
+// BatchAddRequests adds requests to the queue, at the front if forefront is true. It splits them
+// into batches within the API limits of 25 requests and 9 MiB, and merges the results. It fails
+// before sending anything if one request is too large for a batch. Unlike the reference client,
+// it does not retry unprocessed requests, so check [BatchAddResult.UnprocessedRequests].
 func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []RequestQueueRequest, forefront bool) (BatchAddResult, error) {
 	var merged BatchAddResult
 	serialized, err := serializeRequestsForBatch(requests)
@@ -388,11 +378,10 @@ func (c *RequestQueueClient) PaginateRequests(pageLimit *int64) *RequestQueueReq
 	return c.PaginateRequestsWithOptions(ListRequestsOptions{}, pageLimit)
 }
 
-// PaginateRequestsWithOptions is [RequestQueueClient.PaginateRequests] with listing options, like
-// the reference client's paginateRequests: Limit caps the number of requests yielded across all
-// pages (nil or ptr(0) means all of them), Cursor (or the deprecated ExclusiveStartID) sets where
-// to start, and Filter applies to every page. The page size is the separate chunkSize argument
-// (nil for the server default). Invalid options are reported by the first call of Next.
+// PaginateRequestsWithOptions is [RequestQueueClient.PaginateRequests] with listing options. Limit
+// caps the number of requests yielded, and nil or 0 means all. Cursor, or the deprecated
+// ExclusiveStartID, is where to start, and Filter applies to every page. chunkSize is the page size,
+// nil for the default. The first call of Next reports invalid options.
 func (c *RequestQueueClient) PaginateRequestsWithOptions(options ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator {
 	return &RequestQueueRequestsIterator{client: c, options: options, chunkSize: chunkSize}
 }

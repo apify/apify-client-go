@@ -175,7 +175,7 @@ Single store: `client.KeyValueStore(id)`:
 | `GetRecordStreamWithOptions(ctx, key, GetRecordOptions)` | Stream with options. |
 | `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes, sent as they are: the client does not parse or convert the value, whatever the content type (so `application/json` bytes must already be valid JSON). |
 | `SetRecordRawWithOptions(ctx, key, value []byte, contentType string, SetRecordOptions) error` | Like `SetRecordRaw`, with `ContentEncoding` (the value is already compressed, as with `SetRecordRawWithEncoding`) and `DoNotRetryTimeouts` (an upload that times out fails at once instead of being retried). |
-| `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
+| `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"zstd"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
 | `SetRecordJSON(ctx, key, value any) error` | Write JSON. |
 | `SetRecordJSONWithOptions(ctx, key, value any, SetRecordOptions) error` | Like `SetRecordJSON`, with the per-call `SetRecordOptions`. |
 | `RecordExists(ctx, key) (bool, error)` | HEAD check. |

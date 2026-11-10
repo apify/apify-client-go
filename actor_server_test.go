@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -206,6 +208,34 @@ func TestActorServerRequestSendsMethodPathQueryBodyAndToken(t *testing.T) {
 	}
 	if !strings.HasPrefix(r.header.Get("User-Agent"), "ApifyClient/") {
 		t.Fatalf("User-Agent: %q", r.header.Get("User-Agent"))
+	}
+}
+
+func TestActorServerRequestSendsTheParentRequestIDOverTheSameHeader(t *testing.T) {
+	f := newServerFixture(t)
+	_, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/", ActorServerRequestOptions{
+		Headers:         http.Header{"x-actor-request-id": {"stale"}, "X-Other": {"kept"}},
+		ParentRequestID: "parent-id",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := f.requests(serverTestPrefix + "/")[0]
+	if got := r.header.Values("X-Actor-Request-ID"); len(got) != 1 || got[0] != "parent-id" {
+		t.Fatalf("X-Actor-Request-ID: %v", got)
+	}
+	if r.header.Get("X-Other") != "kept" {
+		t.Fatalf("other headers must stay: %v", r.header)
+	}
+}
+
+func TestActorServerRequestSendsNoRequestIDWithoutAParentRequestID(t *testing.T) {
+	f := newServerFixture(t)
+	if _, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/", ActorServerRequestOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.requests(serverTestPrefix + "/")[0].header.Get("X-Actor-Request-ID"); got != "" {
+		t.Fatalf("X-Actor-Request-ID: %q", got)
 	}
 }
 
@@ -417,6 +447,25 @@ func TestActorServerRequestCompression(t *testing.T) {
 		plain, _ := io.ReadAll(zr)
 		if !bytes.Contains(plain, []byte(`"items"`)) {
 			t.Fatalf("decompressed body: %q", plain[:20])
+		}
+	})
+	t.Run("zstd on request", func(t *testing.T) {
+		f := newServerFixture(t)
+		_, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/items", ActorServerRequestOptions{
+			Method: "POST", Body: payload, Compression: Ptr(RequestCompressionZstd),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := f.requests(serverTestPrefix + "/")[0]
+		zr, err := zstd.NewReader(bytes.NewReader(r.body))
+		if err != nil || r.header.Get("Content-Encoding") != "zstd" {
+			t.Fatalf("expected a zstd body, got encoding %q: %v", r.header.Get("Content-Encoding"), err)
+		}
+		defer zr.Close()
+		plain, _ := io.ReadAll(zr)
+		if !bytes.Contains(plain, []byte(`"items"`)) {
+			t.Fatalf("decompressed body: %q", plain)
 		}
 	})
 	t.Run("a Content-Type of the caller that is already compressed is not compressed again", func(t *testing.T) {

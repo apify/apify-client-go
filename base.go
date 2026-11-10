@@ -15,45 +15,37 @@ const (
 	contentTypeJSONCharset = "application/json; charset=utf-8"
 )
 
-// How long to wait between polls while waiting for a run/build to finish, and the
-// server-side waitForFinish chunk size (the API caps server waiting at 60 seconds).
+// Polling constants of [waitForFinish].
 const (
+	// waitForFinishPollInterval is the pause between polls.
 	waitForFinishPollInterval = 250 * time.Millisecond
-	waitForFinishRequestSecs  = int64(60)
-	// maxWaitForFinishSecs is the finite upper bound used when the caller asks to wait
-	// "indefinitely" (waitSecs == nil). The API will not accept "Infinity". 999999 seconds is
-	// more than 11 days, effectively indefinite while still guaranteeing termination. Mirrors
-	// the reference client's MAX_WAIT_FOR_FINISH.
+	// waitForFinishRequestSecs is the longest the API holds one waitForFinish request.
+	waitForFinishRequestSecs = int64(60)
+	// maxWaitForFinishSecs stands in for "wait indefinitely", which the API cannot express.
 	maxWaitForFinishSecs = int64(999999)
-	// maxWaitForMissingJob bounds how long waitForFinish keeps polling a run/build that answers
-	// 404, to ride out database-replica lag, before giving up with a not-found error instead of
-	// continuing for the full wait budget above. A successful poll resets this window. Mirrors
-	// the reference client's MAX_WAIT_WHEN_JOB_NOT_EXIST_MILLIS.
+	// maxWaitForMissingJob is how long a run or build may keep answering 404 before the wait
+	// gives up. It covers database replica lag; a successful poll resets it.
 	maxWaitForMissingJob = 3 * time.Second
 )
 
-// resourceContext is the resolved context for a resource client: its base URL and the
-// shared HTTP client. The free functions in this file implement the CRUD primitives once,
-// so each resource client stays small and consistent (DRY).
+// resourceContext is the URL and shared HTTP client of a resource client. The functions in this
+// file are the request primitives that every resource client builds on.
 type resourceContext struct {
 	http *httpClient
-	// url is the fully-qualified base URL of the resource,
-	// e.g. https://api.apify.com/v2/actors/ID.
+	// url is the full URL of the resource, for example https://api.apify.com/v2/actors/ID.
 	url string
-	// baseParams are parameters inherited from a parent resource (e.g. status on last_run).
+	// baseParams are query parameters inherited from a parent resource, such as status on last_run.
 	baseParams *QueryParams
-	// apiOrigin is the origin (scheme + host) the API is reached through.
+	// apiOrigin is the scheme and host the API is reached through.
 	apiOrigin string
-	// publicOrigin is the origin used to build public, shareable URLs (defaults to apiOrigin).
+	// publicOrigin is the scheme and host of public URLs. It defaults to apiOrigin.
 	publicOrigin string
-	// hasOwnID is true when this resource is addressed by its own id (constructed via
-	// newSingleContext). It is false for a resource reached through a fixed sub-path with no id
-	// of its own (e.g. a run's default dataset, via newCollectionContext): there, a 404 cannot
-	// be told apart from the parent being missing, so it must not be swallowed as "absent".
+	// hasOwnID is true when the resource is addressed by its own ID. A resource reached through a
+	// fixed sub-path, such as a run's default dataset, has none: its 404 cannot be told apart
+	// from a missing parent, so it is not reported as "absent".
 	hasOwnID bool
-	// idErr, if non-nil, is a validation error discovered while building this resource's URL
-	// (an empty or path-traversing id). It is returned by the first request this context
-	// attempts, instead of silently sending a malformed request.
+	// idErr is the validation error of the ID (empty, or a dot segment). The first request returns
+	// it instead of sending a malformed request.
 	idErr error
 }
 
@@ -64,10 +56,8 @@ func newCollectionContext(hc *httpClient, baseURL, resourcePath string) *resourc
 
 // newSingleContext creates a context for a single resource: {base}/{resourcePath}/{safeID}.
 //
-// id is validated and percent-encoded (see safePathSegment); an invalid id (empty, or a dot
-// segment) does not fail synchronously here, because every resource getter in this package
-// returns a client struct directly rather than an error. Instead, the resource context
-// remembers the error and every CRUD call this client later attempts fails fast with it.
+// The getters of resource clients return no error, so an invalid id is kept in idErr and
+// returned by the first request.
 func newSingleContext(hc *httpClient, baseURL, resourcePath, id string) *resourceContext {
 	safeID, err := toSafeID(id)
 	return newResourceContext(hc, baseURL+"/"+resourcePath+"/"+safeID, baseURL, true, err)
@@ -94,13 +84,13 @@ func (c *resourceContext) withoutTimeoutRetry() *resourceContext {
 	return &clone
 }
 
-// withPublicOrigin overrides the origin used when building public URLs.
+// withPublicOrigin sets the origin of public URLs.
 func (c *resourceContext) withPublicOrigin(publicBaseURL string) *resourceContext {
 	c.publicOrigin = originOf(publicBaseURL)
 	return c
 }
 
-// subURL returns this resource's URL with an optional extra path segment appended.
+// subURL returns the resource URL with subPath appended.
 func (c *resourceContext) subURL(subPath string) string {
 	if subPath == "" {
 		return c.url
@@ -108,8 +98,7 @@ func (c *resourceContext) subURL(subPath string) string {
 	return c.url + "/" + subPath
 }
 
-// publicURL builds the public (shareable) form of this resource's URL with an optional
-// extra path segment, swapping the API origin for the configured public origin.
+// publicURL returns subURL with the API origin replaced by the public origin.
 func (c *resourceContext) publicURL(subPath string) string {
 	apiURL := c.subURL(subPath)
 	if c.publicOrigin == c.apiOrigin {
@@ -121,21 +110,20 @@ func (c *resourceContext) publicURL(subPath string) string {
 	return apiURL
 }
 
-// shortTimeout, mediumTimeout and longTimeout return this resource's configured timeout tiers
-// (see [timeoutTiers]), read through to the shared httpClient so every resource client picks up
-// a [WithTimeoutShort]/[WithTimeoutMedium]/[WithTimeoutLong] override.
+// shortTimeout, mediumTimeout and longTimeout return the configured timeout tiers (see
+// [timeoutTiers]).
 func (c *resourceContext) shortTimeout() time.Duration  { return c.http.tiers.short }
 func (c *resourceContext) mediumTimeout() time.Duration { return c.http.tiers.medium }
 func (c *resourceContext) longTimeout() time.Duration   { return c.http.tiers.long }
 
-// mergedParams merges the inherited base params with per-call params.
+// mergedParams returns the inherited params extended by params.
 func (c *resourceContext) mergedParams(params *QueryParams) *QueryParams {
 	merged := c.baseParams.clone()
 	merged.extend(params)
 	return merged
 }
 
-// originOf extracts the origin (scheme://host[:port]) from a URL, dropping any path.
+// originOf returns scheme://host[:port] of a URL.
 func originOf(rawURL string) string {
 	rest := rawURL
 	scheme := ""
@@ -149,20 +137,14 @@ func originOf(rawURL string) string {
 	return scheme + rest
 }
 
-// getResource performs a GET addressing this client's own resource (subPath "" for the
-// resource itself, or a fixed sub-path such as a singleton the resource owns) and unwraps the
-// data envelope. A not-found maps to (zero, false, nil) only when the client has its own id
-// (c.hasOwnID): there, the 404 unambiguously means this resource is gone. A client reached
-// through a fixed sub-path with no id of its own (e.g. a run's default dataset) cannot tell its
-// own 404 apart from the parent's, so the error always propagates instead. Mirrors the
-// reference client's catchNotFoundForResourceOrThrow. For a 404 that is unambiguous regardless
-// of how the client was reached (e.g. a lookup by key or request id), use [getResourceAlways].
+// getResource performs a GET of the resource, or of a fixed sub-path of it, and unwraps the data
+// envelope. A 404 gives (zero, false, nil) only if the client has its own ID, since otherwise it
+// may mean that the parent is missing. For a 404 that is unambiguous, use [getResourceAlways].
 func getResource[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (T, bool, error) {
 	return getResourceWithTimeout[T](ctx, c, subPath, params, c.shortTimeout())
 }
 
-// getResourceWithTimeout is [getResource] with the caller's chosen timeout tier, for a lookup
-// that is slower than a plain metadata read (see [timeoutTiers]).
+// getResourceWithTimeout is [getResource] with the given timeout.
 func getResourceWithTimeout[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, timeout time.Duration) (T, bool, error) {
 	var zero T
 	result, err := getResourceRequired[T](ctx, c, subPath, params, timeout)
@@ -175,15 +157,11 @@ func getResourceWithTimeout[T any](ctx context.Context, c *resourceContext, subP
 	return result, true, nil
 }
 
-// maxWaitForFinishHoldSecs caps how much extra time a waitForFinish request parameter can add
-// to a request's client-side timeout, matching the reference client's
-// MAX_WAIT_FOR_FINISH_HOLD_SECS (the server itself never holds a single request open longer).
+// maxWaitForFinishHoldSecs is the longest the server holds a request open for waitForFinish.
 const maxWaitForFinishHoldSecs = 60
 
-// extendForServerWait extends base by the time the server may legitimately hold the connection
-// open to honor a waitForFinish request parameter (capped at maxWaitForFinishHoldSecs), so the
-// client does not abort a request the server is still correctly working on. waitForFinishSecs
-// nil or <= 0 returns base unchanged. Mirrors the reference client's timeoutForWaitForFinish.
+// extendForServerWait adds the time the server holds a request open for waitForFinishSecs to
+// base, so the client does not abort a request that is working as asked.
 func extendForServerWait(base time.Duration, waitForFinishSecs *int64) time.Duration {
 	if waitForFinishSecs == nil || *waitForFinishSecs <= 0 {
 		return base
@@ -192,16 +170,13 @@ func extendForServerWait(base time.Duration, waitForFinishSecs *int64) time.Dura
 	return base + time.Duration(hold)*time.Second
 }
 
-// getResourceWithServerWait is [getResource] with its timeout extended by
-// [extendForServerWait], for a get(waitForFinish) call that asks the server to hold the
-// response (RunClient.GetWithWait, BuildClient.GetWithWait).
+// getResourceWithServerWait is [getResource] with the timeout extended by [extendForServerWait].
 func getResourceWithServerWait[T any](ctx context.Context, c *resourceContext, params *QueryParams, waitForFinishSecs *int64) (T, bool, error) {
 	return getResourceWithTimeout[T](ctx, c, "", params, extendForServerWait(c.shortTimeout(), waitForFinishSecs))
 }
 
-// getResourceAlways performs a GET that unwraps the data envelope; a not-found always maps to
-// (zero, false, nil), regardless of c.hasOwnID. Used for a lookup that is unambiguous no matter
-// how the parent client was reached, such as a request-queue request by id.
+// getResourceAlways is [getResource], but a 404 always gives (zero, false, nil). Use it for a
+// lookup whose 404 is unambiguous, such as a request-queue request by ID.
 func getResourceAlways[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (T, bool, error) {
 	var zero T
 	result, err := getResourceRequired[T](ctx, c, subPath, params, c.shortTimeout())
@@ -214,13 +189,8 @@ func getResourceAlways[T any](ctx context.Context, c *resourceContext, subPath s
 	return result, true, nil
 }
 
-// getResourceRequired performs a GET that unwraps the data envelope and propagates every error,
-// including a 404. Used both where a 404 is never ambiguous (list, batch and lookup endpoints)
-// and, since [DatasetClient.GetStatistics]/[ScheduleClient.GetLog]/[TaskClient.GetInput], where
-// it always means the parent resource is gone.
-//
-// timeout is the caller's chosen timeout tier (see [timeoutTiers]), or [noRequestTimeout] for a
-// request that must not be bounded by one (the polling behind [waitForFinish]).
+// getResourceRequired is [getResource], but every error, a 404 included, is returned. timeout may
+// be [noRequestTimeout].
 func getResourceRequired[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, timeout time.Duration) (T, error) {
 	var zero T
 	if c.idErr != nil {
@@ -234,13 +204,12 @@ func getResourceRequired[T any](ctx context.Context, c *resourceContext, subPath
 	return parseDataEnvelope[T](resp.body)
 }
 
-// updateResource performs a PUT with a JSON body, unwrapping the data envelope. Metadata writes
-// use the "short" timeout tier.
+// updateResource performs a PUT with a JSON body and unwraps the data envelope.
 func updateResource[T any](ctx context.Context, c *resourceContext, subPath string, body any) (T, error) {
 	return updateResourceWithTimeout[T](ctx, c, subPath, body, c.shortTimeout())
 }
 
-// updateResourceWithTimeout is [updateResource] with the caller's chosen timeout tier.
+// updateResourceWithTimeout is [updateResource] with the given timeout.
 func updateResourceWithTimeout[T any](ctx context.Context, c *resourceContext, subPath string, body any, timeout time.Duration) (T, error) {
 	var zero T
 	if c.idErr != nil {
@@ -258,11 +227,8 @@ func updateResourceWithTimeout[T any](ctx context.Context, c *resourceContext, s
 	return parseDataEnvelope[T](resp.body)
 }
 
-// deleteResource performs a DELETE addressing this client's own resource. A not-found is
-// treated as a successful no-op only when the client has its own id (c.hasOwnID); otherwise the
-// error propagates. See [getResource] for why. For a delete that is unambiguous regardless of
-// how the parent client was reached (e.g. deleting a key-value-store record by key), use
-// [deleteResourceAlways].
+// deleteResource performs a DELETE of the resource. A 404 is a no-op only if the client has its
+// own ID (see [getResource]). For an unambiguous 404, use [deleteResourceAlways].
 func deleteResource(ctx context.Context, c *resourceContext, subPath string) error {
 	if c.idErr != nil {
 		return c.idErr
@@ -275,8 +241,7 @@ func deleteResource(ctx context.Context, c *resourceContext, subPath string) err
 	return nil
 }
 
-// deleteResourceAlways performs a DELETE; a not-found is always treated as a successful no-op,
-// regardless of c.hasOwnID.
+// deleteResourceAlways is [deleteResource], but a 404 is always a no-op.
 func deleteResourceAlways(ctx context.Context, c *resourceContext, subPath string) error {
 	if c.idErr != nil {
 		return c.idErr
@@ -289,15 +254,12 @@ func deleteResourceAlways(ctx context.Context, c *resourceContext, subPath strin
 	return nil
 }
 
-// listResource performs a GET returning a paginated list (data envelope wrapping items). Every
-// collection's List uses the "medium" timeout tier.
+// listResource performs a GET of a paginated list.
 func listResource[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (PaginationList[T], error) {
 	return getResourceRequired[PaginationList[T]](ctx, c, subPath, params, c.mediumTimeout())
 }
 
-// createResource performs a POST with a JSON body, unwrapping the data envelope. timeout is the
-// caller's chosen tier: most Create endpoints are "short", a few (e.g. ActorCollectionClient's)
-// are "medium", matching the reference client per resource.
+// createResource performs a POST with a JSON body and unwraps the data envelope.
 func createResource[T any](ctx context.Context, c *resourceContext, params *QueryParams, body any, timeout time.Duration) (T, error) {
 	var zero T
 	if c.idErr != nil {
@@ -315,8 +277,7 @@ func createResource[T any](ctx context.Context, c *resourceContext, params *Quer
 	return parseDataEnvelope[T](resp.body)
 }
 
-// getOrCreateNamed performs a POST that gets-or-creates a named resource
-// (POST {collection}?name=...), unwrapping the data envelope. Uses the "short" timeout tier.
+// getOrCreateNamed performs POST {collection}?name=..., which gets or creates a named resource.
 func getOrCreateNamed[T any](ctx context.Context, c *resourceContext, name string) (T, error) {
 	var zero T
 	if c.idErr != nil {
@@ -334,9 +295,7 @@ func getOrCreateNamed[T any](ctx context.Context, c *resourceContext, name strin
 	return parseDataEnvelope[T](resp.body)
 }
 
-// postWithBody performs a POST with a raw body (optional) and content type, unwrapping the
-// data envelope. Used where the input is arbitrary user JSON (actor.start, run.metamorph).
-// timeout is the caller's chosen tier (trigger/batch operations are typically "medium").
+// postWithBody performs a POST with a raw body and unwraps the data envelope.
 func postWithBody[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType string, timeout time.Duration) (T, error) {
 	var zero T
 	if c.idErr != nil {
@@ -350,9 +309,7 @@ func postWithBody[T any](ctx context.Context, c *resourceContext, subPath string
 	return parseDataEnvelope[T](resp.body)
 }
 
-// deleteWithBody performs a DELETE with a JSON body (used for batch request deletion),
-// unwrapping the data envelope. Uses the "short" timeout tier (matching the reference client's
-// batchDeleteRequests).
+// deleteWithBody performs a DELETE with a JSON body and unwraps the data envelope.
 func deleteWithBody[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body any) (T, error) {
 	var zero T
 	if c.idErr != nil {
@@ -370,11 +327,8 @@ func deleteWithBody[T any](ctx context.Context, c *resourceContext, subPath stri
 	return parseDataEnvelope[T](resp.body)
 }
 
-// getRaw performs a GET returning the raw response (no data envelope), using the "long" timeout
-// tier (a data download). A not-found maps to (nil, nil), regardless of c.hasOwnID: used only
-// where that is unambiguous, such as a key-value-store record lookup by key. For a fixed
-// sub-path where a 404 always means the parent resource is gone (e.g. dataset statistics), use
-// [getRawRequired] instead.
+// getRaw performs a GET and returns the raw response. A 404 gives (nil, nil), so use it only for
+// an unambiguous 404, such as a record lookup by key. Otherwise use [getRawRequired].
 func getRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (*apiResponse, error) {
 	resp, err := getRawRequired(ctx, c, subPath, params, c.longTimeout())
 	if err != nil {
@@ -386,8 +340,7 @@ func getRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 	return resp, nil
 }
 
-// getRawRequired performs a GET returning the raw response (no data envelope) and propagates
-// every error, including a 404. timeout is the caller's chosen tier.
+// getRawRequired is [getRaw], but every error, a 404 included, is returned.
 func getRawRequired(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, timeout time.Duration) (*apiResponse, error) {
 	if c.idErr != nil {
 		return nil, c.idErr
@@ -396,9 +349,7 @@ func getRawRequired(ctx context.Context, c *resourceContext, subPath string, par
 	return c.http.call(ctx, http.MethodGet, url, nil, "", timeout)
 }
 
-// headExists performs a HEAD request, returning whether the resource exists, using the "long"
-// timeout tier (the reference client's tier for a record lookup). A not-found always maps to
-// (false, nil): used only for an unambiguous lookup (a key-value-store record by key).
+// headExists performs a HEAD request and reports whether the resource exists. A 404 gives false.
 func headExists(ctx context.Context, c *resourceContext, subPath string, params *QueryParams) (bool, error) {
 	if c.idErr != nil {
 		return false, c.idErr
@@ -414,8 +365,7 @@ func headExists(ctx context.Context, c *resourceContext, subPath string, params 
 	return true, nil
 }
 
-// putRaw performs a PUT with raw bytes and a content type (used for KVS record uploads), using
-// the "long" timeout tier (a data upload).
+// putRaw performs a PUT with raw bytes.
 func putRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType string) error {
 	if c.idErr != nil {
 		return c.idErr
@@ -425,13 +375,9 @@ func putRaw(ctx context.Context, c *resourceContext, subPath string, params *Que
 	return err
 }
 
-// putRawWithEncoding is putRaw, but body is already compressed under contentEncoding (e.g.
-// "gzip", "br"): it is sent as-is and Content-Encoding is set to contentEncoding verbatim,
-// unconditionally bypassing the client's own request compression so the body is never
-// compressed twice. Used for a key-value-store record upload whose value the caller has
-// pre-compressed (see [KeyValueStoreClient.SetRecordRawWithEncoding]). Even with
-// contentEncoding == "", this still differs from putRaw: a body of minCompressRequestBytes or
-// larger that putRaw would brotli/gzip-compress is sent uncompressed here instead.
+// putRawWithEncoding is [putRaw] for a body that is already compressed under contentEncoding. The
+// body is sent as it is, and the client's own request compression is skipped, even when
+// contentEncoding is empty.
 func putRawWithEncoding(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body []byte, contentType, contentEncoding string) error {
 	if c.idErr != nil {
 		return c.idErr
@@ -441,20 +387,11 @@ func putRawWithEncoding(ctx context.Context, c *resourceContext, subPath string,
 	return err
 }
 
-// streamRaw opens a GET request and returns the raw response body as an io.ReadCloser without
-// buffering it into memory, bypassing httpClient.call's buffered/retrying transport, along with
-// the response headers (e.g. Content-Type, for a caller that needs it — see
-// [KeyValueStoreClient.GetRecordStreamWithOptions]). Used where the caller wants to consume a
-// (potentially large or live) response incrementally: a streamed log
-// ([LogClient.StreamWithOptions]), a streamed dataset export
-// ([DatasetClient.DownloadItemsStream]), or a streamed key-value-store record.
+// streamRaw sends a GET request and returns the response body unread, with the response headers.
+// The request is not retried, and the caller closes the body.
 //
-// Because the response is consumed incrementally it is not retried: a transient failure surfaces
-// to the caller directly. The caller is responsible for closing the returned io.ReadCloser.
-//
-// A non-2xx response is read to completion, closed, and classified into an *APIError. notFound
-// controls how a 404 is reported: when true, it resolves to (nil, nil, nil) ("absent"); otherwise
-// it is returned as an error.
+// A non-2xx response is returned as an *APIError, except that a 404 gives (nil, nil, nil) when
+// notFound is true.
 func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, notFound bool) (io.ReadCloser, http.Header, error) {
 	if c.idErr != nil {
 		return nil, nil, c.idErr
@@ -465,8 +402,6 @@ func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *
 	if err != nil {
 		return nil, nil, err
 	}
-	// Reuse the shared auth/User-Agent header setup so the streaming path can never drift from
-	// the buffered request path.
 	c.http.applyAuthHeaders(req)
 
 	resp, err := c.http.backend.Do(req)
@@ -474,7 +409,6 @@ func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *
 		return nil, nil, err
 	}
 	if resp.StatusCode >= maxSuccessStatusCode {
-		// Consume and classify the error body, then close.
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		apiErr := buildAPIError(resp.StatusCode, body, 1, http.MethodGet, extractPath(url))
@@ -489,19 +423,9 @@ func streamRaw(ctx context.Context, c *resourceContext, subPath string, params *
 // terminalChecker reports whether a fetched resource has reached a terminal state.
 type terminalChecker[T any] func(*T) bool
 
-// waitForFinish polls a GET endpoint with waitForFinish until the resource reaches a
-// terminal state, the wait budget elapses, or the resource keeps returning 404 for longer than
-// maxWaitForMissingJob. waitSecs nil means "wait indefinitely", which is implemented as a
-// finite but very large bound (maxWaitForFinishSecs) so the loop always terminates.
-//
-// The overall budget is a pure time bound, evaluated independently of whether the resource is
-// currently present. A just-started run/build can transiently return 404 (database-replica
-// lag); like the reference client, we treat that as "not yet available" and keep polling, but
-// only for up to maxWaitForMissingJob of continuous 404s — a job that keeps answering 404 for
-// longer than that does not exist, and polling it for the full budget (which defaults to more
-// than 11 days) would hang far longer than a caller would expect. A successful poll resets the
-// 404 window. If the resource never became available, the last 404's *APIError is returned
-// instead of a successful result.
+// waitForFinish polls the resource until it is terminal, waitSecs elapse, or it has answered 404
+// for [maxWaitForMissingJob]. A nil waitSecs waits for [maxWaitForFinishSecs]. When the wait ends
+// while the resource is missing, the last 404 error is returned.
 func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int64, resourceName string, isTerminal terminalChecker[T]) (T, error) {
 	var zero T
 
@@ -519,8 +443,7 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 		notFoundErr   error
 	)
 
-	// do-while: always perform at least one fetch (matching the reference client), then
-	// repeat only while the pure time bound has not been reached.
+	// Fetch at least once, even with a budget of zero.
 	for {
 		elapsed := time.Since(start)
 		remaining := int64((budget - elapsed).Seconds())
@@ -529,11 +452,7 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 		params := NewQueryParams()
 		params.AddInt("waitForFinish", &requestSecs)
 
-		// The poll itself runs with no client-imposed timeout (noRequestTimeout): the server
-		// may legitimately hold the connection open for up to waitForFinishRequestSecs while
-		// waiting for the job to finish, so a fixed per-request budget would abort it for doing
-		// exactly what was asked. The overall wait is still bounded by the pure time budget
-		// above.
+		// The server holds the request open on purpose, so a poll has no timeout of its own.
 		res, err := getResourceRequired[T](ctx, c, "", params, noRequestTimeout)
 		ok := err == nil
 		if err != nil && (!c.hasOwnID || !isNotFound(err)) {
@@ -547,11 +466,7 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 				return resource, nil
 			}
 		} else {
-			// A transient 404 is not immediately fatal: keep polling, but only for up to
-			// maxWaitForMissingJob of continuous 404s. present is cleared so that, if the budget
-			// runs out while currently 404 (even if the resource was seen earlier), the final
-			// check below reports not-found rather than a stale last-known state — matching the
-			// reference client, which resets its job to undefined on every 404.
+			// A 404 may be replica lag, so keep polling until it has lasted maxWaitForMissingJob.
 			present = false
 			if notFoundSince.IsZero() {
 				notFoundSince = time.Now()
@@ -562,7 +477,6 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 			}
 		}
 
-		// Pure time bound: stop once the budget is exhausted, regardless of presence.
 		if time.Since(start) >= budget {
 			break
 		}
@@ -573,14 +487,11 @@ func waitForFinish[T any](ctx context.Context, c *resourceContext, waitSecs *int
 	}
 
 	if present {
-		// Budget exhausted but the latest poll succeeded: return its state (e.g. still running).
-		// Mirrors the reference client returning the last fetched job.
+		// The wait ran out, so this is the last state, for example still running.
 		return resource, nil
 	}
 
-	// The budget ran out while the resource was absent (currently 404, whether or not it was
-	// seen earlier): notFoundErr is always set at this point, since present can only be false
-	// after at least one swallowed 404.
+	// The wait ran out on a 404.
 	return zero, notFoundErr
 }
 
@@ -598,8 +509,7 @@ func minInt64(a, b int64) int64 {
 	return b
 }
 
-// mustMarshal serializes v to JSON, returning nil on error. Used for small, internally
-// constructed bodies (maps of primitives) that cannot fail to marshal in practice.
+// mustMarshal serializes v to JSON for bodies built from primitives, which cannot fail.
 func mustMarshal(v any) []byte {
 	data, _ := json.Marshal(v)
 	return data

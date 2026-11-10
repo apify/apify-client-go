@@ -17,10 +17,8 @@ func (c *ActorEnvVarCollectionClient) List(ctx context.Context) (PaginationList[
 	return listResource[ActorEnvVar](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Iterate returns a lazy iterator over the version's environment variables. The env-vars
-// endpoint is not offset-paginated (it always returns the full set in one response), so there
-// is no Limit/chunkSize control; the iterator drains that one page. Mirrors the reference
-// client's envVars().list(), which likewise exposes no pagination options.
+// Iterate returns an iterator over the version's environment variables. The endpoint returns all
+// of them in one response, so there is no Limit or chunkSize.
 func (c *ActorEnvVarCollectionClient) Iterate() *ListIterator[ActorEnvVar] {
 	return newUnpaginatedIterator(c.List)
 }

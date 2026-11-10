@@ -10,11 +10,9 @@ import (
 	"time"
 )
 
-// Constants for the Apify storage-content signing scheme, matching the platform's
-// @apify/utilities implementation that the reference clients rely on.
+// Constants of the storage-content signing scheme of @apify/utilities.
 const (
-	// storageContentSignatureVersion is the version tag embedded in signatures. The
-	// reference clients rely on the upstream default of "0".
+	// storageContentSignatureVersion is the version tag embedded in signatures.
 	storageContentSignatureVersion = "0"
 	// hmacSignatureHexLen is the number of leading hex characters of the HMAC digest used.
 	hmacSignatureHexLen = 30
@@ -63,14 +61,8 @@ func toBase62(value *big.Int) string {
 	return string(digits)
 }
 
-// signStorageContent builds a storage-content signature for a resource's public URL,
-// byte-for-byte compatible with @apify/utilities createStorageContentSignature.
-//
-// It signs the message "{version}.{expiresAtMillis}.{resourceId}" (expiresAtMillis is the
-// absolute expiry in ms, or 0 for a non-expiring URL) with createHmacSignature, then
-// returns the base64url (no padding) encoding of "{version}.{expiresAtMillis}.{hmac}".
-//
-// expiresInSecs is optional (nil for a non-expiring URL).
+// signStorageContent signs the public URL of a storage resource, compatibly with
+// createStorageContentSignature of @apify/utilities. expiresInSecs is nil for no expiry.
 func signStorageContent(secretKey, resourceID string, expiresInSecs *int64) string {
 	var expiresAtMillis int64
 	if expiresInSecs != nil {

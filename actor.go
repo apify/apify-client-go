@@ -30,20 +30,17 @@ type ActorStartOptions struct {
 	RestartOnError *bool
 	// ForcePermissionLevel overrides the Actor's permission level for this run.
 	ForcePermissionLevel *string
-	// Webhooks are ad-hoc webhooks to attach to this run. They are serialized to
-	// base64-encoded JSON as the `webhooks` query parameter, matching the reference clients.
+	// Webhooks are ad-hoc webhooks to attach to this run. They are serialized to base64-encoded
+	// JSON as the `webhooks` query parameter.
 	Webhooks []any
-	// WaitForResources, if set, retries the start every 10 seconds while the API rejects it for
-	// lack of resources (an *APIError of type "actor-memory-limit-exceeded" or
-	// "concurrent-runs-limit-exceeded"; both clear as other runs or builds of the account
-	// finish). Nil (the default) does not retry: the first error is returned as-is. Use
-	// WaitForResourcesIndefinitely to retry with no time bound, or a number of seconds to stop
-	// retrying after that long and return the last error. Any other error is returned
-	// immediately, without retrying.
+	// WaitForResources retries the start every 10 seconds while the API rejects it for lack of
+	// resources (an *APIError of type "actor-memory-limit-exceeded" or
+	// "concurrent-runs-limit-exceeded"). Nil does not retry. Use WaitForResourcesIndefinitely to
+	// retry without a time bound, or a number of seconds after which the last error is returned.
+	// Any other error is returned at once.
 	//
-	// A run that requests more memory than the account's whole memory limit is rejected with
-	// actor-memory-limit-exceeded as well and never starts, so WaitForResourcesIndefinitely
-	// retries it forever.
+	// A run that requests more memory than the account's limit is rejected with
+	// actor-memory-limit-exceeded and never starts, so WaitForResourcesIndefinitely retries it forever.
 	WaitForResources *int64
 	// Log configures the redirection of the run's log that [ActorClient.Call] and
 	// [ActorClient.CallRaw] do while they wait (see [StreamedLog]). Nil redirects it to os.Stderr
@@ -146,13 +143,9 @@ func (c *ActorClient) Start(ctx context.Context, input any, options ActorStartOp
 	return c.startWithBody(ctx, body, contentTypeJSON, options, c.startTimeout(options))
 }
 
-// StartRaw starts the Actor with a raw request body instead of a JSON-serializable value.
-//
-// Use this for a non-JSON input, e.g. a ZIP archive paired with
-// options.ContentType = Ptr("application/zip"); the bytes are sent exactly as given, with no
-// JSON serialization. For an object or array input, use [ActorClient.Start] instead, which
-// handles the serialization. Mirrors the reference client, whose Actor input accepts a plain
-// object, an array of them, or raw bytes.
+// StartRaw starts the Actor with a raw request body, for a non-JSON input such as a ZIP archive
+// with options.ContentType set to "application/zip". For an object or array input, use
+// [ActorClient.Start].
 func (c *ActorClient) StartRaw(ctx context.Context, input []byte, options ActorStartOptions) (ActorRun, error) {
 	return c.startWithBody(ctx, input, "application/octet-stream", options, c.startTimeout(options))
 }
@@ -163,12 +156,9 @@ func (c *ActorClient) startTimeout(options ActorStartOptions) time.Duration {
 	return extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish)
 }
 
-// startWithBody is the shared implementation of Start and StartRaw: it applies the run-start
-// options as query parameters and posts the given body, falling back to defaultContentType only
-// when the caller did not set options.ContentType. timeout bounds each start request.
-//
-// A start request that times out is not retried: it may already have created the run, and a
-// retry would then start a second, billed one.
+// startWithBody starts the Actor with body, which has defaultContentType unless
+// options.ContentType is set. A start request that times out is not retried, since it may have
+// created a billed run already.
 func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultContentType string, options ActorStartOptions, timeout time.Duration) (ActorRun, error) {
 	params := NewQueryParams()
 	options.apply(params)
@@ -181,17 +171,13 @@ func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultCon
 	})
 }
 
-// Call starts the Actor and waits (client-side polling) for it to finish.
+// Call starts the Actor and waits for it to finish. waitSecs bounds the wait, and nil waits
+// indefinitely. It returns the finished run, or the running run if the wait ran out.
 //
-// waitSecs bounds the wait; nil waits indefinitely. It returns the finished run (or the
-// still-running run if the wait budget was exhausted).
+// While it waits, it redirects the run's log to os.Stderr or options.Log.Output, prefixed with the
+// Actor name and the run ID (see [StreamedLog]). Set options.Log.Disabled to turn that off.
 //
-// While it waits, it redirects the run's log to os.Stderr (or to options.Log.Output), prefixed
-// with the Actor name and the run ID, like the reference client's call(): see [StreamedLog], and
-// set options.Log.Disabled to turn it off.
-//
-// Neither the start request nor the polls have a client-side timeout of their own (matching the
-// reference client's call(), whose default timeout is noTimeout): ctx bounds the whole call.
+// The start request and the polls have no timeout of their own, so ctx bounds the whole call.
 func (c *ActorClient) Call(ctx context.Context, input any, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
 	body, err := marshalInput(input)
 	if err != nil {
@@ -233,10 +219,8 @@ func (c *ActorClient) Build(ctx context.Context, versionNumber string, options A
 	return postWithBody[Build](ctx, c.ctx.withoutTimeoutRetry(), "builds", params, nil, contentTypeJSON, timeout)
 }
 
-// DefaultBuild resolves the Actor's default build and returns a client for it.
-//
-// waitForFinish optionally bounds how long (in seconds) the API waits for the build to
-// finish before responding, matching the reference client's defaultBuild(options).
+// DefaultBuild resolves the default build of the Actor and returns a client for it. waitForFinish
+// is how many seconds the API may wait for the build to finish before responding.
 func (c *ActorClient) DefaultBuild(ctx context.Context, waitForFinish *int64) (*BuildClient, error) {
 	if c.ctx.idErr != nil {
 		return nil, c.ctx.idErr
@@ -256,24 +240,16 @@ func (c *ActorClient) DefaultBuild(ctx context.Context, waitForFinish *int64) (*
 	return newBuildClient(c.ctx.http, c.baseURL, build.ID), nil
 }
 
-// ValidateInput validates the given input against the Actor's input schema.
-//
-// It omits the build parameter, so the API validates against the input schema of the build
-// tagged "latest". To validate against a specific build, use [ActorClient.ValidateInputForBuild].
-//
-// On success it returns the raw JSON validation result from the API (a JSON object reporting
-// whether the input is valid and, if not, the schema violations).
+// ValidateInput validates input against the input schema of the build tagged "latest" and returns
+// the validation result of the API. To validate against another build, use
+// [ActorClient.ValidateInputForBuild].
 func (c *ActorClient) ValidateInput(ctx context.Context, input any) (json.RawMessage, error) {
 	return c.ValidateInputForBuild(ctx, input, "")
 }
 
-// ValidateInputForBuild validates the given input against the input schema of a specific
-// Actor build, identified by its tag or number (e.g. "latest", "0.1.2"). An empty build
-// omits the parameter, so the API validates against the build tagged "latest" (per the
-// OpenAPI specification), equivalent to [ActorClient.ValidateInput].
-//
-// On success it returns the raw JSON validation result from the API (a JSON object reporting
-// whether the input is valid and, if not, the schema violations).
+// ValidateInputForBuild validates input against the input schema of a build, given by its tag or
+// number such as "latest" or "0.1.2", and returns the validation result of the API. An empty
+// build is the same as [ActorClient.ValidateInput].
 func (c *ActorClient) ValidateInputForBuild(ctx context.Context, input any, build string) (json.RawMessage, error) {
 	if c.ctx.idErr != nil {
 		return nil, c.ctx.idErr
@@ -302,9 +278,8 @@ func (c *ActorClient) LastRun(status string) *RunClient {
 	return c.LastRunWithOptions(LastRunOptions{Status: status})
 }
 
-// LastRunWithOptions returns a client for the last run of this Actor, optionally filtered by
-// status and/or origin. See LastRunOptions. Mirrors the reference client's
-// lastRun({ status, origin }).
+// LastRunWithOptions returns a client for the last run of this Actor, optionally filtered by status
+// and/or origin. See LastRunOptions.
 func (c *ActorClient) LastRunWithOptions(options LastRunOptions) *RunClient {
 	client := newRunClient(c.root, c.ctx.http, c.ctx.subURL(""), "runs", "last")
 	client.setLastRunParams(options)

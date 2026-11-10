@@ -24,12 +24,7 @@ func parseDataEnvelope[T any](body []byte) (T, error) {
 
 const notFoundStatusCode = 404
 
-// isNotFound reports whether err is an API error with a 404 status, mirroring the reference
-// clients' NotFoundError: a get/delete/head on a missing resource should resolve to "absent"
-// rather than raise. Any 404 counts, regardless of its machine-readable `type` — the reference
-// clients used to swallow only the "record-not-found"/"record-or-token-not-found" types, but
-// that let an unrelated 404 (e.g. a typo'd sub-path) pass silently for "not found" too, so v3
-// dropped the type check.
+// isNotFound reports whether err is an API error with status 404, whatever its type.
 func isNotFound(err error) bool {
 	apiErr, ok := AsAPIError(err)
 	if !ok {
@@ -180,12 +175,8 @@ func (o StorageListOptions) apply(q *QueryParams) {
 //	client.Actors().List(ctx, apify.ActorListOptions{My: apify.Ptr(true), Limit: apify.Ptr(int64(10))})
 func Ptr[T any](v T) *T { return &v }
 
-// PaginationList is a single page of an offset/limit-paginated list.
-//
-// The pagination metadata (Total, Offset, Limit, Count, Desc) accompanies the Items slice.
-// Note: Total reflects the API's reported total, which can briefly lag immediately after a
-// write (e.g. right after PushItems) because the count is computed asynchronously — re-read
-// after a short delay if you need an exact post-write total.
+// PaginationList is one page of an offset and limit paginated list. Total can lag right after a
+// write, for example after PushItems, because the API counts asynchronously.
 type PaginationList[T any] struct {
 	// Total is the total number of items available across all pages.
 	Total int64 `json:"total"`
@@ -193,12 +184,10 @@ type PaginationList[T any] struct {
 	Offset int64 `json:"offset"`
 	// Limit is the maximum number of items the API would return for this request.
 	Limit int64 `json:"limit"`
-	// Count is the number of entries on this page. On a page from [DatasetClient.ListItems] it is
-	// the number of dataset rows the API scanned for the page (the X-Apify-Pagination-Count
-	// header), or the number of items returned when that is larger. Filters (Clean, SkipEmpty,
-	// SkipHidden) can leave it above len(Items). The next page starts at
-	// Offset + min(Count, Limit); the cap matters only with Unwind, which can return more items
-	// than the rows scanned.
+	// Count is the number of entries on the page. For a page of [DatasetClient.ListItems] it is the
+	// number of dataset rows the API scanned (the X-Apify-Pagination-Count header), or the number of
+	// items returned if that is larger. Filters (Clean, SkipEmpty, SkipHidden) can leave it above
+	// len(Items). The next page starts at Offset + min(Count, Limit).
 	Count int64 `json:"count"`
 	// Desc reports whether the items are in descending order.
 	Desc bool `json:"desc"`
@@ -206,16 +195,8 @@ type PaginationList[T any] struct {
 	Items []T `json:"items"`
 }
 
-// osTokenOverrides maps Go's runtime.GOOS values to the platform names the reference Apify JS
-// client emits in the User-Agent OS token. That token comes from Node's os.platform(), which
-// spells a few platforms differently from Go's runtime.GOOS:
-//   - "windows" -> "win32"
-//   - "solaris" -> "sunos", and Go's "illumos" (a Solaris/OpenSolaris derivative that Node/libuv
-//     also reports as "sunos") -> "sunos"
-//   - "ios" -> "darwin" (Node/libuv reports Apple platforms uniformly as "darwin")
-//
-// Every other GOOS value already matches os.platform() verbatim (e.g. "linux", "darwin",
-// "android", "freebsd", "openbsd", "aix"), so it is passed through unchanged.
+// osTokenOverrides maps the runtime.GOOS values that Node's os.platform() spells differently,
+// which the reference client puts in its User-Agent. Other values are used as they are.
 var osTokenOverrides = map[string]string{
 	"windows": "win32",
 	"solaris": "sunos",
@@ -233,20 +214,14 @@ func platformToken(goos string) string {
 	return goos
 }
 
-// osToken returns the User-Agent OS token for the current platform. runtime.GOOS is the idiomatic
-// Go source of the platform identifier; platformToken aligns the two names that Go spells
-// differently from the reference clients.
+// osToken returns the OS token of the User-Agent, which is runtime.GOOS with the names that Node
+// spells differently replaced (see [osTokenOverrides]).
 func osToken() string {
 	return platformToken(runtime.GOOS)
 }
 
-// BuildUserAgent builds the User-Agent header value mandated by the client requirements:
-// `ApifyClient/{version} ({os}; {language version}); isAtHome/{isAtHome}`.
-//
-// isAtHome is driven solely by the platform's APIFY_IS_AT_HOME environment variable (matching
-// the requirements and the reference JS client, which reads it via @apify/consts) and is
-// rendered lowercase (true/false). The {os} token uses osToken so it matches the platform names
-// the reference clients emit.
+// BuildUserAgent builds the User-Agent value `ApifyClient/{version} ({os}; {language version});
+// isAtHome/{isAtHome}`. isAtHome comes from the APIFY_IS_AT_HOME environment variable.
 func BuildUserAgent(suffix string, isAtHomeFn func() bool) string {
 	atHome := "false"
 	if isAtHomeFn() {
@@ -264,22 +239,15 @@ func goVersion() string {
 	return strings.TrimPrefix(runtime.Version(), "go")
 }
 
-// toSafeID rewrites a resource id into the `username~resourcename` form Apify's URLs use
-// (every `/` becomes `~`, matching the reference client's replaceAll) and validates the result
-// as a URL path segment. See [safePathSegment] for what that rejects and why.
+// toSafeID rewrites a resource ID into the `username~resourcename` form of Apify URLs, where every
+// `/` becomes `~`, and validates it with [safePathSegment].
 func toSafeID(id string) (string, error) {
 	return safePathSegment(strings.ReplaceAll(id, "/", "~"))
 }
 
-// safePathSegment validates value as a single URL path segment and percent-encodes it. Used
-// directly to validate a value interpolated into the path below the resource's own id (a
-// record key, a request id), and by [toSafeID] for the id itself.
-//
-// An empty string or a dot segment ("." or "..") is rejected outright rather than encoded:
-// percent-encoding alone is not enough to stop a path-traversal attempt, because a URL parser
-// (or an intermediate proxy) can decode and resolve dot segments after this client has built
-// the request path, collapsing e.g. "records/%2E%2E" to the parent endpoint exactly like a
-// literal "records/..". Mirrors the reference client's toPathSegment.
+// safePathSegment percent-encodes value as one URL path segment. It rejects an empty value and
+// the dot segments "." and "..", since a proxy can resolve an encoded dot segment to the parent
+// path.
 func safePathSegment(value string) (string, error) {
 	if value == "" {
 		return "", errors.New("resource id must not be empty")

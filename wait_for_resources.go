@@ -6,32 +6,25 @@ import (
 	"time"
 )
 
-// resourceLimitErrorTypes are the Apify API error types a run/task start is rejected with while
-// the account has no free memory or concurrent-run slot for it. Both clear as other runs or
-// builds of the account finish. Matches the reference client's RESOURCE_LIMIT_ERROR_TYPES.
+// resourceLimitErrorTypes are the error types of a start rejected for lack of memory or concurrent
+// run slots.
 var resourceLimitErrorTypes = map[string]bool{
 	"actor-memory-limit-exceeded":    true,
 	"concurrent-runs-limit-exceeded": true,
 }
 
-// waitForResourcesCooldown is the delay between two attempts to start a run rejected for lack of
-// resources. Matches the reference client's WAIT_FOR_RESOURCES_COOLDOWN_MILLIS.
+// waitForResourcesCooldown is the delay between attempts to start a run.
 const waitForResourcesCooldown = 10 * time.Second
 
 // WaitForResourcesIndefinitely, used as [ActorStartOptions.WaitForResources] or
-// [TaskStartOptions.WaitForResources], retries a resource-limited start forever instead of
-// bounding the retrying to a number of seconds. Matches the reference client's
-// `waitForResources: true`.
+// [TaskStartOptions.WaitForResources], retries a resource-limited start forever instead of bounding
+// the retrying to a number of seconds.
 const WaitForResourcesIndefinitely = int64(-1)
 
-// startWaitingForResources calls start, retrying it every waitForResourcesCooldown while it
-// fails with a resource-limit error (`actor-memory-limit-exceeded` or
-// `concurrent-runs-limit-exceeded`), until it succeeds or the waitForResources budget elapses.
-// Any other error is returned immediately, without retrying.
-//
-// waitForResources nil disables retrying, so the first error (of any kind) is returned
-// immediately. [WaitForResourcesIndefinitely] retries with no time bound. Any other value is the
-// number of seconds to keep retrying for (must be >= 0) before returning the last error.
+// startWaitingForResources calls start again every waitForResourcesCooldown while it fails with a
+// resource-limit error, until it succeeds or waitForResources seconds pass. Any other error is
+// returned at once. A nil waitForResources does not retry, and [WaitForResourcesIndefinitely]
+// retries without a time bound.
 func startWaitingForResources[T any](ctx context.Context, waitForResources *int64, start func() (T, error)) (T, error) {
 	if waitForResources == nil {
 		return start()
