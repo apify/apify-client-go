@@ -156,12 +156,8 @@ func (c *DatasetClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// ListDatasetItems lists a single page of items from the dataset, decoding each into T
-// (e.g. json.RawMessage or a struct).
-//
-// The dataset items endpoint returns a bare JSON array (not a data envelope) and reports
-// pagination via X-Apify-Pagination-* headers, which are surfaced in the returned
-// [PaginationList].
+// ListDatasetItems lists one page of the dataset items, decoding each item into T, for example a
+// struct or json.RawMessage. The pagination headers fill the returned [PaginationList].
 func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options DatasetListItemsOptions) (PaginationList[T], error) {
 	var result PaginationList[T]
 	params := NewQueryParams()
@@ -183,13 +179,10 @@ func ListDatasetItems[T any](ctx context.Context, c *DatasetClient, options Data
 	result.Total = headerInt(resp.header, "X-Apify-Pagination-Total", returned)
 	result.Offset = headerInt(resp.header, "X-Apify-Pagination-Offset", 0)
 	result.Limit = headerInt(resp.header, "X-Apify-Pagination-Limit", returned)
-	// The API applies Offset/Limit to the dataset's rows before Clean/SkipEmpty/SkipHidden/
-	// Unwind reshape them, so the items returned can land on either side of the rows scanned.
-	// X-Apify-Pagination-Count reports the scanned number, and Count carries it so that
-	// IterateDatasetItems advances and stops by it: a filter can't make it re-scan rows a
-	// previous page already covered, and Unwind can't make it skip rows. The scanned number is
-	// derived from the dataset's item count, which lags a fresh push, so it can fall below the
-	// items returned; the larger of the two is taken.
+	// The API applies Offset and Limit to the rows before the filters and Unwind reshape them, so
+	// the items returned can differ in number from the rows scanned. Count is the scanned number,
+	// and the iterators advance by it. It is derived from the item count, which lags a fresh push,
+	// so the larger of it and the items returned is used.
 	result.Count = maxInt64(headerInt(resp.header, "X-Apify-Pagination-Count", returned), returned)
 	if options.Desc != nil {
 		result.Desc = *options.Desc
@@ -203,10 +196,9 @@ func (c *DatasetClient) ListItems(ctx context.Context, options DatasetListItemsO
 	return ListDatasetItems[json.RawMessage](ctx, c, options)
 }
 
-// IterateDatasetItems returns a lazy iterator over the dataset's items, decoding each into T
-// and fetching pages on demand. The options' Limit caps the total number of items yielded
-// (unset means all); the per-page size is chunkSize (nil for the server default). Mirrors the
-// reference client's iterable listItems().
+// IterateDatasetItems returns a lazy iterator over the dataset's items, decoding each into T and
+// fetching pages on demand. The options' Limit caps the total number of items yielded (unset means
+// all); the per-page size is chunkSize (nil for the server default).
 func IterateDatasetItems[T any](c *DatasetClient, options DatasetListItemsOptions, chunkSize *int64) *ListIterator[T] {
 	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[T], error) {
 		opts := options
@@ -241,14 +233,8 @@ func (c *DatasetClient) DownloadItems(ctx context.Context, format DownloadItemsF
 	return resp.body, nil
 }
 
-// DownloadItemsStream is [DatasetClient.DownloadItems], but returns a Readable stream of the
-// serialized export instead of buffering it all into memory, so a large export can be processed
-// in chunks (e.g. piped straight to a file via io.Copy). The caller is responsible for closing
-// the returned [io.ReadCloser].
-//
-// Because the response is consumed incrementally it bypasses the buffered/retrying transport, so
-// a transient failure surfaces to the caller directly instead of being retried. Mirrors the
-// reference client's downloadItems(format, { stream: true }).
+// DownloadItemsStream is [DatasetClient.DownloadItems], but returns the export unread, so that a
+// large export can be processed in chunks. The caller closes it. The request is not retried.
 func (c *DatasetClient) DownloadItemsStream(ctx context.Context, format DownloadItemsFormat, options DatasetDownloadOptions) (io.ReadCloser, error) {
 	params := NewQueryParams()
 	fmtStr := string(format)
@@ -258,14 +244,11 @@ func (c *DatasetClient) DownloadItemsStream(ctx context.Context, format Download
 	return stream, err
 }
 
-// PushItems pushes one or more items to the dataset. items must serialize to a JSON object or
-// an array of objects, the only shapes the API accepts: anything else (a bare string, number or
-// boolean, an array holding a non-object, nil) fails with an error before any request is sent.
-// A value that is already serialized JSON can be passed as a [json.RawMessage]; a plain Go string
-// is serialized as a JSON string, which is not a valid item.
+// PushItems pushes items to the dataset. items must serialize to a JSON object or an array of
+// objects, otherwise PushItems returns an error before sending a request. A string is serialized
+// as a JSON string, so pass a [json.RawMessage] for JSON that is already serialized.
 //
-// A push that times out is not retried: the API may already have stored the items, and a retry
-// would then store them a second time.
+// A push that times out is not retried, since the API may have stored the items already.
 func (c *DatasetClient) PushItems(ctx context.Context, items any) error {
 	body, err := json.Marshal(items)
 	if err != nil {
@@ -317,15 +300,11 @@ func (c *DatasetClient) GetStatistics(ctx context.Context) (json.RawMessage, err
 	return parseDataEnvelope[json.RawMessage](resp.body)
 }
 
-// CreateItemsPublicURL builds a public URL for downloading this dataset's items, served as
-// JSON. To request another export format, use [DatasetClient.CreateItemsPublicURLWithFormat].
+// CreateItemsPublicURL returns a public URL of the dataset items as JSON. For another format, use
+// [DatasetClient.CreateItemsPublicURLWithFormat].
 //
-// It mirrors the reference client's createItemsPublicUrl: it fetches the dataset, and if the
-// dataset exposes a URL-signing secret key (i.e. it is private), appends an HMAC-SHA256
-// signature so the URL grants access without an API token. expiresInSecs optionally bounds
-// the validity of a signed URL (nil for non-expiring); it must be positive, and a zero or
-// negative value is an error returned before any request is sent. The URL is built from the
-// configured public base URL.
+// If the dataset has a URL signing secret key, the URL is signed, so it works without a token.
+// expiresInSecs is the validity of a signed URL, nil for no expiry, and it must be positive.
 func (c *DatasetClient) CreateItemsPublicURL(ctx context.Context, options DatasetListItemsOptions, expiresInSecs *int64) (string, error) {
 	return c.CreateItemsPublicURLWithFormat(ctx, options, expiresInSecs, "")
 }
@@ -345,7 +324,7 @@ func (c *DatasetClient) CreateItemsPublicURLWithFormat(ctx context.Context, opti
 		params.AddString("format", &fmtStr)
 	}
 
-	// Fetched with the "long" timeout tier, the reference client's tier for this call.
+	// The "long" timeout tier is used for this fetch.
 	dataset, present, err := getResourceWithTimeout[Dataset](ctx, c.ctx, "", NewQueryParams(), c.ctx.longTimeout())
 	if err != nil {
 		return "", err

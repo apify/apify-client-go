@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-// runExample runs `go run ./examples/<name>` as a subprocess and fails the test if it does
-// not exit successfully. Each documentation example is exercised this way, mirroring the
-// reference clients' example smoke tests, so the docs stay runnable.
+// runExample runs `go run ./examples/<name>` and fails the test if it does not exit successfully.
 func runExample(t *testing.T, name string) {
 	t.Helper()
 	if os.Getenv("APIFY_TOKEN") == "" {

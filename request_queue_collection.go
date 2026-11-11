@@ -19,10 +19,9 @@ func (c *RequestQueueCollectionClient) List(ctx context.Context, options Storage
 	return listResource[RequestQueue](ctx, c.ctx, "", params)
 }
 
-// Iterate returns a lazy iterator over the request queues matching the options, fetching
-// pages on demand. The options' Limit caps the total number of queues yielded (unset means
-// all); the per-page size is chunkSize (nil for the server default). Mirrors the reference
-// client's iterable list().
+// Iterate returns a lazy iterator over the request queues matching the options, fetching pages on
+// demand. The options' Limit caps the total number of queues yielded (unset means all); the page
+// size is chunkSize (nil for the server default).
 func (c *RequestQueueCollectionClient) Iterate(options StorageListOptions, chunkSize *int64) *ListIterator[RequestQueue] {
 	return newListIterator(options.Limit, chunkSize, offsetVal(options.Offset), func(ctx context.Context, offset, limit int64) (PaginationList[RequestQueue], error) {
 		opts := options

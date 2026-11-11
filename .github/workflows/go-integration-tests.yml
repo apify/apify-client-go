@@ -1,7 +1,6 @@
 name: Go integration tests
 
-# Language-specific workflow: only runs for the Go client. Triggers on PRs to master that
-# touch Go client, test, or example code, and can be dispatched manually from any branch.
+# Runs for changes to Go code, docs, or this workflow, and can be dispatched from any branch.
 on:
   pull_request:
     branches: [master]
@@ -9,15 +8,14 @@ on:
       - '**/*.go'
       - 'go.mod'
       - 'go.sum'
-      # The "Test examples" step validates the in-documentation snippets, so doc changes must
-      # re-run the workflow even though Markdown is not Go code.
+      # The "Test examples" step checks the snippets of the docs.
       - 'docs/**'
       - 'README.md'
       - '.github/workflows/go-integration-tests.yml'
       - '.github/scripts/assert-tests-ran.sh'
   workflow_dispatch:
 
-# Avoid concurrent runs of the same ref racing on the shared test account.
+# Runs of one ref share the test account, so they must not overlap.
 concurrency:
   group: go-integration-${{ github.ref }}
   cancel-in-progress: true
@@ -32,8 +30,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Patched toolchain (Go 1.26.10+): earlier releases still trust the compromised
-          # intermediate CA certificates. Keep in step with the `toolchain` line in go.mod.
+          # Earlier releases trust compromised CA certificates. Keep in step with go.mod.
           go-version: '1.26.10'
           cache: true
 
@@ -49,13 +46,8 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # The idiomatic Go linter. `go vet` only catches a narrow set of correctness issues;
-      # golangci-lint bundles staticcheck and other analyzers, satisfying the coding-rules
-      # mandate that linting/type-checking run in CI. Config lives in .golangci.yml.
       - name: Lint (golangci-lint)
-        # Use the v7 action and pin a golangci-lint v2 release: .golangci.yml uses the
-        # v2 config schema, which the v6 action's v1.x binary rejects ("additional
-        # properties 'version'/'default' not allowed").
+        # .golangci.yml uses the v2 schema, which needs the v7 action.
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.15.0
@@ -64,13 +56,10 @@ jobs:
         run: go build ./...
 
       - name: Unit tests
-        # The unit tests are offline (mock HTTP backend) and prove the retry/error/signature
-        # logic without hitting the API.
+        # Offline tests with a mock HTTP backend.
         run: go test . -v
 
-      # Fail fast if the integration-test secret is missing or empty. Without this guard the
-      # integration tests silently "pass" (they skip when APIFY_TOKEN is unset), so a green
-      # run would not prove the API logic actually executed.
+      # Without the token the integration tests skip and the run would be green.
       - name: Require APIFY_TOKEN secret
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
@@ -82,36 +71,19 @@ jobs:
 
       - name: Integration tests
         env:
-          # The integration-test token is stored as a repository secret.
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-        # Limit parallelism to be gentle on the shared test account. The documentation example
-        # programs (TestExample*) and the in-documentation snippet checks (TestDocSnippets*) are
-        # exercised by the standalone "Test examples" step below, so they are skipped here to
-        # keep the two concerns separate.
-        #
-        # -json is parsed by assert-tests-ran.sh so the step fails if zero tests actually ran or
-        # every test skipped (a filter that matches nothing, a package with no test functions,
-        # or an all-skip run would otherwise exit green and hide that the API logic never ran).
+        # The example and snippet tests run in "Test examples". assert-tests-ran.sh fails the step
+        # if no test ran or all were skipped.
         run: |
           set -o pipefail
           go test ./tests/ -json -timeout 900s -p 1 -parallel 4 -skip '^(TestExample|TestDocSnippets)' \
             | tee integration.jsonl
           ./.github/scripts/assert-tests-ran.sh integration.jsonl "Integration tests"
 
-      # Standalone CI step that verifies the documentation examples actually work. It runs the
-      # example programs in examples/ end-to-end against the live API (via the TestExample*
-      # smoke tests in tests/examples_test.go, each of which executes `go run ./examples/<name>`)
-      # and checks that every in-documentation code snippet is valid, runnable, and gofmt-
-      # formatted (the TestDocSnippets* tests, which extract every ```go block from the README
-      # and docs/ and compile each one). Both are required by the documentation requirements:
-      # each documentation example has a CI test that actually runs the code, and each snippet
-      # must be valid, runnable and properly formatted.
+      # Runs the programs in examples/ against the live API and compiles the snippets of the docs.
       - name: Test examples
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-        # Match the integration-test thread cap so the example programs (which hit the live
-        # account) stay gentle on the shared test account. As above, -json is asserted so the
-        # step fails if the example/snippet tests did not actually run or all skipped.
         run: |
           set -o pipefail
           go test ./tests/ -json -timeout 900s -p 1 -parallel 4 -run '^(TestExample|TestDocSnippets)' \

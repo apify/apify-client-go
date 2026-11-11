@@ -14,15 +14,15 @@ import (
 	"sync"
 )
 
+// parentRequestIDHeader carries the ID of the request that a Server Actor is handling.
+const parentRequestIDHeader = "X-Actor-Request-ID"
+
 // ErrNotServerActor is returned, wrapped, when an [ActorServerClient] method is used on an Actor
 // that is not a Server Actor, which is an Actor without a server URL (`standbyUrl`).
 var ErrNotServerActor = errors.New("the Actor is not a Server Actor")
 
-// ActorServerClient is a client for the server interface of a specific Actor.
-//
-// A Server Actor (formerly Actor Standby) runs a web server that is called over HTTP, and the
-// platform keeps a run ready to answer, so each call skips the run startup. The client sends
-// requests to that server and gives its URL and OpenAPI specification. Get an instance with
+// ActorServerClient calls the server of a Server Actor (formerly Actor Standby), a web server
+// whose run the platform keeps ready, so a call skips the run startup. Get one with
 // [ActorClient.Server]. It is safe for concurrent use.
 type ActorServerClient struct {
 	ctx     *resourceContext
@@ -74,6 +74,11 @@ type ActorServerRequestOptions struct {
 	// unless Headers sets one. A [json.RawMessage] and any other value are sent as JSON, with
 	// Content-Type application/json unless Headers sets one.
 	Body any
+	// ParentRequestID is the X-Actor-Request-ID header of the request that the calling Server
+	// Actor is handling. It is sent on as the same header, so that the called Actor charges at the
+	// pricing tier of that request, and it wins over the same header in Headers. Use a client
+	// created with the run's APIFY_TOKEN.
+	ParentRequestID string
 	// Compression compresses a body of 1 KiB or more with the chosen codec. It is nil by
 	// default, which sends the body uncompressed, since the Actor's server may not decode a
 	// compressed body. Set it only if the server decodes the resulting Content-Encoding. A
@@ -107,15 +112,12 @@ type ActorServerStream struct {
 	Body io.ReadCloser
 }
 
-// GetURL returns the URL of the Actor's server.
+// GetURL returns the URL of the Actor's server, which is its `standbyUrl`. The first call of this
+// method, [ActorServerClient.GetOpenAPISpec] or [ActorServerClient.Request] fetches it, and later
+// calls reuse it. Use it to call the server with another HTTP client.
 //
-// The URL is the Actor's `standbyUrl`, fetched from the API by the first call of this method,
-// [ActorServerClient.GetOpenAPISpec] or [ActorServerClient.Request], and reused by later calls
-// on this client. Use it to call the server with another HTTP client, for example one generated
-// from the server's OpenAPI specification.
-//
-// It returns an *[APIError] for which IsNotFound is true when the Actor does not exist, and an
-// error wrapping [ErrNotServerActor] when the Actor is not a Server Actor.
+// It returns an *[APIError] with IsNotFound true if the Actor does not exist, and an error
+// wrapping [ErrNotServerActor] if it is not a Server Actor.
 func (c *ActorServerClient) GetURL(ctx context.Context) (string, error) {
 	actor, err := c.getServerActor(ctx)
 	if err != nil {
@@ -209,16 +211,10 @@ func isOlderBuild(buildNumber string, target [3]int) bool {
 }
 
 // GetOpenAPISpec returns the OpenAPI specification of the Actor's server, or nil if the Actor's
-// definition does not include one.
+// definition has none. It is the web server schema of the build that serves the server: the
+// `actorStandby.build` of the Actor, or `latest`.
 //
-// The specification is the web server schema from the Actor's definition, taken from the build
-// that serves the server interface: the build set in `actorStandby.build`, or `latest` if none
-// is set. Use it to generate an HTTP client for the server, and point that client at the URL
-// returned by [ActorServerClient.GetURL].
-//
-// It returns an *[APIError] for which IsNotFound is true when the Actor does not exist, and an
-// error wrapping [ErrNotServerActor] when the Actor is not a Server Actor. It also fails when
-// the build that serves the server interface does not exist.
+// It returns the errors of [ActorServerClient.GetURL], and an error if that build does not exist.
 func (c *ActorServerClient) GetOpenAPISpec(ctx context.Context) (json.RawMessage, error) {
 	actor, err := c.fetchSpecActor(ctx)
 	if err != nil {
@@ -305,31 +301,23 @@ var httpMethods = map[string]bool{
 	http.MethodTrace: true, http.MethodPatch: true,
 }
 
-// Request sends an HTTP request to the Actor's server and returns its response, with the body
-// read in full.
+// Request sends an HTTP request to the Actor's server and reads the whole response.
 //
-// The request goes to the URL returned by [ActorServerClient.GetURL] and carries the client's
-// token in the X-Apify-Authorization header, which the platform consumes, so it never reaches
-// the Actor's code. Headers in the options, Authorization included, reach the Actor's server as
-// they are. The first request to an idle Actor waits for the platform to start a server run,
-// which is why the request uses the "long" timeout tier. As for every method, the context
-// can only shorten that bound.
+// path is the path on the server, for example "/search", and a fragment is dropped. It is resolved
+// against the server URL, so the request cannot go to another host. Pass the query in Params.
 //
-// The response is returned whatever its status, so check StatusCode before using the body. A
-// rate limit (429) or Service Unavailable (503) response is retried with the client's retry
-// settings, and the last one is returned once the retries run out. The Actor's code can return
-// these statuses too, and then it gets the request again. A redirect is returned as it is,
-// since following it would send the token to a host the Actor's code picked. A transport error,
-// a timeout included, is not retried, since the Actor may have already handled the request.
+// The request carries the token in the X-Apify-Authorization header, which the platform removes
+// before the Actor sees it. The Headers of the options reach the server as they are.
 //
-// path is the path on the Actor's server, for example "/search". It is always resolved against
-// the server URL, so the request, and the token with it, cannot go to another host. Pass the
-// query in the options' Params. A fragment (#...) is dropped, since it is never sent to the
-// server.
+// The response is returned whatever its status, so check StatusCode. A 429 or 503 response is
+// retried, and the last one is returned when the retries run out. The Actor's own code can return
+// these statuses too, and then it gets the request again. A redirect is returned as it is, so the
+// token never reaches another host. A transport error, a timeout included, is not retried, since
+// the Actor may have handled the request. The first request to an idle Actor waits for a run to
+// start, so the request uses the "long" timeout tier, which ctx can shorten.
 //
-// It returns an error only when it gets no response: the Actor does not exist (an *[APIError]
-// for which IsNotFound is true), the Actor is not a Server Actor ([ErrNotServerActor]), the
-// options are invalid, or the request fails or times out. To read the body incrementally, use
+// It returns an error only when there is no response: the errors of [ActorServerClient.GetURL],
+// invalid options, or a failed or timed-out request. To read the body incrementally, use
 // [ActorServerClient.RequestStream].
 func (c *ActorServerClient) Request(ctx context.Context, path string, options ActorServerRequestOptions) (*ActorServerResponse, error) {
 	resp, err := c.send(ctx, path, options, false)
@@ -373,16 +361,33 @@ func (c *ActorServerClient) send(ctx context.Context, path string, options Actor
 	if err != nil {
 		return nil, err
 	}
+	headers := options.Headers
+	if options.ParentRequestID != "" {
+		headers = withHeader(headers, parentRequestIDHeader, options.ParentRequestID)
+	}
 	return c.ctx.http.callServer(ctx, serverCall{
 		method:      method,
 		url:         serverRequestURL(serverURL, path, options.Params),
 		body:        body,
 		contentType: contentType,
-		headers:     options.Headers,
+		headers:     headers,
 		compressors: compressors,
 		timeout:     c.ctx.longTimeout(),
 		stream:      stream,
 	})
+}
+
+// withHeader returns a copy of headers with name set to value, replacing the header of that
+// name whatever the casing of either.
+func withHeader(headers http.Header, name, value string) http.Header {
+	result := http.Header{}
+	for key, values := range headers {
+		if !strings.EqualFold(key, name) {
+			result[key] = values
+		}
+	}
+	result.Set(name, value)
+	return result
 }
 
 // serverRequestURL joins the server URL, the path and the query. Leading slashes of the path are
@@ -419,12 +424,7 @@ func encodeServerBody(body any) ([]byte, string, error) {
 	}
 }
 
-// Server returns a client for the server interface of this Actor.
-//
-// A Server Actor runs a web server, its server interface, that is called over HTTP without
-// starting a run for each call. Server Actors were formerly called Actor Standby, and
-// [ActorClient.Standby] is a deprecated alias of this method. Every call returns the same
-// client, so the server URL it fetches is reused.
+// Server returns the [ActorServerClient] of this Actor. Every call returns the same client.
 func (c *ActorClient) Server() *ActorServerClient {
 	c.serverOnce.Do(func() {
 		c.server = newActorServerClient(c.ctx.http, c.baseURL, c.id)

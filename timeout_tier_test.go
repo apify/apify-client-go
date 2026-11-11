@@ -2,11 +2,13 @@ package apify
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
 )
 
-// The calls the reference client puts on the long tier must not be cut off by a short tier: here
-// the short tier (tinyTier) is shorter than the response time, and the calls still succeed.
+// The calls on the long tier are not cut off by a shorter short tier: here the short tier
+// (tinyTier) is shorter than the response time, and the calls still succeed.
 func TestKeyValueStoreAndPublicURLCallsUseTheLongTier(t *testing.T) {
 	ctx := context.Background()
 	store := `{"data":{"id":"s","urlSigningSecretKey":"secret"}}`
@@ -45,5 +47,60 @@ func TestKeyValueStoreAndPublicURLCallsUseTheLongTier(t *testing.T) {
 				t.Fatalf("expected a single request, got %d", got)
 			}
 		})
+	}
+}
+
+// extendForServerWait adds the server-side wait to the base timeout, capped at
+// maxWaitForFinishHoldSecs.
+func TestExtendForServerWait(t *testing.T) {
+	cases := []struct {
+		name             string
+		base             time.Duration
+		waitForFinishSec *int64
+		want             time.Duration
+	}{
+		{"nil wait leaves base unchanged", 5 * time.Second, nil, 5 * time.Second},
+		{"zero wait leaves base unchanged", 5 * time.Second, Ptr(int64(0)), 5 * time.Second},
+		{"negative wait leaves base unchanged", 5 * time.Second, Ptr(int64(-1)), 5 * time.Second},
+		{"wait under the cap adds its full duration", 5 * time.Second, Ptr(int64(30)), 35 * time.Second},
+		{"wait over the cap is capped at 60s", 5 * time.Second, Ptr(int64(999)), 65 * time.Second},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := extendForServerWait(c.base, c.waitForFinishSec); got != c.want {
+				t.Errorf("extendForServerWait(%v, %v) = %v, want %v", c.base, c.waitForFinishSec, got, c.want)
+			}
+		})
+	}
+}
+
+// blockingBackend blocks until the request's context is done and returns its error, which
+// simulates an unresponsive server.
+type blockingBackend struct{}
+
+func (blockingBackend) Do(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+// A metadata call (Get, which uses the "short" tier) must be aborted by the client once the
+// short tier elapses, even though the caller's own context has no deadline of its own.
+func TestShortTierTimesOutMetadataCall(t *testing.T) {
+	client := NewClient(
+		WithToken("t"),
+		WithHTTPBackend(blockingBackend{}),
+		WithMaxRetries(0),
+		WithTimeoutShort(30*time.Millisecond),
+	)
+
+	start := time.Now()
+	_, _, err := client.Actor("some-actor").Get(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected a timeout error from a backend that never responds")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("expected the short tier (30ms) to abort the request quickly, took %v", elapsed)
 	}
 }

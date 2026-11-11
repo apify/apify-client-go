@@ -42,6 +42,31 @@ if err := response.JSON(&results); err != nil {
 fmt.Println(results)
 ```
 
+## Calling a Server Actor from a Server Actor
+
+A multi-tenant Server Actor shares its runs among its users, so the platform tells the requests
+apart by the `X-Actor-Request-ID` header of each request it forwards to the Actor. When your
+Server Actor calls another one while handling a request, pass that header in `ParentRequestID`.
+The client sends it as the same header, so the called Actor charges at the pricing tier of your
+incoming request. Use a client created with the run's `APIFY_TOKEN`. For details, see
+[Compose multi-tenant Server Actors](https://docs.apify.com/platform/actors/development/programming-interface/standby#compose-server-actors).
+
+```go
+handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	response, err := client.Actor("username/other-actor").Server().Request(r.Context(), "/search", apify.ActorServerRequestOptions{
+		Params:          url.Values{"q": {"apify"}},
+		ParentRequestID: r.Header.Get("X-Actor-Request-ID"),
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.WriteHeader(response.StatusCode)
+	_, _ = w.Write(response.Body)
+})
+_ = handler
+```
+
 ## Request options
 
 | Field | Type | Meaning |
@@ -50,6 +75,7 @@ fmt.Println(results)
 | `Params` | `url.Values` | Query parameters. |
 | `Headers` | `http.Header` | Additional headers. They reach the Actor's server as they are and win over the headers the client sets; a header with no values removes the client's header of that name. |
 | `Body` | `any` | A `string` or `[]byte` is sent as it is. A `json.RawMessage` and any other value are sent as JSON with `Content-Type: application/json`, unless `Headers` sets a content type. |
+| `ParentRequestID` | `string` | The `X-Actor-Request-ID` header of the request your Server Actor is handling. It is sent on as the same header, so the called Actor charges at the pricing tier of that request, and it wins over the same header in `Headers`. Use a client created with the run's `APIFY_TOKEN`. |
 | `Compression` | `*apify.RequestCompression` | Compresses a body of 1 KiB or more. Nil by default, which sends the body uncompressed, since the Actor's server may not decode a compressed body. Set it only if the server decodes the resulting `Content-Encoding`. A `Content-Encoding` header in `Headers` sends the body untouched. |
 
 The response has the `StatusCode`, the `Header` and the `Body` bytes, and `JSON(&v)` decodes the

@@ -460,8 +460,8 @@ func TestIterateDatasetItems(t *testing.T) {
 		t.Fatalf("expected to iterate %d items, got %d", total, count)
 	}
 
-	// Limit is a cap on the total number of items yielded (not the page size), matching the
-	// reference client. With Limit=3 and a page size of 2, iteration must stop at exactly 3.
+	// Limit caps the total number of items, not the page size: with a Limit of 3 and a page size of
+	// 2, iteration stops at exactly 3.
 	const wantCap = 3
 	capped := dataset.IterateItems(apify.DatasetListItemsOptions{Limit: ptr(int64(wantCap))}, ptr(int64(2)))
 	capCount := 0

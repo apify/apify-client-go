@@ -5,6 +5,26 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-11-10
+
+### Added
+
+- `RequestCompressionZstd` for `WithRequestCompression` and `ActorServerRequestOptions.Compression`.
+- `ActorServerRequestOptions.ParentRequestID`, sent as the `X-Actor-Request-ID` header, so that a
+  Server Actor calling another one passes its caller's pricing tier on.
+- `zstd` in the documented `Content-Encoding` values of `SetRecordRawWithEncoding`.
+- `RequestQueueClient.BatchAddRequestsWithOptions` and `BatchAddRequestsOptions`.
+- `RequestQueueOperationInfo.UniqueKey`, set by batch add results.
+
+### Changed
+
+- `BatchAddRequests` retries the requests that the API did not process, up to 3 times by default,
+  and sends up to 5 batches at once. A batch that fails with an API or transport error leaves its
+  requests that were not added in `UnprocessedRequests`, and it is not an error of the call. An
+  undecodable response or an ended context is still an error.
+- Shortened and corrected the documentation and code comments.
+- Bumped `APISpecVersion` to `v2-2026-11-09T143926Z` and `ClientVersion` to `0.16.0`.
+
 ## [0.15.0] - 2026-11-06
 
 ### Added

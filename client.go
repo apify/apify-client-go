@@ -1,12 +1,7 @@
-// Package apify is the official, idiomatic Go client for the Apify API
-// (https://docs.apify.com/api/v2).
+// Package apify is the Go client of the Apify API (https://docs.apify.com/api/v2).
 //
-// See the top-level README for the AI-generated/AI-maintained disclaimer.
-//
-// It provides a resource-oriented interface that mirrors the official JavaScript and Rust
-// clients: start from an [ApifyClient], then drill down into resources (Actors, runs,
-// datasets, key-value stores, request queues, tasks, schedules, webhooks, the store, users
-// and logs).
+// Start from an [ApifyClient] and go on to the resource clients: Actors, runs, datasets,
+// key-value stores, request queues, tasks, schedules, webhooks, the Store, users, and logs.
 //
 // # Quick start
 //
@@ -24,10 +19,10 @@
 // # Architecture
 //
 //   - Public interface: [ApifyClient] and the resource clients it returns.
-//   - Replaceable transport: the [HTTPBackend] interface, with a default
-//     [DefaultHTTPBackend]. Swap it via [WithHTTPBackend].
-//   - Cross-cutting behaviour (auth, User-Agent, retries with exponential backoff,
-//     timeouts) lives in the internal HTTP client and is applied to every request.
+//   - Transport: the [HTTPBackend] interface, with [DefaultHTTPBackend] as the default. Replace it
+//     with [WithHTTPBackend].
+//   - Authentication, the User-Agent header, retries and timeouts are applied to every request by
+//     the internal HTTP client.
 package apify
 
 import (
@@ -38,7 +33,7 @@ import (
 	"time"
 )
 
-// Default configuration values, matching the reference clients.
+// Default configuration values.
 const (
 	// defaultBaseURL is the default base URL of the Apify API (without the /v2 suffix).
 	defaultBaseURL = "https://api.apify.com"
@@ -46,8 +41,7 @@ const (
 	defaultMaxRetries = 8
 	// defaultMinDelayBetweenRetries is the default minimum delay between retries.
 	defaultMinDelayBetweenRetries = 500 * time.Millisecond
-	// Default durations of the timeout tiers, matching the reference client's
-	// DEFAULT_TIMEOUT_SHORT_SECS/MEDIUM/LONG/MAX.
+	// Default durations of the timeout tiers.
 	defaultTimeoutShort  = 5 * time.Second
 	defaultTimeoutMedium = 30 * time.Second
 	defaultTimeoutLong   = 360 * time.Second
@@ -117,13 +111,7 @@ func WithMinDelayBetweenRetries(d time.Duration) Option {
 	return func(c *clientConfig) { c.minDelayBetweenRetries = d }
 }
 
-// WithTimeout caps the timeout of any single request attempt (default 360s), same as
-// [WithTimeoutMax]. It bounds the growth of a tier's timeout across retries, and a tier
-// configured above the cap is capped too. Kept as an alias for the single-timeout option this
-// client had before timeout tiers ([WithTimeoutShort]/[WithTimeoutMedium]/[WithTimeoutLong]);
-// an existing caller of WithTimeout keeps every request capped at the same value as before,
-// while gaining the lower tier defaults below that cap (5s/30s/360s) in place of the previous
-// flat 360s for every request.
+// WithTimeout is an alias of [WithTimeoutMax], kept from before timeout tiers existed.
 func WithTimeout(d time.Duration) Option {
 	return WithTimeoutMax(d)
 }
@@ -161,8 +149,8 @@ func WithUserAgentSuffix(suffix string) Option {
 
 // WithRequestCompression selects which codec compresses request bodies (default
 // [RequestCompressionAuto]: brotli, falling back to gzip). A caller that wants a specific
-// codec, with no fallback to the other one, can pass [RequestCompressionBrotli] or
-// [RequestCompressionGzip].
+// codec, with no fallback to another one, can pass [RequestCompressionBrotli],
+// [RequestCompressionGzip], or [RequestCompressionZstd].
 func WithRequestCompression(algo RequestCompression) Option {
 	return func(c *clientConfig) { c.requestCompression = algo }
 }
@@ -191,11 +179,8 @@ func defaultIsAtHome() bool {
 	return os.Getenv(envIsAtHome) != ""
 }
 
-// NewClient creates a client configured by the given functional options.
-//
-// Authentication is supplied via [WithToken]; without it the client can still call
-// endpoints that do not require authentication. Other options ([WithBaseURL],
-// [WithMaxRetries], [WithTimeout], [WithHTTPBackend], ...) tune the transport and behaviour.
+// NewClient creates a client from the options. Without [WithToken] it can call only the endpoints
+// that need no token.
 //
 //	client := apify.NewClient(apify.WithToken("my-api-token"))
 func NewClient(opts ...Option) *ApifyClient {
@@ -229,8 +214,8 @@ func NewClient(opts ...Option) *ApifyClient {
 			minDelayBetweenRetries: cfg.minDelayBetweenRetries,
 			timeoutMax:             cfg.timeoutMax,
 		},
-		// A tier configured above timeoutMax is capped at it, same as the reference client,
-		// so WithTimeoutMax always bounds every request regardless of its tier.
+		// A tier configured above timeoutMax is capped at it, so WithTimeoutMax always bounds every
+		// request regardless of its tier.
 		tiers: timeoutTiers{
 			short:  minDuration(cfg.timeoutShort, cfg.timeoutMax),
 			medium: minDuration(cfg.timeoutMedium, cfg.timeoutMax),
@@ -253,13 +238,8 @@ func NewClient(opts ...Option) *ApifyClient {
 // it is already present there (see [toAPIBaseURL]).
 const apiVersionPath = "/v2"
 
-// toAPIBaseURL appends apiVersionPath to url unless it is already the final path segment,
-// matching the reference client's toApiBaseUrl.
-//
-// A trailing slash (or several) is trimmed first, so "https://host/v2/" and "https://host/v2//"
-// both normalize to "https://host/v2" rather than growing a double slash. The check looks only
-// at the URL's path, not at the string as a whole: "https://v2" has no path ("v2" is the host),
-// so it still becomes "https://v2/v2" even though the raw string ends in "v2".
+// toAPIBaseURL appends apiVersionPath to rawURL unless the path already ends with it. Trailing
+// slashes are trimmed first. Only the path is checked, so "https://v2" becomes "https://v2/v2".
 func toAPIBaseURL(rawURL string) string {
 	authority, path := splitAuthority(rawURL)
 	path = strings.TrimRight(path, "/")
@@ -430,12 +410,9 @@ func (c *ApifyClient) User(id string) *UserClient {
 	return newUserClient(c.http, c.baseURL, id)
 }
 
-// SetStatusMessage sets the status message of the current Actor run.
-//
-// This convenience method updates the run identified by the ACTOR_RUN_ID environment
-// variable, so it only works when called from inside an Actor run. If isTerminal is true,
-// the message becomes final and won't be overwritten. It returns an error if ACTOR_RUN_ID
-// is not set.
+// SetStatusMessage sets the status message of the current Actor run, which the ACTOR_RUN_ID
+// environment variable identifies, so it works only inside an Actor run. A terminal message is
+// final and is not overwritten. It returns an error if ACTOR_RUN_ID is not set.
 func (c *ApifyClient) SetStatusMessage(ctx context.Context, message string, isTerminal bool) (ActorRun, error) {
 	runID := os.Getenv("ACTOR_RUN_ID")
 	if runID == "" {

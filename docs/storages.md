@@ -175,7 +175,7 @@ Single store: `client.KeyValueStore(id)`:
 | `GetRecordStreamWithOptions(ctx, key, GetRecordOptions)` | Stream with options. |
 | `SetRecordRaw(ctx, key, value []byte, contentType string) error` | Write raw bytes, sent as they are: the client does not parse or convert the value, whatever the content type (so `application/json` bytes must already be valid JSON). |
 | `SetRecordRawWithOptions(ctx, key, value []byte, contentType string, SetRecordOptions) error` | Like `SetRecordRaw`, with `ContentEncoding` (the value is already compressed, as with `SetRecordRawWithEncoding`) and `DoNotRetryTimeouts` (an upload that times out fails at once instead of being retried). |
-| `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
+| `SetRecordRawWithEncoding(ctx, key, value []byte, contentType, contentEncoding string) error` | Write raw bytes that are already compressed (`contentEncoding` e.g. `"gzip"`, `"br"`, `"zstd"`, `"deflate"`): sent as-is under `Content-Encoding`, skipping the client's own request compression so the value is never compressed twice. |
 | `SetRecordJSON(ctx, key, value any) error` | Write JSON. |
 | `SetRecordJSONWithOptions(ctx, key, value any, SetRecordOptions) error` | Like `SetRecordJSON`, with the per-call `SetRecordOptions`. |
 | `RecordExists(ctx, key) (bool, error)` | HEAD check. |
@@ -290,8 +290,9 @@ Single queue: `client.RequestQueue(id)`:
 | `ListRequests(ctx, ListRequestsOptions) (json.RawMessage, error)` | Paginated list. Returns the raw API response (`{ "items": [...], "nextCursor": ... }`); unmarshal into your own type, or use `PaginateRequests` for typed iteration. |
 | `PaginateRequests(pageLimit *int64) *RequestQueueRequestsIterator` | Lazy iterator over all requests (yields `*RequestQueueRequest`). |
 | `PaginateRequestsWithOptions(ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator` | The same with `Limit` (caps the total across pages), `Cursor` (where to start) and `Filter` (every page); `chunkSize` is the page size. |
-| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests, auto-split into batches that respect the API's 25-request and (effective) 9 MiB payload-size limits. Fails before sending anything if any single request is too large for a batch of its own. Unlike the reference client, does not itself retry a batch's `UnprocessedRequests` — inspect the result and retry those explicitly if needed. |
-| `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload — a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`), matching the reference client's `batchDeleteRequests`. Returns the raw API response. |
+| `BatchAddRequests(ctx, []RequestQueueRequest, forefront) (BatchAddResult, error)` | Add many requests with the default `BatchAddRequestsOptions`. See `BatchAddRequestsWithOptions`. |
+| `BatchAddRequestsWithOptions(ctx, []RequestQueueRequest, BatchAddRequestsOptions) (BatchAddResult, error)` | Add many requests, split into batches within the API limits of 25 requests and 9 MiB, with up to `MaxParallel` (5) batches sent at once. The requests that the API does not process are sent again, up to `MaxUnprocessedRequestsRetries` (3) times, after a delay that starts at `MinDelayBetweenUnprocessedRequestsRetries` (500ms), doubles, and is capped at `WithTimeoutMax`. Fails before sending anything if one request is too large for a batch. A batch that fails with an API or transport error is not an error of the call: its requests that were not added are unprocessed, and the error is not reported. To find out why requests stay unprocessed, add one with `AddRequest`. The call returns an error, with the result so far, when a response cannot be decoded or `ctx` ends. |
+| `BatchDeleteRequests(ctx, requests any) (json.RawMessage, error)` | Delete many requests in one call. `requests` is the JSON-marshalable batch payload: a slice in which each element identifies one request by **either** its `id` **or** its `uniqueKey` (e.g. `[]map[string]string{{"uniqueKey": "..."}}` or a slice of `RequestQueueRequest`). Returns the raw API response. |
 | `ListAndLockHead(ctx, lockSecs int64, limit *int64) (json.RawMessage, error)` | Fetch the head of the queue and lock the returned requests for `lockSecs` seconds. Returns the raw API response. |
 | `ProlongRequestLock(ctx, id string, lockSecs int64, forefront bool) (json.RawMessage, error)` | Extend the lock on a request by `lockSecs` seconds; `forefront` controls re-queue position when the lock expires. |
 | `DeleteRequestLock(ctx, id string, forefront bool) error` | Release the lock on a request without modifying it. |
@@ -350,13 +351,14 @@ Return types:
 | `RequestID` | `string` | ID of the affected request. |
 | `WasAlreadyPresent` | `bool` | Whether the request was already in the queue. |
 | `WasAlreadyHandled` | `bool` | Whether the request had already been handled. |
+| `UniqueKey` | `string` | Unique key of the affected request. Only the results of a batch add set it. |
 
 `BatchAddRequests` returns a `BatchAddResult`:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `ProcessedRequests` | `[]RequestQueueOperationInfo` | Requests the API successfully added. |
-| `UnprocessedRequests` | `[]RequestQueueRequest` | Requests the API did not process. |
+| `UnprocessedRequests` | `[]RequestQueueRequest` | Requests that are still unprocessed after the retries. |
 
 ```go
 rq, _ := client.RequestQueues().GetOrCreate(ctx, "")

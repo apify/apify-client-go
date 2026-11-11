@@ -11,13 +11,11 @@ import (
 	"unicode/utf8"
 )
 
-// The fields the OpenAPI specification declares as `format: uri` are returned in a normalized
-// form, close to the WHATWG URL serialization that the JavaScript client returns: the scheme and
-// host are lowercased, a non-ASCII host is converted to punycode, a numeric (IPv4) or IPv6 host is
-// written in its canonical form, the default port is dropped, an empty path becomes "/", dot
-// segments are resolved and characters that are unsafe in a URL are percent-encoded. It is built
-// for the http(s), ws(s), ftp and file URLs the API returns. The host of any other scheme is kept
-// as given. It does not apply the full Unicode (UTS #46) mapping to a non-ASCII host.
+// The URL fields of the API are returned close to the WHATWG URL serialization of the JavaScript
+// client: the scheme and host are lowercased, a non-ASCII host becomes punycode, an IP host is
+// canonical, the default port is dropped, an empty path becomes "/", dot segments are resolved and
+// unsafe characters are percent-encoded. This covers http(s), ws(s), ftp and file URLs. The host of
+// another scheme is kept, and the full Unicode (UTS #46) mapping is not applied.
 
 // defaultPorts maps a special URL scheme to its default port, which normalization drops.
 var defaultPorts = map[string]string{

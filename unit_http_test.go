@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 )
 
 // mockBackend is a deterministic HTTPBackend for offline unit tests. It serves a queue of
@@ -309,6 +310,51 @@ func TestMaybeCompressRequestBody_CompressibleExceptionUnderPrefix(t *testing.T)
 	if len(out) >= len(large) {
 		t.Fatalf("compressed body should be smaller: %d >= %d", len(out), len(large))
 	}
+}
+
+// WithRequestCompression(RequestCompressionZstd) compresses a large body with zstd.
+func TestWithRequestCompressionZstd(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, `{"data":{}}`)}
+	client := NewClient(
+		WithToken("t"),
+		WithHTTPBackend(backend),
+		WithMaxRetries(0),
+		WithRequestCompression(RequestCompressionZstd),
+	)
+
+	large := strings.Repeat("compress me ", 200)
+	if _, err := client.Actor("some-actor").Update(context.Background(), map[string]any{"v": large}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := backend.lastHeaders.Get("Content-Encoding"); got != contentEncodingZstd {
+		t.Fatalf("expected Content-Encoding zstd, got %q", got)
+	}
+	decoder, err := zstd.NewReader(strings.NewReader(backend.lastBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer decoder.Close()
+	plain, err := io.ReadAll(decoder)
+	if err != nil || !strings.Contains(string(plain), large) {
+		t.Fatalf("the body is not valid zstd of the request: %v", err)
+	}
+}
+
+// zstdCompress is safe for concurrent use and shrinks a compressible body.
+func TestZstdCompressConcurrently(t *testing.T) {
+	body := []byte(strings.Repeat("compress me ", 500))
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := zstdCompress(body)
+			if err != nil || len(out) >= len(body) {
+				t.Errorf("compressed %d bytes to %d: %v", len(body), len(out), err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // WithRequestCompression(RequestCompressionGzip) must use gzip only, even for a body brotli
@@ -666,3 +712,7 @@ func TestZeroRetriesSingleAttempt(t *testing.T) {
 		t.Fatalf("expected exactly 1 attempt with max_retries=0, got %d", backend.calls)
 	}
 }
+
+// okData is a constant 200 response with an empty data envelope, reused by the offline
+// tests below.
+func okData() []mockResponse { return constant(200, `{"data":{}}`) }

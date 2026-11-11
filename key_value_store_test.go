@@ -29,3 +29,17 @@ func TestSetRecordRawWithOptionsSendsTheContentEncoding(t *testing.T) {
 		t.Fatal("without a ContentEncoding the client compresses a large value of its own accord")
 	}
 }
+
+// GetRecord requests the record as an attachment by default.
+func TestGetRecordDefaultsAttachment(t *testing.T) {
+	backend := &mockBackend{responses: constant(200, "raw-bytes")}
+	client := testClient(backend, 0)
+
+	_, _, err := client.KeyValueStore("store1").GetRecord(context.Background(), "OUTPUT")
+	if err != nil {
+		t.Fatalf("get record: %v", err)
+	}
+	if !strings.Contains(backend.lastURL, "attachment=1") {
+		t.Fatalf("expected attachment=1 in URL, got %q", backend.lastURL)
+	}
+}

@@ -41,10 +41,10 @@ type RunChargeOptions struct {
 	EventName string
 	// Count is the number of times to charge the event (defaults to 1).
 	Count *int64
-	// IdempotencyKey deduplicates the charge across retries. If empty, one is auto-generated
-	// as "{runId}-{eventName}-{timestampMillis}-{random}", matching the reference client. The
-	// API requires this header on every charge request; the key expires 3 minutes after the
-	// charge, so a later request reusing it starts a new charge rather than being deduplicated.
+	// IdempotencyKey deduplicates the charge across retries. If empty, one is auto-generated as
+	// "{runId}-{eventName}-{timestampMillis}-{random}". The API requires this header on every
+	// charge request; the key expires 3 minutes after the charge, so a later request reusing it
+	// starts a new charge rather than being deduplicated.
 	IdempotencyKey string
 	// RequestID is the ID of the Server Actor request being charged, taken from the
 	// `X-Actor-Request-ID` header of the incoming request. Required for multi-tenant Server
@@ -70,11 +70,8 @@ func newRunClient(root *ApifyClient, hc *httpClient, baseURL, resourcePath, id s
 	}
 }
 
-// LastRunOptions filters which "last" run the ActorClient.LastRunWithOptions /
-// TaskClient.LastRunWithOptions accessors resolve to. An empty field leaves that filter unset.
-//
-// Origin is threaded to the runs/last endpoint as a documented query parameter of that endpoint in
-// the OpenAPI spec, mirroring the reference client (lastRun({ origin })).
+// LastRunOptions filters which last run [ActorClient.LastRunWithOptions] and
+// [TaskClient.LastRunWithOptions] resolve to. An empty field sets no filter.
 type LastRunOptions struct {
 	// Status filters by run status (e.g. "SUCCEEDED", "FAILED", "RUNNING").
 	Status string
@@ -98,9 +95,9 @@ func (c *RunClient) Get(ctx context.Context) (ActorRun, bool, error) {
 	return c.GetWithWait(ctx, nil)
 }
 
-// GetWithWait fetches the run, optionally asking the API to wait up to waitForFinishSecs
-// seconds (max 60) for the run to reach a terminal state before responding. Pass nil for an
-// immediate fetch. Mirrors the reference client's get({ waitForFinish }).
+// GetWithWait fetches the run, optionally asking the API to wait up to waitForFinishSecs seconds
+// (max 60) for the run to reach a terminal state before responding. Pass nil for an immediate
+// fetch.
 func (c *RunClient) GetWithWait(ctx context.Context, waitForFinishSecs *int64) (ActorRun, bool, error) {
 	params := NewQueryParams()
 	params.AddInt("waitForFinish", waitForFinishSecs)
@@ -117,10 +114,9 @@ func (c *RunClient) Delete(ctx context.Context) error {
 	return deleteResource(ctx, c.ctx, "")
 }
 
-// Abort aborts the run. If gracefully points to true, the run is sent a signal so it can
-// finish the current request before terminating; if false it is aborted immediately. Pass
-// nil to omit the parameter entirely and let the server apply its default (immediate abort),
-// matching the reference client's optional `gracefully` option.
+// Abort aborts the run. If gracefully points to true, the run is sent a signal so it can finish the
+// current request before terminating; if false it is aborted immediately. Pass nil to omit the
+// parameter entirely and let the server apply its default (immediate abort).
 func (c *RunClient) Abort(ctx context.Context, gracefully *bool) (ActorRun, error) {
 	params := NewQueryParams()
 	params.AddBool("gracefully", gracefully)
@@ -147,12 +143,8 @@ func (c *RunClient) Metamorph(ctx context.Context, targetActorID string, input a
 	return c.metamorphWithBody(ctx, targetActorID, body, contentTypeJSON, options)
 }
 
-// MetamorphRaw transforms the run into a run of another Actor (metamorph) with a raw request
-// body instead of a JSON-serializable value.
-//
-// The bytes are sent exactly as given, with no JSON serialization — pair this with
-// options.ContentType for a non-JSON input. For an object or array input, use
-// [RunClient.Metamorph] instead.
+// MetamorphRaw is [RunClient.Metamorph] with a raw request body, for a non-JSON input. Set
+// options.ContentType.
 func (c *RunClient) MetamorphRaw(ctx context.Context, targetActorID string, input []byte, options MetamorphOptions) (ActorRun, error) {
 	return c.metamorphWithBody(ctx, targetActorID, input, "application/octet-stream", options)
 }
@@ -191,12 +183,9 @@ func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) 
 	return postWithBody[ActorRun](ctx, c.ctx, "resurrect", params, nil, "", c.ctx.mediumTimeout())
 }
 
-// Charge charges for a pay-per-event Actor run: it records occurrences of a named event.
-// Only meaningful for runs of pay-per-event Actors.
-//
-// An idempotency key is always sent (auto-generated if not provided), so a charge that is
-// retried by the transport is applied at most once, matching the reference client. The API
-// requires this header and expires the key 3 minutes after the charge.
+// Charge records occurrences of an event of a pay-per-event Actor run. It always sends an
+// idempotency key, generated if you set none, so a charge retried by the client is applied once.
+// The API expires the key after 3 minutes.
 func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error {
 	if c.ctx.idErr != nil {
 		return c.ctx.idErr
@@ -224,8 +213,7 @@ func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error 
 const chargeIdempotencyHeader = "idempotency-key"
 
 // generateIdempotencyKey builds a per-charge idempotency key of the form
-// "{runId}-{eventName}-{timestampMillis}-{random}", matching the reference client. It need
-// not be cryptographically secure — only unique enough to avoid collisions within a request.
+// "{runId}-{eventName}-{timestampMillis}-{random}". It must be unique, not secure.
 func (c *RunClient) generateIdempotencyKey(eventName string) string {
 	return c.id + "-" + eventName + "-" +
 		strconv.FormatInt(time.Now().UnixMilli(), 10) + "-" +
@@ -270,11 +258,7 @@ func (c *RunClient) Log() *LogClient {
 	return client
 }
 
-// GetStreamedLog opens a live stream of this run's raw log. The caller must close the returned
-// reader. It is a convenience wrapper over Log().StreamWithOptions with raw=true.
-//
-// Despite the name it is not the counterpart of the reference client's getStreamedLog(), which
-// redirects the log message by message: that is [RunClient.NewStreamedLog].
+// GetStreamedLog opens the raw log of the run as a stream. The caller closes it.
 //
 // Deprecated: use [RunClient.NewStreamedLog] to redirect the log, or Log().StreamWithOptions for
 // the raw stream.

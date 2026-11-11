@@ -416,6 +416,8 @@ func (r *RequestQueueRequest) UnmarshalJSON(data []byte) error {
 type RequestQueueOperationInfo struct {
 	// RequestID is the ID of the affected request.
 	RequestID string `json:"requestId"`
+	// UniqueKey is the unique key of the affected request. Only the results of a batch add set it.
+	UniqueKey string `json:"uniqueKey"`
 	// WasAlreadyPresent reports whether the request was already in the queue.
 	WasAlreadyPresent bool `json:"wasAlreadyPresent"`
 	// WasAlreadyHandled reports whether the request had already been handled.

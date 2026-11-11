@@ -17,12 +17,11 @@ const (
 	// emptyLogStreamRetry is how long a [StreamedLog] waits before it reopens a log stream that
 	// delivered nothing: the API serves the log of a run that has not logged anything yet as an
 	// empty stream that ends at once. The pause doubles up to emptyLogStreamMaxRetry, which bounds
-	// the request rate while a run waits long to start. Matches the reference client's
-	// EMPTY_LOG_STREAM_RETRY_MILLIS and EMPTY_LOG_STREAM_MAX_RETRY_MILLIS.
+	// the request rate while a run waits long to start.
 	emptyLogStreamRetry    = 500 * time.Millisecond
 	emptyLogStreamMaxRetry = 5 * time.Second
 	// stopGrace is how long [StreamedLog.Stop] waits for the messages already in flight before it
-	// aborts the log stream. Matches the reference client's STOP_GRACE_MILLIS.
+	// aborts the log stream.
 	stopGrace = time.Second
 	// logRedirectPrefixSeparator ends the default message prefix, which names the Actor and the run.
 	logRedirectPrefixSeparator = " -> "
@@ -60,14 +59,11 @@ type StreamedLogOptions struct {
 	FromStart *bool
 }
 
-// StreamedLog redirects the live log of an Actor run to a writer, message by message. Obtain one
-// from [RunClient.NewStreamedLog], begin the redirection with [StreamedLog.Start] and end it with
-// [StreamedLog.Stop]. Matches the reference client's StreamedLog.
-//
-// Each message of the log, which starts with the timestamp the platform puts in front of it, is
-// written on its own line, prefixed. Messages that were already logged when the redirection was
-// created are skipped if FromStart is false. The log of a run that has not logged anything yet is
-// reopened until it delivers its first bytes.
+// StreamedLog redirects the live log of an Actor run to a writer, one prefixed line per message.
+// Get one from [RunClient.NewStreamedLog], and begin and end the redirection with
+// [StreamedLog.Start] and [StreamedLog.Stop]. Messages logged before the redirection was created
+// are skipped if FromStart is false. A log that is still empty is reopened until it delivers its
+// first bytes.
 type StreamedLog struct {
 	log       *LogClient
 	output    io.Writer
@@ -156,14 +152,12 @@ func (s *StreamedLog) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop ends the redirection. It gives the messages already in flight up to one second, then
-// aborts the log stream; if the stream delivered nothing yet, it reads the whole log in one
-// request instead, so a short run that finished before the stream connected is not lost. It
-// returns the error that made the redirection stop early, if any. ctx bounds the wait for it,
-// the final read of the whole log included: when ctx is done first, Stop gives up on the rest of
-// the log and returns the error of ctx, unless the context given to Start ended first, which ends
-// the redirection on purpose; when both end at about the same time, either result is possible. It
-// returns an error if the redirection is not running or is already being stopped.
+// Stop ends the redirection and returns the error that stopped it early, if any. Messages in
+// flight get up to one second. If the stream delivered nothing, Stop reads the whole log in one
+// request, so that a short run is not lost. ctx bounds the wait, the final read included: when it
+// ends first, Stop returns its error, unless the context given to Start ended first, which ends
+// the redirection on purpose. It returns an error if the redirection is not running or is already
+// stopping.
 func (s *StreamedLog) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.running {

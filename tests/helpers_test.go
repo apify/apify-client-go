@@ -21,7 +21,7 @@ import (
 	apify "github.com/apify/apify-client-go"
 )
 
-// defaultAPIURL mirrors the integration-test contract fallback.
+// defaultAPIURL is the API URL when APIFY_API_URL is not set.
 const defaultAPIURL = "https://api.apify.com/v2"
 
 // resolveBaseURL derives the client base_url from an optional APIFY_API_URL.

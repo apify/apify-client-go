@@ -12,16 +12,14 @@ func newActorVersionCollectionClient(hc *httpClient, actorURL string) *ActorVers
 	return &ActorVersionCollectionClient{ctx: newCollectionContext(hc, actorURL, "versions")}
 }
 
-// List lists the Actor's versions. The endpoint takes no pagination parameters (per the OpenAPI
-// specification, it always returns every version in one response), so neither does this method.
+// List lists the Actor's versions. The endpoint returns all of them in one response, so it takes no
+// pagination parameters.
 func (c *ActorVersionCollectionClient) List(ctx context.Context) (PaginationList[ActorVersion], error) {
 	return listResource[ActorVersion](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Iterate returns a lazy iterator over the Actor's versions. The versions endpoint is not
-// offset-paginated (it always returns every version in one response), so there is no
-// Limit/chunkSize control; the iterator drains that one page. Mirrors the reference client's
-// versions().list(), which likewise exposes no pagination options.
+// Iterate returns an iterator over the Actor's versions. The endpoint returns all of them in one
+// response, so there is no Limit or chunkSize.
 func (c *ActorVersionCollectionClient) Iterate() *ListIterator[ActorVersion] {
 	return newUnpaginatedIterator(c.List)
 }

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 )
 
 // ListRequestsOptions configures [RequestQueueClient.ListRequests].
@@ -167,18 +169,14 @@ func (c *RequestQueueClient) ListAndLockHead(ctx context.Context, lockSecs int64
 	return postWithBody[json.RawMessage](ctx, c.ctx, "head/lock", params, nil, "", c.ctx.mediumTimeout())
 }
 
-// maxRequestsPerBatchOperation is the API limit on requests per batch call. Larger inputs
-// are split into chunks of this size, matching the reference client.
+// maxRequestsPerBatchOperation is the API limit on requests per batch call. Larger inputs are split
+// into chunks of this size.
 const maxRequestsPerBatchOperation = 25
 
-// maxPayloadSizeBytes is the API's maximum request body size for a batch-requests call,
-// matching the published @apify/consts MAX_PAYLOAD_SIZE_BYTES (9 MiB; apify/apify-shared-js).
+// maxPayloadSizeBytes is the maximum request body size of a batch-requests call, 9 MiB.
 const maxPayloadSizeBytes = 9437184
 
-// payloadSizeLimitBytes shaves a small safety margin off maxPayloadSizeBytes (0.01%, matching
-// the reference client's SAFETY_BUFFER_PERCENT), so a batch this client assembles stays under
-// the server's limit even accounting for any rounding differences between the two.
-// 9437184 * 0.0001 = 943.7184, rounded up to 944; 9437184 - 944 = 9436240.
+// payloadSizeLimitBytes is maxPayloadSizeBytes less a 0.01% safety margin, rounded up to 944 bytes.
 const payloadSizeLimitBytes = maxPayloadSizeBytes - 944
 
 // BatchAddResult is the typed result of [RequestQueueClient.BatchAddRequests]: the requests
@@ -256,34 +254,204 @@ func joinAsJSONArray(batch []serializedRequest) []byte {
 	return buf.Bytes()
 }
 
-// BatchAddRequests adds multiple requests to the queue. If forefront is true, they are added
-// to the front of the queue.
-//
-// The input is serialized once and split into batches that respect both the API's 25-request
-// and (effective, after a small safety margin) 9 MiB payload-size limits; the whole call fails
-// before anything is sent if any single request is too large for a batch of its own. The
-// per-batch results are merged into a single [BatchAddResult]. Each batch is still subject to
-// the client's standard retry policy, but unlike the reference client this does not itself
-// retry a batch's unprocessed requests — inspect [BatchAddResult.UnprocessedRequests] and retry
-// those explicitly if needed.
+// Defaults of [BatchAddRequestsOptions].
+const (
+	// defaultMaxUnprocessedRequestsRetries is the default number of retries of the unprocessed
+	// requests of a batch.
+	defaultMaxUnprocessedRequestsRetries = 3
+	// defaultMaxParallelBatches is the default number of batches that are sent at once.
+	defaultMaxParallelBatches = 5
+	// defaultMinDelayBetweenUnprocessedRequestsRetries is the default base delay between retries.
+	defaultMinDelayBetweenUnprocessedRequestsRetries = 500 * time.Millisecond
+)
+
+// BatchAddRequestsOptions configures [RequestQueueClient.BatchAddRequestsWithOptions]. A nil
+// field has its default value.
+type BatchAddRequestsOptions struct {
+	// Forefront adds the requests to the front of the queue.
+	Forefront bool
+	// MaxUnprocessedRequestsRetries is how many times the requests that the API did not process
+	// are sent again. Defaults to 3.
+	MaxUnprocessedRequestsRetries *int64
+	// MaxParallel is how many batches are sent at once. Defaults to 5.
+	MaxParallel *int64
+	// MinDelayBetweenUnprocessedRequestsRetries is the base delay before a retry. It doubles with
+	// each retry, is capped at [WithTimeoutMax], and is randomized by up to 100%. Defaults to 500ms.
+	MinDelayBetweenUnprocessedRequestsRetries *time.Duration
+}
+
+// batchAddSettings are the resolved [BatchAddRequestsOptions].
+type batchAddSettings struct {
+	forefront   bool
+	maxRetries  int
+	maxParallel int
+	minDelay    time.Duration
+}
+
+// resolve fills in the defaults and rejects invalid values.
+func (o BatchAddRequestsOptions) resolve() (batchAddSettings, error) {
+	settings := batchAddSettings{
+		forefront:   o.Forefront,
+		maxRetries:  defaultMaxUnprocessedRequestsRetries,
+		maxParallel: defaultMaxParallelBatches,
+		minDelay:    defaultMinDelayBetweenUnprocessedRequestsRetries,
+	}
+	if o.MaxUnprocessedRequestsRetries != nil {
+		if *o.MaxUnprocessedRequestsRetries < 0 {
+			return settings, errors.New("BatchAddRequestsOptions.MaxUnprocessedRequestsRetries must not be negative")
+		}
+		settings.maxRetries = int(*o.MaxUnprocessedRequestsRetries)
+	}
+	if o.MaxParallel != nil {
+		if *o.MaxParallel < 1 {
+			return settings, errors.New("BatchAddRequestsOptions.MaxParallel must be at least 1")
+		}
+		settings.maxParallel = int(*o.MaxParallel)
+	}
+	if o.MinDelayBetweenUnprocessedRequestsRetries != nil {
+		if *o.MinDelayBetweenUnprocessedRequestsRetries < 0 {
+			return settings, errors.New("BatchAddRequestsOptions.MinDelayBetweenUnprocessedRequestsRetries must not be negative")
+		}
+		settings.minDelay = *o.MinDelayBetweenUnprocessedRequestsRetries
+	}
+	return settings, nil
+}
+
+// BatchAddRequests adds requests to the queue, at the front if forefront is true, with the default
+// [BatchAddRequestsOptions]. See [RequestQueueClient.BatchAddRequestsWithOptions].
 func (c *RequestQueueClient) BatchAddRequests(ctx context.Context, requests []RequestQueueRequest, forefront bool) (BatchAddResult, error) {
+	return c.BatchAddRequestsWithOptions(ctx, requests, BatchAddRequestsOptions{Forefront: forefront})
+}
+
+// BatchAddRequestsWithOptions adds requests to the queue. It splits them into batches within the
+// API limits of 25 requests and 9 MiB, sends up to MaxParallel batches at once, and sends the
+// requests that the API did not process again, up to MaxUnprocessedRequestsRetries times. It fails
+// before sending anything if one request is too large for a batch.
+//
+// The result lists the requests that were added and those that are still unprocessed. A batch
+// that fails with an API or transport error is not an error of the call: its requests that were
+// not added are unprocessed, and the error is not reported. To find out why requests stay
+// unprocessed, add one with [RequestQueueClient.AddRequest]. The call returns an error, with the
+// result so far, when a response cannot be decoded or ctx ends.
+func (c *RequestQueueClient) BatchAddRequestsWithOptions(ctx context.Context, requests []RequestQueueRequest, options BatchAddRequestsOptions) (BatchAddResult, error) {
 	var merged BatchAddResult
+	if c.ctx.idErr != nil {
+		return merged, c.ctx.idErr
+	}
+	settings, err := options.resolve()
+	if err != nil {
+		return merged, err
+	}
 	serialized, err := serializeRequestsForBatch(requests)
 	if err != nil {
 		return merged, err
 	}
-	for _, batch := range splitIntoBatches(serialized, maxRequestsPerBatchOperation, payloadSizeLimitBytes) {
-		chunkResult, err := c.batchAddChunk(ctx, batch, forefront)
-		if err != nil {
-			return merged, err
-		}
-		merged.ProcessedRequests = append(merged.ProcessedRequests, chunkResult.ProcessedRequests...)
-		merged.UnprocessedRequests = append(merged.UnprocessedRequests, chunkResult.UnprocessedRequests...)
+	batches := splitIntoBatches(serialized, maxRequestsPerBatchOperation, payloadSizeLimitBytes)
+
+	results := make([]batchOutcome, len(batches))
+	slots := make(chan struct{}, settings.maxParallel)
+	var wg sync.WaitGroup
+	for i, batch := range batches {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			results[i] = c.addBatchWithRetries(ctx, batch, settings)
+		}()
 	}
-	return merged, nil
+	wg.Wait()
+
+	var firstErr error
+	for _, outcome := range results {
+		merged.ProcessedRequests = append(merged.ProcessedRequests, outcome.result.ProcessedRequests...)
+		merged.UnprocessedRequests = append(merged.UnprocessedRequests, outcome.result.UnprocessedRequests...)
+		if firstErr == nil {
+			firstErr = outcome.err
+		}
+	}
+	return merged, firstErr
 }
 
-// batchAddChunk sends a single, pre-serialized and pre-sized batch and parses the typed result.
+// batchOutcome is the result of one batch and the error that fails the whole call, if any.
+type batchOutcome struct {
+	result BatchAddResult
+	err    error
+}
+
+// addBatchWithRetries sends batch and then the requests that the API did not process, until all
+// are added or the retries are used up.
+func (c *RequestQueueClient) addBatchWithRetries(ctx context.Context, batch []serializedRequest, settings batchAddSettings) batchOutcome {
+	var outcome batchOutcome
+	added := map[string]bool{}
+	remaining := batch
+	for attempt := 0; attempt <= settings.maxRetries; attempt++ {
+		response, err := c.batchAddChunk(ctx, remaining, settings.forefront)
+		if err != nil {
+			// An API or transport error leaves the rest of the batch unprocessed.
+			outcome.result.UnprocessedRequests = unprocessedOf(remaining)
+			if ctx.Err() != nil || isResponseDecodingError(err) {
+				outcome.err = err
+			}
+			return outcome
+		}
+		outcome.result.ProcessedRequests = append(outcome.result.ProcessedRequests, response.ProcessedRequests...)
+		outcome.result.UnprocessedRequests = response.UnprocessedRequests
+		for _, processed := range response.ProcessedRequests {
+			added[processed.UniqueKey] = true
+		}
+		remaining = withoutAdded(batch, added)
+		if len(remaining) == 0 || attempt == settings.maxRetries {
+			return outcome
+		}
+		if !sleepWithContext(ctx, c.unprocessedRetryDelay(settings.minDelay, attempt)) {
+			outcome.err = ctx.Err()
+			outcome.result.UnprocessedRequests = unprocessedOf(remaining)
+			return outcome
+		}
+	}
+	return outcome
+}
+
+// unprocessedRetryDelay returns the delay before the retry that follows attempt: minDelay doubled
+// for each earlier retry, capped at the maximum request timeout and randomized.
+func (c *RequestQueueClient) unprocessedRetryDelay(minDelay time.Duration, attempt int) time.Duration {
+	delay := minDuration(minDelay, c.ctx.http.retry.timeoutMax)
+	for i := 0; i < attempt; i++ {
+		delay = minDuration(delay*backoffFactor, c.ctx.http.retry.timeoutMax)
+	}
+	return randomizedDelay(delay)
+}
+
+// isResponseDecodingError reports whether err comes from decoding a response body.
+func isResponseDecodingError(err error) bool {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr)
+}
+
+// withoutAdded returns the requests of batch whose unique key is not in added.
+func withoutAdded(batch []serializedRequest, added map[string]bool) []serializedRequest {
+	var remaining []serializedRequest
+	for _, s := range batch {
+		if !added[s.original.UniqueKey] {
+			remaining = append(remaining, s)
+		}
+	}
+	return remaining
+}
+
+// unprocessedOf returns the unprocessed form of requests, which has only a method, a unique key
+// and a URL.
+func unprocessedOf(requests []serializedRequest) []RequestQueueRequest {
+	unprocessed := make([]RequestQueueRequest, len(requests))
+	for i, s := range requests {
+		unprocessed[i] = RequestQueueRequest{Method: s.original.Method, UniqueKey: s.original.UniqueKey, URL: s.original.URL}
+	}
+	return unprocessed
+}
+
+// batchAddChunk sends one batch and parses the result.
 func (c *RequestQueueClient) batchAddChunk(ctx context.Context, batch []serializedRequest, forefront bool) (BatchAddResult, error) {
 	params := NewQueryParams()
 	params.AddBool("forefront", &forefront)
@@ -388,11 +556,10 @@ func (c *RequestQueueClient) PaginateRequests(pageLimit *int64) *RequestQueueReq
 	return c.PaginateRequestsWithOptions(ListRequestsOptions{}, pageLimit)
 }
 
-// PaginateRequestsWithOptions is [RequestQueueClient.PaginateRequests] with listing options, like
-// the reference client's paginateRequests: Limit caps the number of requests yielded across all
-// pages (nil or ptr(0) means all of them), Cursor (or the deprecated ExclusiveStartID) sets where
-// to start, and Filter applies to every page. The page size is the separate chunkSize argument
-// (nil for the server default). Invalid options are reported by the first call of Next.
+// PaginateRequestsWithOptions is [RequestQueueClient.PaginateRequests] with listing options. Limit
+// caps the number of requests yielded, and nil or 0 means all. Cursor, or the deprecated
+// ExclusiveStartID, is where to start, and Filter applies to every page. chunkSize is the page
+// size, nil for the default. The first call of Next reports invalid options.
 func (c *RequestQueueClient) PaginateRequestsWithOptions(options ListRequestsOptions, chunkSize *int64) *RequestQueueRequestsIterator {
 	return &RequestQueueRequestsIterator{client: c, options: options, chunkSize: chunkSize}
 }

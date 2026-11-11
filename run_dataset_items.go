@@ -8,8 +8,7 @@ import (
 
 const (
 	// defaultRunIterateChunkSize is the number of dataset rows requested per API call when
-	// [RunIterateDatasetItemsOptions.ChunkSize] is unset. Matches the reference client's
-	// DEFAULT_ITERATE_CHUNK_SIZE.
+	// [RunIterateDatasetItemsOptions.ChunkSize] is unset.
 	defaultRunIterateChunkSize = int64(1000)
 	// defaultRunIteratePollIntervalSecs is how long the iterator waits for the run to finish
 	// between polls when [RunIterateDatasetItemsOptions.PollIntervalSecs] is unset.
@@ -52,17 +51,14 @@ const (
 	runIterateDone
 )
 
-// RunDatasetItemsIterator iterates over the items of a run's default dataset while the run is
-// still producing them. Obtain one from [RunClient.IterateDatasetItems] or
-// [IterateRunDatasetItems] and drain it by calling Next until it returns (nil, nil).
+// RunDatasetItemsIterator iterates over the items of the default dataset of a run while the run
+// produces them. Get one from [RunClient.IterateDatasetItems] or [IterateRunDatasetItems], and
+// call Next until it returns (nil, nil).
 //
-// While the run has not finished, each round yields the rows below the dataset's itemCount and
-// then waits up to PollIntervalSecs for the run to finish, so the last rows are read as soon as it
-// does. Each page is requested with a limit that ends at itemCount, so it covers exactly the
-// rows it asks for, whatever the filters or Unwind do to the items. itemCount lags a few seconds
-// behind the pushed items, so once the run reaches a terminal status the rows past it are read a
-// page at a time until none are left. On a client from LastRun, the iterator sticks to the run
-// its first request resolves to. Matches the reference client's iterateDatasetItems().
+// While the run is active, each round reads the rows below the dataset's itemCount and then waits
+// up to PollIntervalSecs for the run to finish. itemCount lags the pushed items, so after the run
+// finishes the iterator reads page by page until no rows are left. On a client from LastRun, it
+// stays with the run that its first request resolved to.
 type RunDatasetItemsIterator[T any] struct {
 	run     *RunClient
 	options RunIterateDatasetItemsOptions

@@ -2,21 +2,14 @@ package apify
 
 import "context"
 
-// ListIterator lazily iterates over an offset/limit-paginated collection, fetching one page
-// at a time on demand. Obtain one from a collection client's Iterate method and drain it by
-// calling Next until it returns (nil, nil).
+// ListIterator lazily iterates over a paginated collection, fetching one page at a time. Get one
+// from the Iterate method of a collection client, and call Next until it returns (nil, nil).
 //
-// Its end-user semantics match the reference JS client's iterable list(): the list options'
-// Limit is a cap on the total number of items yielded across all pages (unset means "all
-// matching items"), the page size is the separate chunkSize argument passed to Iterate (unset
-// means the API's default page size, capped by the remaining Limit; dataset items have no default
-// limit, so iterating them without chunkSize or Limit loads the whole dataset in one response),
-// and a caller-set Offset on the options is honored as the starting
-// point (iteration begins there and yields at most Limit items from that offset onward). This
-// keeps the two clients consistent for callers reasoning about offset/limit/chunk behaviour.
-//
-// The Limit uses the "0 == unset" convention: a nil Limit, or Limit set to ptr(0), yields the
-// whole collection (no cap), rather than zero items.
+// The Limit of the list options caps the total number of items yielded, and nil or 0 means all of
+// them. The chunkSize argument of Iterate is the page size. If it is unset, the page size is the
+// default of the API, capped by the remaining Limit. Dataset items have no default limit, so
+// iterating them without a chunkSize or Limit loads the whole dataset in one response. The Offset
+// of the options is where the iteration starts.
 type ListIterator[T any] struct {
 	// fetch fetches one page starting at offset. limit is the per-page limit to request
 	// (0 means "unset", i.e. let the server choose). The collection's Iterate method bakes the
@@ -48,12 +41,8 @@ func newListIterator[T any](limit, chunkSize *int64, startOffset int64, fetch fu
 	return &ListIterator[T]{fetch: fetch, limit: limit, chunkSize: chunkSize, offset: startOffset}
 }
 
-// newUnpaginatedIterator builds a ListIterator for an endpoint that ignores offset/limit and
-// always returns every item in one response (e.g. the Actor version and environment-variable
-// collections — see ActorVersionCollectionClient.Iterate and ActorEnvVarCollectionClient.Iterate).
-// It fetches once and never asks for a second page. Matches the reference client's
-// listUnpaginatedResources: under the general paging algorithm, an endpoint like this would
-// return the same non-empty page forever, since it never "scans zero rows".
+// newUnpaginatedIterator iterates an endpoint that ignores offset and limit and returns every item
+// in one response, such as the Actor versions. It fetches once.
 func newUnpaginatedIterator[T any](fetch func(ctx context.Context) (PaginationList[T], error)) *ListIterator[T] {
 	return &ListIterator[T]{
 		unpaginated: true,
@@ -77,20 +66,13 @@ func (it *ListIterator[T]) Next(ctx context.Context) (*T, error) {
 	return &item, nil
 }
 
-// loadPage loads the next page into the buffer, following the same offset/limit/chunkSize
-// arithmetic as the reference client's _listPaginated: the first page requests
-// min(limit, chunkSize) items, and each subsequent page requests min(remaining, chunkSize)
-// items, where remaining only exists when the caller set a Limit. Iteration ends when a page
-// scans no rows, or (if a Limit was set) once that many items have been yielded — never by
-// consulting the reported Total, which goes stale the moment the listed resource grows or
-// shrinks while the loop runs (e.g. a dataset a running Actor keeps pushing to). Draining an
-// uncapped iterator therefore always ends with one extra request that finds an empty page.
+// loadPage loads the next page. The first page requests min(limit, chunkSize) items, and later
+// pages min(remaining, chunkSize), where remaining exists only if a Limit is set. Iteration ends
+// when a page scans no rows or the Limit is reached, never by Total, which goes stale while the
+// resource changes. An uncapped iterator therefore ends with one request for an empty page.
 //
-// Advancing the offset uses the larger of the page's Count and its item count (see scannedRows),
-// capped at the limit requested for that page. A page of dataset items can return more or fewer items
-// than the rows it scanned (see ListDatasetItems), and its Count is the scanned number. The
-// cap matters because Unwind can make the item count exceed what was requested; advancing past
-// the requested limit would skip rows the next request should have read.
+// The offset advances by the larger of the page's Count and its item count (see scannedRows),
+// capped at the limit requested for the page, so that Unwind cannot make it skip rows.
 func (it *ListIterator[T]) loadPage(ctx context.Context) error {
 	if it.unpaginated {
 		return it.loadUnpaginatedPage(ctx)
@@ -142,9 +124,8 @@ func (it *ListIterator[T]) loadUnpaginatedPage(ctx context.Context) error {
 	return nil
 }
 
-// scannedRows returns the number of rows page covers: its Count, or the returned item count
-// when that is larger, capped at requestedLimit (0 meaning "unset", i.e. no cap). Matches the
-// reference client's scannedRows.
+// scannedRows returns the number of rows page covers: its Count, or the returned item count when
+// that is larger, capped at requestedLimit (0 meaning "unset", i.e. no cap).
 func scannedRows[T any](page PaginationList[T], requestedLimit int64) int64 {
 	scanned := maxInt64(page.Count, int64(len(page.Items)))
 	if requestedLimit > 0 && scanned > requestedLimit {
@@ -154,8 +135,7 @@ func scannedRows[T any](page PaginationList[T], requestedLimit int64) int64 {
 }
 
 // remainingLimitParam returns the number of items still allowed by the caller's Limit, for use
-// as a minForLimitParam input (0 meaning "unset"). Only meaningful once hasLimit is set; loadPage
-// never calls it otherwise.
+// as a minForLimitParam input, where 0 means unset. It is meaningful only once hasLimit is set.
 func (it *ListIterator[T]) remainingLimitParam() int64 {
 	if !it.hasLimit {
 		return 0
@@ -180,8 +160,8 @@ func (it *ListIterator[T]) chunkVal() int64 {
 	return *it.chunkSize
 }
 
-// minForLimitParam mirrors the reference client's minForLimitParam: it treats 0 as "unset" and
-// returns the smaller of the two defined values, or 0 when both are unset.
+// minForLimitParam returns the smaller of a and b, ignoring a value of 0 or below, which means
+// unset. It returns 0 when neither is set.
 func minForLimitParam(a, b int64) int64 {
 	if a <= 0 {
 		return maxInt64(b, 0)

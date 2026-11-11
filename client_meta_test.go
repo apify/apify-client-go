@@ -34,10 +34,8 @@ func TestUserAgentFormat(t *testing.T) {
 	}
 }
 
-// The User-Agent OS token must exactly match the value Node's os.platform() (used by the
-// reference JS client) reports for the running platform. Go's runtime.GOOS spells a few
-// platforms differently, so those are mapped: windows->win32, solaris/illumos->sunos,
-// ios->darwin. Every other GOOS value already matches os.platform() and passes through unchanged.
+// The OS token of the User-Agent must match what Node's os.platform() reports. Go spells a few
+// platforms differently: windows is win32, solaris and illumos are sunos, and ios is darwin.
 func TestPlatformToken(t *testing.T) {
 	cases := map[string]string{
 		// Go spellings that diverge from os.platform() and must be remapped.
@@ -82,8 +80,7 @@ func TestUserAgentIsAtHomeFlag(t *testing.T) {
 	}
 }
 
-// defaultIsAtHome must be driven solely by APIFY_IS_AT_HOME (per the requirements and the JS
-// reference); a bare isAtHome env var must NOT affect it.
+// defaultIsAtHome reads APIFY_IS_AT_HOME only, not a bare isAtHome variable.
 func TestDefaultIsAtHomeReadsOnlyApifyIsAtHome(t *testing.T) {
 	t.Setenv(envIsAtHome, "")
 	t.Setenv("isAtHome", "")
@@ -126,10 +123,8 @@ func TestBaseURLOverrideAppendsV2(t *testing.T) {
 	}
 }
 
-// WithBaseURL appends /v2 when missing, but does not double it when the caller already
-// included it (e.g. a URL read back from APIBaseURL and passed to a new client) — mirrors the
-// reference client's toApiBaseUrl test matrix exactly, so the two clients agree on every case,
-// including the "https://v2" host-vs-path edge case.
+// WithBaseURL appends /v2 when it is missing and does not double it, including for the
+// "https://v2" edge case, where v2 is the host and not the path.
 func TestBaseURLAppendsV2Idempotently(t *testing.T) {
 	cases := []struct {
 		input    string
