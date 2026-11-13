@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the documentation and code comments to the Server Actors wording and links of the
   OpenAPI specification: the Server Actor links in `docs/server_actors.md`, the `RunChargeOptions.RequestID`
   note on single-tenant runs, and the token used by `RunClient.Charge`.
+- README: create the API token on the Integrations page; Apify Console shows it only once.
 - Bumped `APISpecVersion` to `v2-2026-11-10T140017Z` and `ClientVersion` to `0.16.1`.
 
 ## [0.16.0] - 2026-11-10

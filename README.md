@@ -65,10 +65,10 @@ func main() {
 ```
 
 Create an API token on the [Integrations](https://console.apify.com/settings/integrations) page
-of Apify Console (the **Personal API tokens** section). The Console shows the token only once,
-right after you create or rotate it, so copy it and store it somewhere safe. The client never reads it from the
-environment itself: pass the token via `apify.WithToken` explicitly (the examples above
-read `APIFY_TOKEN` from the environment only as a convenience in `main`).
+of Apify Console (the **Personal API tokens** section). Apify Console shows the token only once,
+right after you create or rotate it, so copy it and store it somewhere safe. The client never
+reads it from the environment itself: pass the token via `apify.WithToken` explicitly (the
+examples above read `APIFY_TOKEN` from the environment only as a convenience in `main`).
 
 ## Configuration
 
