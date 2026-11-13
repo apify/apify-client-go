@@ -193,7 +193,7 @@ type Task struct {
 	// PublicConfig is the public-facing display configuration of the task's landing page, set
 	// when the task has been configured for publishing (nil otherwise).
 	PublicConfig *TaskPublicConfig `json:"publicConfig,omitempty"`
-	// StandbyURL is the URL of the task's Actor Standby endpoint, normalized. Nil when the task
+	// StandbyURL is the URL of the task's Server Actor endpoint, normalized. Nil when the task
 	// has none.
 	StandbyURL *string `json:"standbyUrl,omitempty"`
 	// Extra holds any other fields returned by the API.

@@ -48,7 +48,8 @@ type RunChargeOptions struct {
 	IdempotencyKey string
 	// RequestID is the ID of the Server Actor request being charged, taken from the
 	// `X-Actor-Request-ID` header of the incoming request. Required for multi-tenant Server
-	// Actor runs; omitted from the request body when empty.
+	// Actor runs and ignored by runs of single-tenant Server Actors; omitted from the request
+	// body when empty.
 	RequestID string
 }
 
@@ -185,7 +186,8 @@ func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) 
 
 // Charge records occurrences of an event of a pay-per-event Actor run. It always sends an
 // idempotency key, generated if you set none, so a charge retried by the client is applied once.
-// The API expires the key after 3 minutes.
+// The API expires the key after 3 minutes. Call it from the Actor run itself, with a client
+// created with the `APIFY_TOKEN` that the platform provides to the run.
 func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error {
 	if c.ctx.idErr != nil {
 		return c.ctx.idErr
