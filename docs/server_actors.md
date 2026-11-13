@@ -1,6 +1,6 @@
 # Server Actors
 
-A [Server Actor](https://docs.apify.com/platform/actors/running/standby) (formerly Actor Standby)
+A [Server Actor](https://docs.apify.com/platform/actors/running/server-actors) (formerly Actor Standby)
 runs a web server. You call it over HTTP, and the platform keeps a run ready to answer, so each
 call skips the run startup.
 
@@ -49,7 +49,7 @@ apart by the `X-Actor-Request-ID` header of each request it forwards to the Acto
 Server Actor calls another one while handling a request, pass that header in `ParentRequestID`.
 The client sends it as the same header, so the called Actor charges at the pricing tier of your
 incoming request. Use a client created with the run's `APIFY_TOKEN`. For details, see
-[Compose multi-tenant Server Actors](https://docs.apify.com/platform/actors/development/programming-interface/standby#compose-server-actors).
+[Call another multi-tenant Server Actor](https://docs.apify.com/platform/actors/monetize/server-actors#call-another-multi-tenant-server-actor).
 
 ```go
 handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +95,7 @@ body.
   removes the token before it forwards the request, so the token does not reach the Actor's
   code. If the Actor reads the `Authorization` header for its own authentication, pass that
   header in `Headers`. For details, see
-  [How do I authenticate my requests](https://docs.apify.com/platform/actors/running/standby#how-do-i-authenticate-my-requests)
+  [Authenticate requests](https://docs.apify.com/platform/actors/running/server-actors#authenticate-requests)
   in the platform documentation.
 - Redirects are not followed. A redirect response is returned as it is, since following it would
   send the token to a host the Actor's code picked. A custom `HTTPBackend` that follows redirects
