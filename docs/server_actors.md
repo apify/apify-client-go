@@ -4,7 +4,7 @@ A [Server Actor](https://docs.apify.com/platform/actors/running/server-actors) (
 runs a web server. You call it over HTTP, and the platform keeps a run ready to answer, so each
 call skips the run startup.
 
-> **Formerly Actor Standby.** The platform documentation and the API still use the old name, for
+> **Formerly Actor Standby.** The API still uses the old name, for
 > example in the Actor's `standbyUrl` and `actorStandby` fields. In the client,
 > `ActorClient.Standby()` is a deprecated alias of `ActorClient.Server()`.
 

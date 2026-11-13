@@ -35,7 +35,7 @@ with `client.Run(id)`, and an Actor's or task's runs with `client.Actor(id).Runs
 | `MetamorphRaw(ctx, targetActorID string, input []byte, MetamorphOptions) (ActorRun, error)` | Like `Metamorph`, but sends `input` as a raw request body (no JSON serialization), paired with `MetamorphOptions.ContentType`. |
 | `Reboot(ctx) (ActorRun, error)` | Reboot the run. |
 | `Resurrect(ctx, RunResurrectOptions) (ActorRun, error)` | Resurrect a finished run (status `SUCCEEDED`, `FAILED`, `ABORTED` or `TIMED-OUT`); it restarts with the same storages. |
-| `Charge(ctx, RunChargeOptions) error` | Charge a pay-per-event run (sends an idempotency key). |
+| `Charge(ctx, RunChargeOptions) error` | Charge a pay-per-event run (sends an idempotency key). Call it from the run itself, with a client created with the run's `APIFY_TOKEN`. |
 | `WaitForFinish(ctx, waitSecs *int64) (ActorRun, error)` | Poll until the run is terminal. |
 | `Dataset() *DatasetClient` | The run's default dataset. |
 | `KeyValueStore() *KeyValueStoreClient` | The run's default key-value store. |
