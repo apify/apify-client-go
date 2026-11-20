@@ -134,6 +134,9 @@ type MetamorphOptions struct {
 
 // Metamorph transforms the run into a run of another Actor with a new input.
 //
+// Only the run itself can metamorph: the client must use the run's own API token, which the run
+// gets in the APIFY_TOKEN environment variable. With any other token, the API rejects the request.
+//
 // targetActorID is the Actor to metamorph into. input is the new input (nil for none). To send
 // a non-JSON input as raw bytes instead, use [RunClient.MetamorphRaw].
 func (c *RunClient) Metamorph(ctx context.Context, targetActorID string, input any, options MetamorphOptions) (ActorRun, error) {

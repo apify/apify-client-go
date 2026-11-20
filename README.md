@@ -285,7 +285,7 @@ func main() {
 
 - `apify.ClientVersion` — the semantic version of this library.
 - `apify.APISpecVersion` — the Apify OpenAPI spec version this client was built against
-  (`v2-2026-11-10T140017Z`).
+  (`v2-2026-11-18T151559Z`).
 
 ### Releasing
 

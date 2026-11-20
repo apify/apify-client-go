@@ -29,3 +29,13 @@ func TestNullFieldsOfRequestsAndSchedulesParse(t *testing.T) {
 		t.Fatalf("GetRequest of a pending request: %+v, %v, %v", got, present, err)
 	}
 }
+
+// The users endpoints can answer with the reduced proxy view of a user, which has no ID or
+// username: it parses, and its fields are kept in Extra.
+func TestUserProxyInfoParses(t *testing.T) {
+	var user User
+	mustUnmarshal(t, `{"plan":{"availableProxyGroups":["RESIDENTIAL"]},"effectivePlatformFeatures":{},"isPaying":true}`, &user)
+	if user.ID != "" || string(user.Extra["isPaying"]) != "true" || user.Extra["plan"] == nil {
+		t.Errorf("unexpected user %+v", user)
+	}
+}
