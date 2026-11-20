@@ -20,7 +20,9 @@ func newUserClient(hc *httpClient, baseURL, id string) *UserClient {
 }
 
 // Get fetches the user. For "me" it returns private account details; for other users it
-// returns the public profile. The bool reports whether the user exists.
+// returns the public profile. A request authenticated with an Apify Proxy password gets only the
+// reduced proxy view (plan, effective platform features and paying status): ID and Username are
+// then empty and the fields are in Extra. The bool reports whether the user exists.
 func (c *UserClient) Get(ctx context.Context) (User, bool, error) {
 	return getResource[User](ctx, c.ctx, "", NewQueryParams())
 }

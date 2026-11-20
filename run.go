@@ -124,11 +124,12 @@ func (c *RunClient) Abort(ctx context.Context, gracefully *bool) (ActorRun, erro
 	return postWithBody[ActorRun](ctx, c.ctx, "abort", params, nil, "", c.ctx.mediumTimeout())
 }
 
-// MetamorphOptions configures [RunClient.Metamorph].
+// MetamorphOptions configures [RunClient.Metamorph] and [RunClient.MetamorphRaw].
 type MetamorphOptions struct {
 	// Build optionally pins the target Actor's build (empty for default).
 	Build string
-	// ContentType is the content type of the input body. Defaults to application/json.
+	// ContentType is the content type of the input body. Defaults to application/json for
+	// Metamorph, or application/octet-stream for MetamorphRaw.
 	ContentType string
 }
 

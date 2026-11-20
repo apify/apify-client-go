@@ -543,13 +543,14 @@ func (w *WebhookDispatchWebhookSummary) UnmarshalJSON(data []byte) error {
 
 // User is an Apify user account.
 type User struct {
-	// ID is the unique user ID.
+	// ID is the unique user ID. Empty in the reduced proxy view of a user.
 	ID string `json:"id"`
-	// Username is the user's username.
+	// Username is the user's username. Empty in the reduced proxy view of a user.
 	Username string `json:"username"`
 	// Profile is the user's public profile. Nil if the API does not return it.
 	Profile *UserProfile `json:"profile,omitempty"`
-	// Extra holds any other fields returned by the API (private details for "me").
+	// Extra holds any other fields returned by the API (private details for "me", or the fields
+	// of the reduced proxy view).
 	Extra Extra `json:"-"`
 }
 

@@ -58,7 +58,7 @@ for {
 
 | Method | Description |
 | --- | --- |
-| `Get(ctx) (User, bool, error)` | Account details (private for `Me()`, public otherwise). |
+| `Get(ctx) (User, bool, error)` | Account details (private for `Me()`, public otherwise). With an Apify Proxy password as the token, the API returns only a reduced proxy view: `ID` and `Username` are empty and its fields (`plan`, `effectivePlatformFeatures`, `isPaying`) are in `Extra`. |
 | `MonthlyUsage(ctx) (json.RawMessage, error)` | Current month's usage. |
 | `MonthlyUsageWithOptions(ctx, MonthlyUsageOptions) (json.RawMessage, error)` | Usage for the period containing `Date` (`YYYY-MM-DD`; empty means current). |
 | `Limits(ctx) (json.RawMessage, error)` | The account's limits. |

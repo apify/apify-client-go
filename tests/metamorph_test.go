@@ -72,7 +72,7 @@ func TestMetamorphRun(t *testing.T) {
 	// A metamorph needs the run's own token, which the Actor stores in its key-value store.
 	var runToken string
 	deadline := time.Now().Add(2 * time.Minute)
-	for runToken == "" {
+	for {
 		record, ok, err := client.KeyValueStore(run.DefaultKeyValueStoreID).GetRecord(ctx, "TOKEN")
 		if err != nil {
 			t.Fatalf("read the run token: %v", err)

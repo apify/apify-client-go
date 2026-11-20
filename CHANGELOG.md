@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - An integration test of `RunClient.Metamorph`, which runs the metamorph with the run's own token.
-- A unit test that a reduced proxy view of a user, as the users endpoints can return, parses.
+- A unit test that parses the reduced proxy view of a user, which the users endpoints can return.
 
 ### Changed
 
@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAPI specification: the Server Actor links in `docs/server_actors.md`, the
   `RunChargeOptions.RequestID` note on single-tenant runs, and the token used by
   `RunClient.Charge`.
+- Documented that `UserClient.Get` returns only a reduced proxy view of the user, with `ID` and
+  `Username` empty, when the request uses an Apify Proxy password.
 - Documented that `RunClient.Metamorph` and `RunClient.MetamorphRaw` need the run's own API token.
 - Updated the README to tell users to create the API token on the Integrations page, and that
   Apify Console shows it only once.
