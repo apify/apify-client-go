@@ -193,7 +193,7 @@ type Task struct {
 	// PublicConfig is the public-facing display configuration of the task's landing page, set
 	// when the task has been configured for publishing (nil otherwise).
 	PublicConfig *TaskPublicConfig `json:"publicConfig,omitempty"`
-	// StandbyURL is the URL of the task's Actor Standby endpoint, normalized. Nil when the task
+	// StandbyURL is the URL of the task's Server Actor endpoint, normalized. Nil when the task
 	// has none.
 	StandbyURL *string `json:"standbyUrl,omitempty"`
 	// Extra holds any other fields returned by the API.
@@ -543,13 +543,14 @@ func (w *WebhookDispatchWebhookSummary) UnmarshalJSON(data []byte) error {
 
 // User is an Apify user account.
 type User struct {
-	// ID is the unique user ID.
+	// ID is the unique user ID. Empty in the reduced proxy view of a user.
 	ID string `json:"id"`
-	// Username is the user's username.
+	// Username is the user's username. Empty in the reduced proxy view of a user.
 	Username string `json:"username"`
 	// Profile is the user's public profile. Nil if the API does not return it.
 	Profile *UserProfile `json:"profile,omitempty"`
-	// Extra holds any other fields returned by the API (private details for "me").
+	// Extra holds any other fields returned by the API (private details for "me", or the fields
+	// of the reduced proxy view).
 	Extra Extra `json:"-"`
 }
 

@@ -5,6 +5,26 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.1] - 2026-11-20
+
+### Added
+
+- An integration test of `RunClient.Metamorph`, which runs the metamorph with the run's own token.
+- A unit test that parses the reduced proxy view of a user, which the users endpoints can return.
+
+### Changed
+
+- Updated the documentation and code comments to the Server Actors wording and links of the
+  OpenAPI specification: the Server Actor links in `docs/server_actors.md`, the
+  `RunChargeOptions.RequestID` note on single-tenant runs, and the token used by
+  `RunClient.Charge`.
+- Documented that `UserClient.Get` returns only a reduced proxy view of the user, with `ID` and
+  `Username` empty, when the request uses an Apify Proxy password.
+- Documented that `RunClient.Metamorph` and `RunClient.MetamorphRaw` need the run's own API token.
+- Updated the README to tell users to create the API token on the Integrations page, and that
+  Apify Console shows it only once.
+- Bumped `APISpecVersion` to `v2-2026-11-18T151559Z` and `ClientVersion` to `0.16.1`.
+
 ## [0.16.0] - 2026-11-10
 
 ### Added

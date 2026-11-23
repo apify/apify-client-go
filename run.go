@@ -48,7 +48,8 @@ type RunChargeOptions struct {
 	IdempotencyKey string
 	// RequestID is the ID of the Server Actor request being charged, taken from the
 	// `X-Actor-Request-ID` header of the incoming request. Required for multi-tenant Server
-	// Actor runs; omitted from the request body when empty.
+	// Actor runs and ignored by runs of single-tenant Server Actors; omitted from the request
+	// body when empty.
 	RequestID string
 }
 
@@ -123,15 +124,19 @@ func (c *RunClient) Abort(ctx context.Context, gracefully *bool) (ActorRun, erro
 	return postWithBody[ActorRun](ctx, c.ctx, "abort", params, nil, "", c.ctx.mediumTimeout())
 }
 
-// MetamorphOptions configures [RunClient.Metamorph].
+// MetamorphOptions configures [RunClient.Metamorph] and [RunClient.MetamorphRaw].
 type MetamorphOptions struct {
 	// Build optionally pins the target Actor's build (empty for default).
 	Build string
-	// ContentType is the content type of the input body. Defaults to application/json.
+	// ContentType is the content type of the input body. Defaults to application/json for
+	// Metamorph, or application/octet-stream for MetamorphRaw.
 	ContentType string
 }
 
 // Metamorph transforms the run into a run of another Actor with a new input.
+//
+// Only the run itself can metamorph: the client must use the run's own API token, which the run
+// gets in the APIFY_TOKEN environment variable. With any other token, the API rejects the request.
 //
 // targetActorID is the Actor to metamorph into. input is the new input (nil for none). To send
 // a non-JSON input as raw bytes instead, use [RunClient.MetamorphRaw].
@@ -185,7 +190,8 @@ func (c *RunClient) Resurrect(ctx context.Context, options RunResurrectOptions) 
 
 // Charge records occurrences of an event of a pay-per-event Actor run. It always sends an
 // idempotency key, generated if you set none, so a charge retried by the client is applied once.
-// The API expires the key after 3 minutes.
+// The API expires the key after 3 minutes. Call it from the Actor run itself, with a client
+// created with the `APIFY_TOKEN` that the platform provides to the run.
 func (c *RunClient) Charge(ctx context.Context, options RunChargeOptions) error {
 	if c.ctx.idErr != nil {
 		return c.ctx.idErr
