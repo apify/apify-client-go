@@ -27,10 +27,10 @@ jobs:
     environment: tests
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.6.0
         with:
           # Minimum Go release with the current security fixes. Keep in step with go.mod.
           go-version: '1.26.11'
@@ -50,7 +50,7 @@ jobs:
 
       - name: Lint (golangci-lint)
         # .golangci.yml uses the v2 schema, which needs the v7 action.
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v7.0.1
         with:
           version: v2.15.0
 
