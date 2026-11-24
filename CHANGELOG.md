@@ -9,10 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Raised the pinned Go toolchain in `go.mod` and the Go version of the CI and publish workflows to
-  1.26.11, which fixes CVE-2026-97040 (GO-2026-6851): the linker accepted a crafted `.syso` file
-  and passed its cgo directives to the external linker. The client code is not affected, but
-  binaries built with the earlier toolchain are.
+- Raised the Go toolchain of `go.mod` and of the CI and publish workflows to 1.26.11, which fixes
+  CVE-2026-97040 (GO-2026-6851). Build programs that use this client with Go 1.26.11, 1.27.4 or
+  newer.
 
 ## [0.16.1] - 2026-11-20
 

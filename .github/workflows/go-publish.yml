@@ -40,7 +40,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Earlier releases trust compromised CA certificates. Keep in step with go.mod.
+          # Minimum Go release with the current security fixes. Keep in step with go.mod.
           go-version: '1.26.11'
           cache: true
 
