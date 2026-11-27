@@ -18,6 +18,11 @@ func TestListStore(t *testing.T) {
 	if len(page.Items) > 5 {
 		t.Fatalf("expected at most 5 items, got %d", len(page.Items))
 	}
+	for _, item := range page.Items {
+		if item.Stats.TotalUsers <= 0 {
+			t.Fatalf("expected the Store statistics of %s to count at least its owner, got %+v", item.ID, item.Stats)
+		}
+	}
 }
 
 func TestIterateStore(t *testing.T) {

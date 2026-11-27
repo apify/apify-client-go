@@ -13,11 +13,11 @@ Browse public Actors with `client.Store()`:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `Offset` | `*int64` | Number of Actors to skip. |
-| `Limit` | `*int64` | Maximum number of Actors to return. |
-| `Search` | `*string` | Full-text search query. |
-| `SortBy` | `*string` | Sort field (e.g. `"popularity"`, `"newest"`). |
-| `Category` | `*string` | Filter Actors by category. |
+| `Offset` | `*int64` | Number of Actors to skip. The API ignores it when `Search` is set. |
+| `Limit` | `*int64` | Maximum number of Actors to return. The default and the maximum are 1000, or 100 when `Search` is set, where a larger value is reduced to 100. |
+| `Search` | `*string` | Search query. Results are ranked by relevance and returned as a single page of at most 100 Actors, with no second page. Narrow them with `Category`, `Username` or `PricingModel`. |
+| `SortBy` | `*string` | Deprecated: the API ignores it. Results are ordered by relevance when `Search` is set, and by Store position otherwise. Sort the results on the client for another order. |
+| `Category` | `*string` | Filter Actors by category. Takes one or more category IDs, separated by commas and case-insensitive; an Actor must match all of them, for example `AI_AND_ML`. An unknown category makes the API answer with a 400 error. |
 | `Username` | `*string` | Filter Actors by owner username. |
 | `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
 | `IncludeUnrunnableActors` | `*bool` | Include Actors the current user cannot run. |
@@ -35,6 +35,9 @@ Each item is an `ActorStoreListItem`:
 | `Title` | `string` | Human-readable title (may be empty; fall back to `Name`). |
 | `URL` | `*string` | URL of the Actor's page in the Apify Store, normalized. `nil` when there is none. |
 | `UserPictureURL` | `*string` | URL of the owner's profile picture, normalized. `nil` when there is none. |
+| `Categories` | `[]string` | IDs of the categories the Actor belongs to, for example `AI_AND_ML`. `nil` when the API reports none. |
+| `Stats` | `StoreActorStats` | Usage statistics and Store metrics: `TotalUsers`, `ActorReviewRating` and `ActorReviewCount`, plus `TotalRuns`, `TotalUsers7Days`, `TotalUsers30Days` and `TotalUsers90Days` (`*int64`, `nil` when absent). |
+| `IsVerified` | `*bool` | Whether the Actor's developer has a verified identity. `nil` when the API does not return it. |
 | `Extra` | `map[string]json.RawMessage` | Any other fields returned by the API (forward compatibility). |
 
 ```go

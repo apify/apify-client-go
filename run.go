@@ -76,7 +76,7 @@ func newRunClient(root *ApifyClient, hc *httpClient, baseURL, resourcePath, id s
 type LastRunOptions struct {
 	// Status filters by run status (e.g. "SUCCEEDED", "FAILED", "RUNNING").
 	Status string
-	// Origin filters by how the run was started (e.g. "DEVELOPMENT", "WEB", "API", "SCHEDULER").
+	// Origin filters by how the run was started (e.g. "DEVELOPMENT", "WEB", "API", "SCHEDULER", "APIFY_AI").
 	Origin string
 }
 

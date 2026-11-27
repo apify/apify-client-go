@@ -200,7 +200,7 @@ run, err := client.Actor("apify/hello-world").Call(ctx,
 
 | Method | Description |
 | --- | --- |
-| `Versions().List(ctx)` / `Versions().Iterate()` / `Versions().Create(ctx, def)` | List/iterate/create versions. The endpoint returns every version in one response and takes no pagination parameters, so neither method takes options. |
+| `Versions().List(ctx)` / `Versions().Iterate()` / `Versions().Create(ctx, def)` | List/iterate/create versions. `Create` and `Version(n).Update` use the long timeout tier, since a version can carry its source files. The endpoint returns every version in one response and takes no pagination parameters, so neither method takes options. |
 | `Version(n).Get/Update/Delete(ctx)` | Manage a single version. |
 | `Version(n).EnvVars().List(ctx)` / `.Iterate()` / `.Create(ctx, ActorEnvVar)` | List/iterate/create env vars. |
 | `Version(n).EnvVar(name).Get/Update/Delete(ctx)` | Manage a single env var. |

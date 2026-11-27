@@ -5,6 +5,26 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-11-27
+
+### Added
+
+- `ActorStoreListItem.Categories`, `ActorStoreListItem.Stats` (the new `StoreActorStats`) and
+  `ActorStoreListItem.IsVerified`, which the Store endpoint now returns as typed fields.
+
+### Changed
+
+- `ActorVersionCollectionClient.Create` and `ActorVersionClient.Update` use the long timeout tier,
+  since a version can carry its source files.
+- Updated the documentation of `StoreListOptions` to the Store search behavior of the OpenAPI
+  specification: a search returns a single page of at most 100 Actors ranked by relevance, and
+  `Category` takes comma-separated category IDs.
+- Added the `APIFY_AI` run origin to the `LastRunOptions.Origin` examples.
+
+### Deprecated
+
+- `StoreListOptions.SortBy`, which the API ignores.
+
 ## [0.16.2] - 2026-11-24
 
 ### Security

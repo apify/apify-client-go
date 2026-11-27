@@ -4,15 +4,23 @@ import "context"
 
 // StoreListOptions configures listing/iterating the Apify Store.
 type StoreListOptions struct {
-	// Offset is the number of Actors to skip.
+	// Offset is the number of Actors to skip. The API ignores it when Search is set.
 	Offset *int64
-	// Limit is the maximum number of Actors to return.
+	// Limit is the maximum number of Actors to return. The default and the maximum are 1000, or
+	// 100 when Search is set, where a larger value is reduced to 100.
 	Limit *int64
-	// Search filters Actors by a full-text search query.
+	// Search ranks Actors by relevance to the query and returns them as a single page of at most
+	// 100 Actors, with no second page. Narrow the results with Category, Username or
+	// PricingModel.
 	Search *string
-	// SortBy sets the sort field (e.g. "popularity", "newest").
+	// SortBy is deprecated: the API ignores it. Results are ordered by relevance when Search is
+	// set, and by Store position otherwise. Sort the results on the client for another order.
+	//
+	// Deprecated: The API ignores this option.
 	SortBy *string
-	// Category filters Actors by category.
+	// Category filters Actors by category. It takes one or more category IDs, separated by commas
+	// and case-insensitive, and an Actor must match all of them (for example "AI_AND_ML"). An
+	// unknown category makes the API answer with a 400 error.
 	Category *string
 	// Username filters Actors by owner username.
 	Username *string
