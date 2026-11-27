@@ -167,58 +167,76 @@ func TestStreamCallsDoNotFollowRedirects(t *testing.T) {
 	}
 }
 
-// closeRecorder is a stream that records whether it was closed.
+// closeRecorder is a stream that counts its closes.
 type closeRecorder struct {
 	io.Reader
-	closed atomic.Bool
+	closes atomic.Int32
 }
 
 func (r *closeRecorder) Close() error {
-	r.closed.Store(true)
+	r.closes.Add(1)
 	return nil
 }
 
-// transportClosingBackend closes the request body once the request is done, as the HTTP transport
-// does, which the mock backend does not.
-type transportClosingBackend struct{ HTTPBackend }
-
-func (b transportClosingBackend) Do(req *http.Request) (*http.Response, error) {
-	defer func() { _ = req.Body.Close() }()
-	return b.HTTPBackend.Do(req)
-}
-
-// The client closes a stream that is an io.Closer when the call ends, also when the call fails
-// before it sends anything.
-func TestStreamCallsCloseTheStream(t *testing.T) {
+// A call that fails before it sends anything closes a stream that is an io.Closer, once: the
+// HTTP transport, which closes the body of a request it sent, never saw it.
+func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 	ctx := context.Background()
-	client := streamClient(transportClosingBackend{&mockBackend{responses: constant(200, startedRun)}})
+	client := streamClient(&mockBackend{responses: constant(200, startedRun)})
+	badURLClient := NewClient(WithToken("t"), WithBaseURL("http://[::1"), WithMaxRetries(0))
 	cases := []struct {
 		name string
 		run  func(stream io.Reader) error
 	}{
-		{"sent", func(s io.Reader) error { return client.KeyValueStore("s").SetRecordStream(ctx, "k", s, "text/plain") }},
 		{"invalid key", func(s io.Reader) error { return client.KeyValueStore("s").SetRecordStream(ctx, "..", s, "text/plain") }},
 		{"empty store ID", func(s io.Reader) error { return client.KeyValueStore("").SetRecordStream(ctx, "k", s, "text/plain") }},
 		{"empty task ID", func(s io.Reader) error {
 			_, err := client.Task("").StartStream(ctx, s, TaskStartOptions{})
 			return err
 		}},
-		{"Actor start", func(s io.Reader) error {
-			_, err := client.Actor("a").StartStream(ctx, s, ActorStartOptions{})
+		{"invalid URL", func(s io.Reader) error {
+			_, err := badURLClient.Actor("a").StartStream(ctx, s, ActorStartOptions{})
 			return err
 		}},
 		{"server request with an unknown method", func(s io.Reader) error {
 			_, err := client.Actor("a").Server().Request(ctx, "/", ActorServerRequestOptions{Method: "NOPE", Body: s})
 			return err
 		}},
+		{"server request of an Actor that does not exist", func(s io.Reader) error {
+			f := newServerFixture(t)
+			f.noActor()
+			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/", ActorServerRequestOptions{Method: "POST", Body: s})
+			return err
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stream := &closeRecorder{Reader: strings.NewReader("data")}
-			_ = c.run(stream)
-			if !stream.closed.Load() {
-				t.Error("the stream was not closed")
+			if err := c.run(stream); err == nil {
+				t.Fatal("expected the call to fail")
+			}
+			if got := stream.closes.Load(); got != 1 {
+				t.Errorf("the stream was closed %d times, want once", got)
 			}
 		})
+	}
+}
+
+// A request that was sent is closed by the HTTP transport, and the client does not close the
+// stream a second time, also when the request fails.
+func TestServerRequestStreamIsClosedOnceByTheTransport(t *testing.T) {
+	f := newServerFixture(t)
+	unreachable := httptest.NewServer(http.NotFoundHandler())
+	unreachableURL := unreachable.URL
+	unreachable.Close()
+	f.setActor(map[string]any{"standbyUrl": unreachableURL})
+
+	stream := &closeRecorder{Reader: strings.NewReader("data")}
+	_, err := f.client().Actor(serverTestActorID).Server().Request(context.Background(), "/", ActorServerRequestOptions{Method: "POST", Body: stream})
+	if err == nil {
+		t.Fatal("expected the connection to be refused")
+	}
+	if got := stream.closes.Load(); got != 1 {
+		t.Errorf("the stream was closed %d times, want once", got)
 	}
 }

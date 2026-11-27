@@ -35,8 +35,8 @@ func withoutRedirects(ctx context.Context) context.Context {
 // FollowsRedirects reports whether the HTTP backend may follow redirects for req. It is false
 // for the requests that carry credentials meant for one host only, such as those sent by
 // [ActorServerClient], and for those with a stream body, which a redirect cannot replay: such a
-// request must get a redirect response back as it is. A custom
-// [HTTPBackend] that follows redirects has to check it, and the [DefaultHTTPBackend] does.
+// request must get a redirect response back as it is. A custom [HTTPBackend] that follows
+// redirects has to check it, and the [DefaultHTTPBackend] does.
 func FollowsRedirects(req *http.Request) bool {
 	return req.Context().Value(noRedirectsKey{}) == nil
 }
@@ -143,6 +143,7 @@ func (c *httpClient) serverAttempt(ctx context.Context, call serverCall, body io
 
 	req, err := c.newRequest(attemptCtx, call.method, call.url, body, call.contentType, contentEncoding, serverAuthorizationHeader)
 	if err != nil {
+		closeStream(body)
 		stopTimer()
 		cancel(nil)
 		return nil, err

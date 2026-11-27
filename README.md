@@ -245,7 +245,9 @@ the request.
 ## Custom HTTP transport
 
 The transport is replaceable. Implement `HTTPBackend` (a single `Do` method) to integrate a
-custom client, proxy, or test double, and pass it with `WithHTTPBackend`. A backend that follows
+custom client, proxy, or test double, and pass it with `WithHTTPBackend`. The backend must close
+`req.Body` once it is done with it, also on error, as an `http.RoundTripper` does: the client relies
+on that to close a stream body that it did not open. A backend that follows
 redirects must not follow them for a request that `apify.FollowsRedirects(req)` reports false for,
 as the requests to a [Server Actor](docs/server_actors.md) carry a token meant for one host only,
 and a redirect to another host would send it there. The requests with a stream body (such as
@@ -267,7 +269,8 @@ func (b *myBackend) Do(req *http.Request) (*http.Response, error) {
 	if apify.FollowsRedirects(req) {
 		return b.inner.Do(req)
 	}
-	// This request carries a token meant for one host only, so a redirect is returned as it is.
+	// This request carries a token meant for one host only, or a stream body that a redirect cannot
+	// replay, so a redirect is returned as it is.
 	client := *b.inner
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return client.Do(req)

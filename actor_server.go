@@ -343,25 +343,21 @@ func (c *ActorServerClient) RequestStream(ctx context.Context, path string, opti
 }
 
 // send validates the options, resolves the server URL and sends the request.
-func (c *ActorServerClient) send(ctx context.Context, path string, options ActorServerRequestOptions, stream bool) (response *serverResponse, err error) {
-	// A stream body is closed whether or not the call got as far as sending it.
+func (c *ActorServerClient) send(ctx context.Context, path string, options ActorServerRequestOptions, stream bool) (*serverResponse, error) {
 	bodyStream, _ := options.Body.(io.Reader)
-	defer func() {
-		if err != nil {
-			closeStream(bodyStream)
-		}
-	}()
 	method := strings.ToUpper(options.Method)
 	if method == "" {
 		method = http.MethodGet
 	}
 	if !httpMethods[method] || (options.Method != "" && options.Method != method) {
+		closeStream(bodyStream)
 		return nil, fmt.Errorf("ActorServerRequestOptions.Method: unknown HTTP method %q", options.Method)
 	}
 	// A stream is sent as it is, so it is not encoded and its request is not retried.
 	var body []byte
 	var contentType string
 	if bodyStream == nil {
+		var err error
 		if body, contentType, err = encodeServerBody(options.Body); err != nil {
 			return nil, err
 		}
@@ -373,6 +369,7 @@ func (c *ActorServerClient) send(ctx context.Context, path string, options Actor
 
 	serverURL, err := c.GetURL(ctx)
 	if err != nil {
+		closeStream(bodyStream)
 		return nil, err
 	}
 	headers := options.Headers
