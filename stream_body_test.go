@@ -232,7 +232,7 @@ func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 }
 
 // The body of a request that was sent is closed by the HTTP transport, and the client does not
-// close the stream a second time when the request fails (see TestSentStreamIsClosedOnce for success).
+// close the stream a second time when the request fails.
 func TestServerRequestStreamIsClosedOnceByTheTransport(t *testing.T) {
 	f := newServerFixture(t)
 	unreachable := httptest.NewServer(http.NotFoundHandler())
