@@ -45,6 +45,9 @@ type serverCall struct {
 	method string
 	url    string
 	body   []byte
+	// bodyStream is a request body that is a stream. It is sent as it is, in a single attempt
+	// (a retry would send what the first attempt left of it), and body is empty.
+	bodyStream io.Reader
 	// contentType is the Content-Type of the body, set before the caller's headers.
 	contentType string
 	// headers are the caller's headers. They are applied last, so they win over every header
@@ -85,8 +88,8 @@ func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverRe
 
 	sendBody, contentEncoding := call.body, ""
 	// A Content-Encoding header of the caller, even one without values (which removes the label),
-	// says that the body is theirs to encode.
-	if _, encodedByCaller := call.headers["Content-Encoding"]; !encodedByCaller {
+	// says that the body is theirs to encode. A stream is never compressed.
+	if _, encodedByCaller := call.headers["Content-Encoding"]; !encodedByCaller && call.bodyStream == nil {
 		// The Content-Type that goes on the wire decides whether the body is worth compressing,
 		// and the caller's header wins over the one the client derived from the body.
 		contentType := call.contentType
@@ -98,8 +101,15 @@ func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverRe
 
 	delay := c.retry.minDelayBetweenRetries
 	maxAttempts := c.retry.maxRetries + 1
+	if call.bodyStream != nil {
+		maxAttempts = 1
+	}
 	for attempt := 1; ; attempt++ {
-		resp, err := c.serverAttempt(withoutRedirects(ctx), call, sendBody, contentEncoding, c.attemptTimeout(call.timeout, attempt))
+		body := call.bodyStream
+		if body == nil {
+			body = bodyReader(sendBody)
+		}
+		resp, err := c.serverAttempt(withoutRedirects(ctx), call, body, contentEncoding, c.attemptTimeout(call.timeout, attempt))
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +127,7 @@ func (c *httpClient) callServer(ctx context.Context, call serverCall) (*serverRe
 }
 
 // serverAttempt performs a single round-trip of call.
-func (c *httpClient) serverAttempt(ctx context.Context, call serverCall, body []byte, contentEncoding string, timeout time.Duration) (*serverResponse, error) {
+func (c *httpClient) serverAttempt(ctx context.Context, call serverCall, body io.Reader, contentEncoding string, timeout time.Duration) (*serverResponse, error) {
 	attemptCtx, cancel := context.WithCancelCause(ctx)
 	// A buffered response is bounded as a whole, a stream only until its headers arrive.
 	var timer *time.Timer

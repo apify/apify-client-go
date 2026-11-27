@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -150,6 +151,17 @@ func (c *ActorClient) StartRaw(ctx context.Context, input []byte, options ActorS
 	return c.startWithBody(ctx, input, "application/octet-stream", options, c.startTimeout(options))
 }
 
+// StartStream starts the Actor with a stream as its input, for a large input that is not held in
+// memory, such as a file. The input has the content type "application/octet-stream" unless
+// options.ContentType is set.
+//
+// The stream is sent as it is, once: the request is neither compressed nor retried, since a retry
+// would send what the first attempt left of the stream, and it follows no redirect. Hence
+// options.WaitForResources is ignored, as the start is never retried.
+func (c *ActorClient) StartStream(ctx context.Context, input io.Reader, options ActorStartOptions) (ActorRun, error) {
+	return c.startWithStream(ctx, input, options, c.startTimeout(options))
+}
+
 // startTimeout is the timeout of a start request: the "medium" tier, extended to cover the time
 // the API may hold the response for options.WaitForFinish.
 func (c *ActorClient) startTimeout(options ActorStartOptions) time.Duration {
@@ -171,6 +183,18 @@ func (c *ActorClient) startWithBody(ctx context.Context, body []byte, defaultCon
 	})
 }
 
+// startWithStream starts the Actor with a streamed input of the content type from
+// options.ContentType, or application/octet-stream.
+func (c *ActorClient) startWithStream(ctx context.Context, input io.Reader, options ActorStartOptions, timeout time.Duration) (ActorRun, error) {
+	params := NewQueryParams()
+	options.apply(params)
+	contentType := "application/octet-stream"
+	if options.ContentType != nil && *options.ContentType != "" {
+		contentType = *options.ContentType
+	}
+	return postStream[ActorRun](ctx, c.ctx, "runs", params, input, contentType, timeout)
+}
+
 // Call starts the Actor and waits for it to finish. waitSecs bounds the wait, and nil waits
 // indefinitely. It returns the finished run, or the running run if the wait ran out.
 //
@@ -183,18 +207,31 @@ func (c *ActorClient) Call(ctx context.Context, input any, options ActorStartOpt
 	if err != nil {
 		return ActorRun{}, err
 	}
-	return c.callWithBody(ctx, body, contentTypeJSON, options, waitSecs)
+	return c.callAndWait(ctx, options, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startWithBody(ctx, body, contentTypeJSON, options, timeout)
+	})
 }
 
 // CallRaw starts the Actor with a raw request body ([ActorClient.StartRaw]) and waits for it to
 // finish, exactly like [ActorClient.Call] but for a non-JSON input.
 func (c *ActorClient) CallRaw(ctx context.Context, input []byte, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
-	return c.callWithBody(ctx, input, "application/octet-stream", options, waitSecs)
+	return c.callAndWait(ctx, options, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startWithBody(ctx, input, "application/octet-stream", options, timeout)
+	})
 }
 
-// callWithBody is the shared implementation of Call and CallRaw.
-func (c *ActorClient) callWithBody(ctx context.Context, body []byte, defaultContentType string, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.startWithBody(ctx, body, defaultContentType, options, noRequestTimeout)
+// CallStream starts the Actor with a stream as its input ([ActorClient.StartStream]) and waits
+// for it to finish, exactly like [ActorClient.Call] but for a streamed input.
+func (c *ActorClient) CallStream(ctx context.Context, input io.Reader, options ActorStartOptions, waitSecs *int64) (ActorRun, error) {
+	return c.callAndWait(ctx, options, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startWithStream(ctx, input, options, timeout)
+	})
+}
+
+// callAndWait is the shared implementation of Call, CallRaw and CallStream: it starts the run with
+// start, which gets the timeout of the start request, and waits for it to finish.
+func (c *ActorClient) callAndWait(ctx context.Context, options ActorStartOptions, waitSecs *int64, start func(timeout time.Duration) (ActorRun, error)) (ActorRun, error) {
+	run, err := start(noRequestTimeout)
 	if err != nil {
 		return ActorRun{}, err
 	}

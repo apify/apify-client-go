@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 )
@@ -109,6 +110,36 @@ func (c *TaskClient) startWithTimeout(ctx context.Context, input any, options Ta
 	return startWaitingForResources(ctx, options.WaitForResources, func() (ActorRun, error) {
 		return postWithBody[ActorRun](ctx, c.ctx.withoutTimeoutRetry(), "runs", params, body, contentTypeJSON, timeout)
 	})
+}
+
+// StartStream is [TaskClient.Start] with a stream as the input that overrides the task's stored
+// input, for a large input that is not held in memory, such as a file. It has the content type
+// "application/octet-stream" unless contentType is not empty.
+//
+// The stream is sent as it is, once: the request is neither compressed nor retried, since a retry
+// would send what the first attempt left of the stream, and it follows no redirect. Hence
+// options.WaitForResources is ignored, as the start is never retried.
+func (c *TaskClient) StartStream(ctx context.Context, input io.Reader, contentType string, options TaskStartOptions) (ActorRun, error) {
+	return c.startStreamWithTimeout(ctx, input, contentType, options, extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish))
+}
+
+func (c *TaskClient) startStreamWithTimeout(ctx context.Context, input io.Reader, contentType string, options TaskStartOptions, timeout time.Duration) (ActorRun, error) {
+	params := NewQueryParams()
+	options.apply(params)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return postStream[ActorRun](ctx, c.ctx, "runs", params, input, contentType, timeout)
+}
+
+// CallStream starts the task with a stream as its input ([TaskClient.StartStream]) and waits for
+// it to finish, exactly like [TaskClient.Call] but for a streamed input.
+func (c *TaskClient) CallStream(ctx context.Context, input io.Reader, contentType string, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
+	run, err := c.startStreamWithTimeout(ctx, input, contentType, options, noRequestTimeout)
+	if err != nil {
+		return ActorRun{}, err
+	}
+	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
 }
 
 // Call starts the task and waits for it to finish. waitSecs bounds the wait, and nil waits

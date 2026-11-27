@@ -267,3 +267,29 @@ func TestRecordPublicURLIsFetchable(t *testing.T) {
 		t.Fatalf("expected success fetching public url, got %d", resp.StatusCode)
 	}
 }
+
+// TestSetRecordStream uploads a value read from a stream and reads it back.
+func TestSetRecordStream(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	store, err := client.KeyValueStores().GetOrCreate(ctx, uniqueName("kvs-stream"))
+	if err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	defer func() { _ = client.KeyValueStore(store.ID).Delete(ctx) }()
+	kvs := client.KeyValueStore(store.ID)
+
+	value := bytes.Repeat([]byte("streamed record "), 1000)
+	if err := kvs.SetRecordStream(ctx, "STREAMED", bytes.NewReader(value), "text/plain"); err != nil {
+		t.Fatalf("SetRecordStream: %v", err)
+	}
+	record, ok, err := kvs.GetRecord(ctx, "STREAMED")
+	if err != nil || !ok {
+		t.Fatalf("GetRecord: ok=%v err=%v", ok, err)
+	}
+	if !bytes.Equal(record.Value, value) {
+		t.Fatalf("the stored value differs: got %d bytes, want %d", len(record.Value), len(value))
+	}
+}

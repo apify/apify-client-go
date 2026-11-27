@@ -7,7 +7,7 @@ Browse public Actors with `client.Store()`:
 | Method | Description |
 | --- | --- |
 | `List(ctx, StoreListOptions) (PaginationList[ActorStoreListItem], error)` | One page of Store Actors. |
-| `Iterate(StoreListOptions, chunkSize *int64) *StoreActorIterator` | Lazy iterator over matching Actors. `Limit` caps the total yielded; `chunkSize` is the page size. |
+| `Iterate(StoreListOptions, chunkSize *int64) *StoreActorIterator` | Lazy iterator over matching Actors. `Limit` caps the total yielded; `chunkSize` is the page size. With `Search` set, it makes one request: `Limit` is the page size, `chunkSize` is ignored and at most 100 Actors are yielded. |
 
 `StoreListOptions` (all fields optional):
 
@@ -20,9 +20,9 @@ Browse public Actors with `client.Store()`:
 | `Category` | `*string` | Filter Actors by category. Takes one or more category IDs, separated by commas and case-insensitive; an Actor must match all of them, for example `AI_AND_ML`. An unknown category makes the API answer with a 400 error. |
 | `Username` | `*string` | Filter Actors by owner username. |
 | `PricingModel` | `*string` | Filter by pricing model. Accepted values: `FREE`, `PRICE_PER_DATASET_ITEM`, `PAY_PER_EVENT`. |
-| `IncludeUnrunnableActors` | `*bool` | Include Actors the current user cannot run. |
-| `AllowsAgenticUsers` | `*bool` | Filter to Actors that allow agentic users. |
-| `ResponseFormat` | `*string` | Select the response format. Accepted values: `full`, `agent`. |
+| `IncludeUnrunnableActors` | `*bool` | Turn off the safety filter that leaves out Actors that are not safe to run automatically, such as those of developers without a verified identity and Actors with full permissions that have few users. |
+| `AllowsAgenticUsers` | `*bool` | `true` returns only Actors that allow agentic users, and `false` only Actors that do not. |
+| `ResponseFormat` | `*string` | Shape of the response. `full` (default) returns every field, and `agent` a reduced field set for LLM consumers, in which `URL`, `UserPictureURL`, `IsVerified` and the optional `Stats` counts are `nil`. |
 | `IncludeInputSchema` | `*bool` | Add to each Actor an `inputSchema` field with a compact version of its default build's input schema. With it set, the API defaults `Limit` to 10 and does not accept a larger one. |
 
 Each item is an `ActorStoreListItem`:
@@ -42,7 +42,7 @@ Each item is an `ActorStoreListItem`:
 
 ```go
 // Limit caps the total number of Actors yielded; the second argument is the per-page size.
-it := client.Store().Iterate(apify.StoreListOptions{Limit: apify.Ptr(int64(20)), Search: apify.Ptr("scraper")}, apify.Ptr(int64(10)))
+it := client.Store().Iterate(apify.StoreListOptions{Limit: apify.Ptr(int64(20)), Category: apify.Ptr("AI_AND_ML")}, apify.Ptr(int64(10)))
 for {
 	actor, err := it.Next(ctx)
 	if err != nil {

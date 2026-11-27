@@ -152,6 +152,21 @@ func (c *httpClient) callPreEncoded(ctx context.Context, method, url string, bod
 	return c.doRetryLoop(ctx, method, url, body, contentType, contentEncoding, nil, baseTimeout)
 }
 
+// callStream is [httpClient.call] for a body that is a stream. The body is sent as it is, in a
+// single attempt without the client's own compression: a retry would send what is left of a
+// stream that the failed attempt consumed, and a redirect cannot replay it. contentEncoding, when
+// not empty, says that the stream is already compressed under it.
+func (c *httpClient) callStream(ctx context.Context, method, url string, body io.Reader, contentType, contentEncoding string, baseTimeout time.Duration) (*apiResponse, error) {
+	resp, err := c.doAttemptReader(ctx, method, url, body, contentType, contentEncoding, nil, c.attemptTimeout(baseTimeout, 1))
+	if err != nil {
+		return nil, err
+	}
+	if resp.statusCode >= minNonSuccessStatusCode {
+		return nil, buildAPIError(resp.statusCode, resp.body, 1, method, extractPath(url))
+	}
+	return resp, nil
+}
+
 // doRetryLoop sends the request and retries retryable failures with exponential backoff.
 func (c *httpClient) doRetryLoop(ctx context.Context, method, url string, sendBody []byte, contentType, contentEncoding string, extraHeaders map[string]string, baseTimeout time.Duration) (*apiResponse, error) {
 	delay := c.retry.minDelayBetweenRetries
@@ -211,13 +226,10 @@ func (c *httpClient) applyAuthHeadersAs(req *http.Request, tokenHeader string) {
 }
 
 // newRequest builds a request with the User-Agent header, the token in tokenHeader and the
-// content headers. A non-empty contentEncoding says that body is compressed with it.
-func (c *httpClient) newRequest(ctx context.Context, method, url string, body []byte, contentType, contentEncoding, tokenHeader string) (*http.Request, error) {
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+// content headers. A non-empty contentEncoding says that body is compressed with it. A nil body
+// sends no body.
+func (c *httpClient) newRequest(ctx context.Context, method, url string, body io.Reader, contentType, contentEncoding, tokenHeader string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
@@ -231,8 +243,21 @@ func (c *httpClient) newRequest(ctx context.Context, method, url string, body []
 	return req, nil
 }
 
+// bodyReader returns a reader of body, which is nil for a nil body, so that the request has no body.
+func bodyReader(body []byte) io.Reader {
+	if body == nil {
+		return nil
+	}
+	return bytes.NewReader(body)
+}
+
 // doAttempt performs one round-trip with the given timeout.
 func (c *httpClient) doAttempt(ctx context.Context, method, url string, body []byte, contentType, contentEncoding string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
+	return c.doAttemptReader(ctx, method, url, bodyReader(body), contentType, contentEncoding, extraHeaders, timeout)
+}
+
+// doAttemptReader is [httpClient.doAttempt] for a body that is a reader.
+func (c *httpClient) doAttemptReader(ctx context.Context, method, url string, body io.Reader, contentType, contentEncoding string, extraHeaders map[string]string, timeout time.Duration) (*apiResponse, error) {
 	attemptCtx := ctx
 	cancel := func() {}
 	if timeout != noRequestTimeout {

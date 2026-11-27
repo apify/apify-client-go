@@ -85,6 +85,8 @@ The `Actor` value returned by `Get`/`Create`/`Update` and listed by `List`:
 | `StartRaw(ctx, input []byte, ActorStartOptions) (ActorRun, error)` | Like `Start`, but sends `input` as a raw request body (no JSON serialization) — for a non-JSON input such as a ZIP archive, paired with `ActorStartOptions.ContentType`. |
 | `Call(ctx, input any, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait for the run to finish, redirecting the run's log to `os.Stderr` while it waits (see `ActorStartOptions.Log`). `waitSecs` bounds the client-side wait; pass `nil` to wait indefinitely (until the run reaches a terminal state). Neither the start request nor the polls have a client-side timeout: `ctx` bounds the call. |
 | `CallRaw(ctx, input []byte, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | `StartRaw` followed by waiting for the run to finish, like `Call`. |
+| `StartStream(ctx, input io.Reader, ActorStartOptions) (ActorRun, error)` | Like `StartRaw`, but reads the input from a stream, such as a file, so it is not held in memory. The stream is sent once: the request is not compressed or retried (`WaitForResources` is ignored) and follows no redirect. |
+| `CallStream(ctx, input io.Reader, ActorStartOptions, waitSecs *int64) (ActorRun, error)` | `StartStream` followed by waiting for the run to finish, like `Call`. |
 | `Build(ctx, versionNumber string, ActorBuildOptions) (Build, error)` | Build a version. |
 | `DefaultBuild(ctx, waitForFinish *int64) (*BuildClient, error)` | Resolve the default build. |
 | `ValidateInput(ctx, input any) (json.RawMessage, error)` | Validate input against the `latest` build's schema. |
@@ -153,7 +155,7 @@ fmt.Println(string(result)) // raw JSON validation result
 | `WaitForFinish` | `*int64` | Max seconds to wait server-side for the run to finish (max 60). |
 | `MaxItems` | `*int64` | Maximum dataset items to charge (pay-per-result Actors). |
 | `MaxTotalChargeUsd` | `*float64` | Maximum total charge in USD (pay-per-event Actors). |
-| `ContentType` | `*string` | Content type of the input body. Defaults to `application/json` for `Start`/`Call`, or `application/octet-stream` for `StartRaw`/`CallRaw`, when unset. |
+| `ContentType` | `*string` | Content type of the input body. Defaults to `application/json` for `Start`/`Call`, or `application/octet-stream` for `StartRaw`/`CallRaw`/`StartStream`/`CallStream`, when unset. |
 | `RestartOnError` | `*bool` | Restart the run if it fails. |
 | `ForcePermissionLevel` | `*string` | Override the Actor's permission level for this run. Accepted values: `LIMITED_PERMISSIONS`, `FULL_PERMISSIONS`. |
 | `Webhooks` | `[]any` | Ad-hoc webhooks to attach to this run. Each element is a map describing one webhook: `{"eventTypes": []string, "requestUrl": string, "payloadTemplate": string}` (same shape as a webhook definition; `eventTypes` are the `WebhookEventType` values listed in [webhooks.md](webhooks.md)). |

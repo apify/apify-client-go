@@ -9,16 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `ActorStoreListItem.Categories`, `ActorStoreListItem.Stats` (the new `StoreActorStats`) and
-  `ActorStoreListItem.IsVerified`, which the Store endpoint now returns as typed fields.
+- `KeyValueStoreClient.SetRecordStream` and `SetRecordStreamWithEncoding`, `ActorClient.StartStream`
+  and `CallStream`, and `TaskClient.StartStream` and `CallStream`, which send an `io.Reader` as the
+  record value or the run input, so a large body is not held in memory. The stream is sent once,
+  without compression or retries.
+- An `io.Reader` as `ActorServerRequestOptions.Body`, sent the same way. Before, it was serialized
+  as JSON.
+- `ActorStoreListItem.Categories`, `Stats` (the new `StoreActorStats`) and `IsVerified`.
 
 ### Changed
 
+- `categories`, `stats` and `isVerified` of a Store Actor are no longer in
+  `ActorStoreListItem.Extra`.
+- `StoreCollectionClient.Iterate` with `StoreListOptions.Search` set makes one request and yields
+  each Actor once. The API ignores the offset for a search, so paging through it repeated the same
+  Actors without end.
 - `ActorVersionCollectionClient.Create` and `ActorVersionClient.Update` use the long timeout tier,
   since a version can carry its source files.
-- Updated the documentation of `StoreListOptions` to the Store search behavior of the OpenAPI
-  specification: a search returns a single page of at most 100 Actors ranked by relevance, and
-  `Category` takes comma-separated category IDs.
+- Updated the documentation of `StoreListOptions` to the OpenAPI specification: the single-page
+  search, the comma-separated `Category` IDs, and `IncludeUnrunnableActors`, `ResponseFormat` and
+  `AllowsAgenticUsers`.
 - Added the `APIFY_AI` run origin to the `LastRunOptions.Origin` examples.
 
 ### Deprecated
