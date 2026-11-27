@@ -51,8 +51,8 @@ A task is a pre-configured Actor run with stored input. Access the task collecti
 | `Unpublish(ctx) (Task, error)` | Unpublish the task from its public landing page. |
 | `Start(ctx, input any, TaskStartOptions) (ActorRun, error)` | Start a run (input overrides stored input). |
 | `Call(ctx, input any, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | Start and wait. Neither the start request nor the polls have a client-side timeout: `ctx` bounds the call. |
-| `StartStream(ctx, input io.Reader, contentType string, TaskStartOptions) (ActorRun, error)` | Like `Start`, but reads the input from a stream, such as a file, so it is not held in memory. `contentType` defaults to `application/octet-stream`. The stream is sent once: the request is not compressed or retried (`WaitForResources` is ignored) and follows no redirect. |
-| `CallStream(ctx, input io.Reader, contentType string, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | `StartStream` followed by waiting for the run to finish. |
+| `StartStream(ctx, input io.Reader, TaskStartOptions) (ActorRun, error)` | Like `Start`, but reads the input from a stream, such as a file, so it is not held in memory. The stream must hold a JSON object, which is sent as `application/json`. It is sent once: the request is not compressed or retried (`WaitForResources` is ignored) and a redirect is an error. The client closes the stream afterwards if it is an `io.Closer`. |
+| `CallStream(ctx, input io.Reader, TaskStartOptions, waitSecs *int64) (ActorRun, error)` | `StartStream` followed by waiting for the run to finish. |
 | `GetInput(ctx) (json.RawMessage, error)` | Fetch the stored input. |
 | `UpdateInput(ctx, input any) (json.RawMessage, error)` | Replace the stored input. |
 | `LastRun(status string) *RunClient` | Client for the last run (optional status filter). |

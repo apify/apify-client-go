@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `KeyValueStoreClient.SetRecordStream` and `SetRecordStreamWithEncoding`, `ActorClient.StartStream`
   and `CallStream`, and `TaskClient.StartStream` and `CallStream`, which send an `io.Reader` as the
   record value or the run input, so a large body is not held in memory. The stream is sent once,
-  without compression or retries.
+  without compression or retries, and a redirect is an error. A task input stream holds a JSON
+  object.
 - An `io.Reader` as `ActorServerRequestOptions.Body`, sent the same way. Before, it was serialized
   as JSON.
 - `ActorStoreListItem.Categories`, `Stats` (the new `StoreActorStats`) and `IsVerified`.

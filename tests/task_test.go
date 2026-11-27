@@ -1,6 +1,7 @@
 package apify_test
 
 import (
+	"strings"
 	"testing"
 
 	apify "github.com/apify/apify-client-go"
@@ -124,5 +125,32 @@ func TestTaskPublishUnpublish(t *testing.T) {
 	}
 	if unpublished.IsPublic != nil && *unpublished.IsPublic {
 		t.Fatalf("unpublish: expected IsPublic to not be true, got %v", *unpublished.IsPublic)
+	}
+}
+
+// TestTaskCallStream overrides the stored input of a task with a streamed JSON object and checks
+// that the run got it.
+func TestTaskCallStream(t *testing.T) {
+	client := requireClient(t)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	task, err := client.Tasks().Create(ctx, taskDef(uniqueName("task-stream")))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer func() { _ = client.Task(task.ID).Delete(ctx) }()
+
+	input := strings.NewReader(`{"message":"streamed input"}`)
+	run, err := client.Task(task.ID).CallStream(ctx, input, apify.TaskStartOptions{}, ptr(int64(120)))
+	if err != nil {
+		t.Fatalf("CallStream: %v", err)
+	}
+	record, ok, err := client.KeyValueStore(run.DefaultKeyValueStoreID).GetRecord(ctx, "INPUT")
+	if err != nil || !ok {
+		t.Fatalf("get INPUT: ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(string(record.Value), "streamed input") {
+		t.Fatalf("the run did not get the streamed input: %s", record.Value)
 	}
 }

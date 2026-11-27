@@ -113,40 +113,44 @@ func (c *TaskClient) startWithTimeout(ctx context.Context, input any, options Ta
 }
 
 // StartStream is [TaskClient.Start] with a stream as the input that overrides the task's stored
-// input, for a large input that is not held in memory, such as a file. It has the content type
-// "application/octet-stream" unless contentType is not empty.
+// input, for a large input that is not held in memory, such as a file. The stream must hold a JSON
+// object: the API accepts only that as a task input, and it is sent as application/json.
 //
 // The stream is sent as it is, once: the request is neither compressed nor retried, since a retry
-// would send what the first attempt left of the stream, and it follows no redirect. Hence
+// would send what the first attempt left of the stream, and a redirect comes back as an error.
+// The client closes the stream after the call if it is an [io.Closer]. Hence
 // options.WaitForResources is ignored, as the start is never retried.
-func (c *TaskClient) StartStream(ctx context.Context, input io.Reader, contentType string, options TaskStartOptions) (ActorRun, error) {
-	return c.startStreamWithTimeout(ctx, input, contentType, options, extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish))
+func (c *TaskClient) StartStream(ctx context.Context, input io.Reader, options TaskStartOptions) (ActorRun, error) {
+	return c.startStreamWithTimeout(ctx, input, options, extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish))
 }
 
-func (c *TaskClient) startStreamWithTimeout(ctx context.Context, input io.Reader, contentType string, options TaskStartOptions, timeout time.Duration) (ActorRun, error) {
+func (c *TaskClient) startStreamWithTimeout(ctx context.Context, input io.Reader, options TaskStartOptions, timeout time.Duration) (ActorRun, error) {
 	params := NewQueryParams()
 	options.apply(params)
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	return postStream[ActorRun](ctx, c.ctx, "runs", params, input, contentType, timeout)
+	return postStream[ActorRun](ctx, c.ctx, "runs", params, input, contentTypeJSON, timeout)
 }
 
 // CallStream starts the task with a stream as its input ([TaskClient.StartStream]) and waits for
 // it to finish, exactly like [TaskClient.Call] but for a streamed input.
-func (c *TaskClient) CallStream(ctx context.Context, input io.Reader, contentType string, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.startStreamWithTimeout(ctx, input, contentType, options, noRequestTimeout)
-	if err != nil {
-		return ActorRun{}, err
-	}
-	return c.root.Run(run.ID).WaitForFinish(ctx, waitSecs)
+func (c *TaskClient) CallStream(ctx context.Context, input io.Reader, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
+	return c.callAndWait(ctx, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startStreamWithTimeout(ctx, input, options, timeout)
+	})
 }
 
 // Call starts the task and waits for it to finish. waitSecs bounds the wait, and nil waits
 // indefinitely. The start request and the polls have no timeout of their own, so ctx bounds the
 // whole call.
 func (c *TaskClient) Call(ctx context.Context, input any, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.startWithTimeout(ctx, input, options, noRequestTimeout)
+	return c.callAndWait(ctx, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startWithTimeout(ctx, input, options, timeout)
+	})
+}
+
+// callAndWait is the shared implementation of Call and CallStream: it starts the run with start,
+// which gets the timeout of the start request, and waits for it to finish.
+func (c *TaskClient) callAndWait(ctx context.Context, waitSecs *int64, start func(timeout time.Duration) (ActorRun, error)) (ActorRun, error) {
+	run, err := start(noRequestTimeout)
 	if err != nil {
 		return ActorRun{}, err
 	}

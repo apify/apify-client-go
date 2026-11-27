@@ -72,8 +72,9 @@ type ActorServerRequestOptions struct {
 	Headers http.Header
 	// Body is the request body. A string or []byte is sent as it is, without a Content-Type
 	// unless Headers sets one. An [io.Reader] is a stream, sent the same way but only once: the
-	// request is not compressed, and nor retried on 429 or 503, since a retry would send what the
-	// first attempt left of the stream. A [json.RawMessage] and any other value are sent as JSON, with
+	// request is neither compressed nor retried on 429 or 503, since a retry would send what the
+	// first attempt left of the stream, and the client closes it after the call if it is an
+	// [io.Closer]. A [json.RawMessage] and any other value are sent as JSON, with
 	// Content-Type application/json unless Headers sets one.
 	Body any
 	// ParentRequestID is the X-Actor-Request-ID header of the request that the calling Server

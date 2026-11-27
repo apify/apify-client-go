@@ -3,7 +3,9 @@ package apify
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -123,19 +125,14 @@ func TestActorCallStreamWaitsForTheRun(t *testing.T) {
 	}
 }
 
-func TestTaskStartStreamSendsTheStreamOnce(t *testing.T) {
+func TestTaskStartStreamSendsTheStreamOnceAsJSON(t *testing.T) {
 	backend := &mockBackend{responses: constant(201, startedRun)}
-	run, err := streamClient(backend).Task("t").StartStream(context.Background(), strings.NewReader(compressibleBody), "", TaskStartOptions{})
+	run, err := streamClient(backend).Task("t").StartStream(context.Background(), strings.NewReader(compressibleBody), TaskStartOptions{})
 	if err != nil || run.ID != "run1" {
 		t.Fatalf("StartStream: %+v, %v", run, err)
 	}
-	assertSentOnceAsIs(t, backend, "application/octet-stream")
-
-	backend = &mockBackend{responses: constant(201, startedRun)}
-	if _, err := streamClient(backend).Task("t").StartStream(context.Background(), strings.NewReader(compressibleBody), "text/csv", TaskStartOptions{}); err != nil {
-		t.Fatalf("StartStream with a content type: %v", err)
-	}
-	assertSentOnceAsIs(t, backend, "text/csv")
+	// The API accepts only a JSON object as the input of a task.
+	assertSentOnceAsIs(t, backend, "application/json")
 }
 
 func TestTaskCallStreamWaitsForTheRun(t *testing.T) {
@@ -143,8 +140,28 @@ func TestTaskCallStreamWaitsForTheRun(t *testing.T) {
 		{status: 201, body: startedRun},
 		{status: 200, body: `{"data":{"id":"run1","status":"SUCCEEDED"}}`},
 	}}
-	run, err := streamClient(backend).Task("t").CallStream(context.Background(), strings.NewReader("input"), "text/plain", TaskStartOptions{}, nil)
+	run, err := streamClient(backend).Task("t").CallStream(context.Background(), strings.NewReader(`{"a":1}`), TaskStartOptions{}, nil)
 	if err != nil || run.Status != "SUCCEEDED" {
 		t.Fatalf("CallStream: %+v, %v", run, err)
+	}
+}
+
+// A redirect is not followed, since a stream cannot be replayed: it comes back as an error.
+func TestStreamCallsDoNotFollowRedirects(t *testing.T) {
+	var targetHits atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { targetHits.Add(1) }))
+	defer target.Close()
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirecting.Close()
+
+	client := NewClient(WithToken("t"), WithBaseURL(redirecting.URL), WithMaxRetries(0))
+	err := client.KeyValueStore("s").SetRecordStream(context.Background(), "k", strings.NewReader("data"), "text/plain")
+	if err == nil {
+		t.Fatal("expected the redirect to be returned as an error")
+	}
+	if targetHits.Load() != 0 {
+		t.Fatalf("the redirect target was called %d times", targetHits.Load())
 	}
 }

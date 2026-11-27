@@ -154,10 +154,11 @@ func (c *httpClient) callPreEncoded(ctx context.Context, method, url string, bod
 
 // callStream is [httpClient.call] for a body that is a stream. The body is sent as it is, in a
 // single attempt without the client's own compression: a retry would send what is left of a
-// stream that the failed attempt consumed, and a redirect cannot replay it. contentEncoding, when
+// stream that the failed attempt consumed, and a redirect cannot replay it, so one is returned as an
+// error. contentEncoding, when
 // not empty, says that the stream is already compressed under it.
 func (c *httpClient) callStream(ctx context.Context, method, url string, body io.Reader, contentType, contentEncoding string, baseTimeout time.Duration) (*apiResponse, error) {
-	resp, err := c.doAttemptReader(ctx, method, url, body, contentType, contentEncoding, nil, c.attemptTimeout(baseTimeout, 1))
+	resp, err := c.doAttemptReader(withoutRedirects(ctx), method, url, body, contentType, contentEncoding, nil, c.attemptTimeout(baseTimeout, 1))
 	if err != nil {
 		return nil, err
 	}
