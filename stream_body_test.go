@@ -212,10 +212,9 @@ func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/", ActorServerRequestOptions{Method: "POST", Body: s})
 			return err
 		}},
-		{"server request to a malformed server URL", func(t *testing.T, s io.Reader) error {
+		{"server request with a path that is not a valid URL", func(t *testing.T, s io.Reader) error {
 			f := newServerFixture(t)
-			f.setActor(map[string]any{"standbyUrl": "http://[::1"})
-			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/", ActorServerRequestOptions{Method: "POST", Body: s})
+			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/%zz", ActorServerRequestOptions{Method: "POST", Body: s})
 			return err
 		}},
 	}
@@ -233,7 +232,7 @@ func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 }
 
 // The body of a request that was sent is closed by the HTTP transport, and the client does not
-// close the stream a second time, whether the request succeeds or fails.
+// close the stream a second time when the request fails (see TestSentStreamIsClosedOnce for success).
 func TestServerRequestStreamIsClosedOnceByTheTransport(t *testing.T) {
 	f := newServerFixture(t)
 	unreachable := httptest.NewServer(http.NotFoundHandler())
