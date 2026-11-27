@@ -309,6 +309,30 @@ func postWithBody[T any](ctx context.Context, c *resourceContext, subPath string
 	return parseDataEnvelope[T](resp.body)
 }
 
+// closeStream closes body if it is an [io.Closer], as the HTTP transport does for a request it
+// sent, so that a stream is closed whether or not the call got as far as sending it.
+func closeStream(body io.Reader) {
+	if closer, ok := body.(io.Closer); ok {
+		_ = closer.Close()
+	}
+}
+
+// postStream performs a POST with a stream as the body and unwraps the data envelope. The body is
+// sent once (see [httpClient.callStream]).
+func postStream[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body io.Reader, contentType string, timeout time.Duration) (T, error) {
+	var zero T
+	if c.idErr != nil {
+		closeStream(body)
+		return zero, c.idErr
+	}
+	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
+	resp, err := c.http.callStream(ctx, http.MethodPost, url, body, contentType, "", timeout)
+	if err != nil {
+		return zero, err
+	}
+	return parseDataEnvelope[T](resp.body)
+}
+
 // deleteWithBody performs a DELETE with a JSON body and unwraps the data envelope.
 func deleteWithBody[T any](ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body any) (T, error) {
 	var zero T
@@ -384,6 +408,18 @@ func putRawWithEncoding(ctx context.Context, c *resourceContext, subPath string,
 	}
 	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
 	_, err := c.http.callPreEncoded(ctx, http.MethodPut, url, body, contentType, contentEncoding, c.longTimeout())
+	return err
+}
+
+// putStream performs a PUT with a stream as the body. The body is sent once and as it is, under
+// contentEncoding when that is not empty (see [httpClient.callStream]).
+func putStream(ctx context.Context, c *resourceContext, subPath string, params *QueryParams, body io.Reader, contentType, contentEncoding string) error {
+	if c.idErr != nil {
+		closeStream(body)
+		return c.idErr
+	}
+	url := c.mergedParams(params).applyToURL(c.subURL(subPath))
+	_, err := c.http.callStream(ctx, http.MethodPut, url, body, contentType, contentEncoding, c.longTimeout())
 	return err
 }
 

@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"io"
 )
 
 // ListKeysOptions configures [KeyValueStoreClient.ListKeys].
@@ -271,6 +272,32 @@ func (c *KeyValueStoreClient) SetRecordRaw(ctx context.Context, key string, valu
 // compression.
 func (c *KeyValueStoreClient) SetRecordRawWithEncoding(ctx context.Context, key string, value []byte, contentType, contentEncoding string) error {
 	return c.setRecord(ctx, key, value, contentType, contentEncoding, true, false)
+}
+
+// SetRecordStream stores a record whose value is read from a stream, for a large value that is not
+// held in memory, such as a file. The stream is sent as it is, once: the request is neither
+// compressed nor retried, since a retry would send what the first attempt left of the stream, and
+// a redirect comes back as an error. The client closes the stream when the call ends, if it is an
+// [io.Closer]. To upload with retries, read the value into bytes and use
+// [KeyValueStoreClient.SetRecordRaw].
+func (c *KeyValueStoreClient) SetRecordStream(ctx context.Context, key string, value io.Reader, contentType string) error {
+	return c.setRecordStream(ctx, key, value, contentType, "")
+}
+
+// SetRecordStreamWithEncoding is [KeyValueStoreClient.SetRecordStream] for a stream that is
+// already compressed. contentEncoding, such as "gzip", "br", "zstd" or "deflate", is sent as the
+// Content-Encoding header.
+func (c *KeyValueStoreClient) SetRecordStreamWithEncoding(ctx context.Context, key string, value io.Reader, contentType, contentEncoding string) error {
+	return c.setRecordStream(ctx, key, value, contentType, contentEncoding)
+}
+
+func (c *KeyValueStoreClient) setRecordStream(ctx context.Context, key string, value io.Reader, contentType, contentEncoding string) error {
+	safeKey, err := safePathSegment(key)
+	if err != nil {
+		closeStream(value)
+		return err
+	}
+	return putStream(ctx, c.ctx, "records/"+safeKey, NewQueryParams(), value, contentType, contentEncoding)
 }
 
 // setRecord is the shared implementation of the SetRecord methods. preEncoded sends value exactly

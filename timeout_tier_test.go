@@ -9,15 +9,23 @@ import (
 
 // The calls on the long tier are not cut off by a shorter short tier: here the short tier
 // (tinyTier) is shorter than the response time, and the calls still succeed.
-func TestKeyValueStoreAndPublicURLCallsUseTheLongTier(t *testing.T) {
+func TestLongTierCallsOutliveTheShortTier(t *testing.T) {
 	ctx := context.Background()
-	store := `{"data":{"id":"s","urlSigningSecretKey":"secret"}}`
+	response := `{"data":{"id":"s","urlSigningSecretKey":"secret","versionNumber":"0.1","sourceType":"SOURCE_FILES"}}`
 	cases := []struct {
 		name string
 		run  func(client *ApifyClient) error
 	}{
 		{"KeyValueStore Update", func(c *ApifyClient) error {
 			_, err := c.KeyValueStore("s").Update(ctx, map[string]any{"name": "n"})
+			return err
+		}},
+		{"ActorVersions Create", func(c *ApifyClient) error {
+			_, err := c.Actor("a").Versions().Create(ctx, map[string]any{"versionNumber": "0.1"})
+			return err
+		}},
+		{"ActorVersion Update", func(c *ApifyClient) error {
+			_, err := c.Actor("a").Version("0.1").Update(ctx, map[string]any{"buildTag": "latest"})
 			return err
 		}},
 		{"KeyValueStore RecordExists", func(c *ApifyClient) error {
@@ -39,7 +47,7 @@ func TestKeyValueStoreAndPublicURLCallsUseTheLongTier(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			backend := &slowBackend{delay: slowResponseDelay, body: store}
+			backend := &slowBackend{delay: slowResponseDelay, body: response}
 			if err := c.run(slowClient(backend)); err != nil {
 				t.Fatalf("a long-tier call must outlive the %v short and medium tiers: %v", tinyTier, err)
 			}

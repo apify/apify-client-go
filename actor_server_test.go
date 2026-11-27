@@ -817,3 +817,24 @@ func TestActorVersionCarriesTheActorPath(t *testing.T) {
 		t.Fatalf("a null actorPath must decode to nil: %v, %v", v.ActorPath, err)
 	}
 }
+
+// A stream body is sent as it is, once: not compressed, and not retried on 429 or 503, since a
+// retry would send what the first attempt left of the stream.
+func TestActorServerRequestSendsAStreamBodyOnce(t *testing.T) {
+	f := newServerFixture(t)
+	f.flaky = []int{503}
+	server := f.client(WithMaxRetries(2), WithMinDelayBetweenRetries(time.Millisecond)).Actor(serverTestActorID).Server()
+	resp, err := server.Request(context.Background(), "/flaky", ActorServerRequestOptions{
+		Method: "POST", Body: strings.NewReader(compressibleBody), Compression: Ptr(RequestCompressionGzip),
+	})
+	if err != nil || resp.StatusCode != 503 {
+		t.Fatalf("expected the 503 to be returned without a retry: %+v, %v", resp, err)
+	}
+	reqs := f.requests(serverTestPrefix + "/")
+	if len(reqs) != 1 || string(reqs[0].body) != compressibleBody || reqs[0].header.Get("Content-Encoding") != "" {
+		t.Fatalf("expected one uncompressed request with the whole stream, got %d", len(reqs))
+	}
+	if got := reqs[0].header.Get("Content-Type"); got != "" {
+		t.Errorf("a stream has no Content-Type of its own, got %q", got)
+	}
+}

@@ -599,8 +599,38 @@ type ActorStoreListItem struct {
 	// UserPictureURL is the URL of the owner's profile picture, normalized. Nil when there is
 	// none.
 	UserPictureURL *string `json:"userPictureUrl,omitempty"`
+	// Categories are the IDs of the categories the Actor belongs to, for example "AI_AND_ML". Nil
+	// when the API reports none.
+	Categories []string `json:"categories,omitempty"`
+	// Stats are the usage statistics and Apify Store metrics of the Actor.
+	Stats StoreActorStats `json:"stats"`
+	// IsVerified reports whether the Actor's developer has a verified identity. Nil when the API
+	// does not return it.
+	IsVerified *bool `json:"isVerified,omitempty"`
 	// Extra holds any other fields returned by the API.
 	Extra Extra `json:"-"`
+}
+
+// StoreActorStats are the usage statistics and Apify Store metrics of a Store Actor, as returned
+// by the Store endpoint.
+type StoreActorStats struct {
+	// TotalUsers is the total number of Actor users, including its owner.
+	TotalUsers int64 `json:"totalUsers"`
+	// TotalRuns is the total number of runs of the Actor. Nil when the API does not return it.
+	TotalRuns *int64 `json:"totalRuns,omitempty"`
+	// TotalUsers7Days is the number of active users of the Actor in the last 7 days. Nil when the
+	// API does not return it.
+	TotalUsers7Days *int64 `json:"totalUsers7Days,omitempty"`
+	// TotalUsers30Days is the number of active users of the Actor in the last 30 days. Nil when
+	// the API does not return it.
+	TotalUsers30Days *int64 `json:"totalUsers30Days,omitempty"`
+	// TotalUsers90Days is the number of active users of the Actor in the last 90 days. Nil when
+	// the API does not return it.
+	TotalUsers90Days *int64 `json:"totalUsers90Days,omitempty"`
+	// ActorReviewRating is the average rating of the Actor in Apify Store.
+	ActorReviewRating float64 `json:"actorReviewRating"`
+	// ActorReviewCount is the number of reviews the Actor has received in Apify Store.
+	ActorReviewCount int64 `json:"actorReviewCount"`
 }
 
 func (a *ActorStoreListItem) UnmarshalJSON(data []byte) error {

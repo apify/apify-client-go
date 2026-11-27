@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 )
@@ -111,11 +112,45 @@ func (c *TaskClient) startWithTimeout(ctx context.Context, input any, options Ta
 	})
 }
 
+// StartStream is [TaskClient.Start] with a stream as the input that overrides the task's stored
+// input, for a large input that is not held in memory, such as a file. The stream must hold a JSON
+// object: the API accepts only that as a task input, and it is sent as application/json.
+//
+// The stream is sent as it is, once: the request is neither compressed nor retried, since a retry
+// would send what the first attempt left of the stream, and a redirect comes back as an error.
+// Hence options.WaitForResources is ignored, as the start is never retried. The client closes the
+// stream when the call ends, if it is an [io.Closer].
+func (c *TaskClient) StartStream(ctx context.Context, input io.Reader, options TaskStartOptions) (ActorRun, error) {
+	return c.startStreamWithTimeout(ctx, input, options, extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish))
+}
+
+func (c *TaskClient) startStreamWithTimeout(ctx context.Context, input io.Reader, options TaskStartOptions, timeout time.Duration) (ActorRun, error) {
+	params := NewQueryParams()
+	options.apply(params)
+	return postStream[ActorRun](ctx, c.ctx, "runs", params, input, contentTypeJSON, timeout)
+}
+
+// CallStream starts the task with a stream as its input ([TaskClient.StartStream]) and waits for
+// it to finish, exactly like [TaskClient.Call] but for a streamed input.
+func (c *TaskClient) CallStream(ctx context.Context, input io.Reader, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
+	return c.callAndWait(ctx, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startStreamWithTimeout(ctx, input, options, timeout)
+	})
+}
+
 // Call starts the task and waits for it to finish. waitSecs bounds the wait, and nil waits
 // indefinitely. The start request and the polls have no timeout of their own, so ctx bounds the
 // whole call.
 func (c *TaskClient) Call(ctx context.Context, input any, options TaskStartOptions, waitSecs *int64) (ActorRun, error) {
-	run, err := c.startWithTimeout(ctx, input, options, noRequestTimeout)
+	return c.callAndWait(ctx, waitSecs, func(timeout time.Duration) (ActorRun, error) {
+		return c.startWithTimeout(ctx, input, options, timeout)
+	})
+}
+
+// callAndWait is the shared implementation of Call and CallStream: it starts the run with start,
+// which gets the timeout of the start request, and waits for it to finish.
+func (c *TaskClient) callAndWait(ctx context.Context, waitSecs *int64, start func(timeout time.Duration) (ActorRun, error)) (ActorRun, error) {
+	run, err := start(noRequestTimeout)
 	if err != nil {
 		return ActorRun{}, err
 	}

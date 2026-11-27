@@ -5,6 +5,37 @@ All notable changes to the Apify Go client are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-11-27
+
+### Added
+
+- `KeyValueStoreClient.SetRecordStream` and `SetRecordStreamWithEncoding`, `ActorClient.StartStream`
+  and `CallStream`, and `TaskClient.StartStream` and `CallStream`, which send an `io.Reader` as the
+  record value or the run input, so a large body is not held in memory. The stream is sent once,
+  without compression or retries, and a redirect is an error. A task input stream holds a JSON
+  object.
+- An `io.Reader` as `ActorServerRequestOptions.Body`, sent the same way. Before, it was serialized
+  as JSON.
+- `ActorStoreListItem.Categories`, `Stats` (the new `StoreActorStats`) and `IsVerified`.
+
+### Changed
+
+- `categories`, `stats` and `isVerified` of a Store Actor are no longer in
+  `ActorStoreListItem.Extra`.
+- `StoreCollectionClient.Iterate` with `StoreListOptions.Search` set makes one request and yields
+  each Actor once. The API ignores the offset for a search, so paging through it repeated the same
+  Actors without end.
+- `ActorVersionCollectionClient.Create` and `ActorVersionClient.Update` use the long timeout tier,
+  since a version can carry its source files.
+- Updated the documentation of `StoreListOptions` to the OpenAPI specification: the single-page
+  search, the comma-separated `Category` IDs, and `IncludeUnrunnableActors`, `ResponseFormat` and
+  `AllowsAgenticUsers`.
+- Added the `APIFY_AI` run origin to the `LastRunOptions.Origin` examples.
+
+### Deprecated
+
+- `StoreListOptions.SortBy`, which the API ignores.
+
 ## [0.16.2] - 2026-11-24
 
 ### Security

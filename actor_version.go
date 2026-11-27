@@ -24,9 +24,10 @@ func (c *ActorVersionCollectionClient) Iterate() *ListIterator[ActorVersion] {
 	return newUnpaginatedIterator(c.List)
 }
 
-// Create creates a new Actor version. version is any JSON-serializable version definition.
+// Create creates a new Actor version. version is any JSON-serializable version definition. The
+// request uses the long timeout tier, since the version can carry its source files.
 func (c *ActorVersionCollectionClient) Create(ctx context.Context, version any) (ActorVersion, error) {
-	return createResource[ActorVersion](ctx, c.ctx, NewQueryParams(), version, c.ctx.shortTimeout())
+	return createResource[ActorVersion](ctx, c.ctx, NewQueryParams(), version, c.ctx.longTimeout())
 }
 
 // ActorVersionClient is a client for a specific Actor version
@@ -46,9 +47,10 @@ func (c *ActorVersionClient) Get(ctx context.Context) (ActorVersion, bool, error
 	return getResource[ActorVersion](ctx, c.ctx, "", NewQueryParams())
 }
 
-// Update updates the version with the given fields and returns the updated object.
+// Update updates the version with the given fields and returns the updated object. The request
+// uses the long timeout tier, since the version can carry its source files.
 func (c *ActorVersionClient) Update(ctx context.Context, newFields any) (ActorVersion, error) {
-	return updateResource[ActorVersion](ctx, c.ctx, "", newFields)
+	return updateResourceWithTimeout[ActorVersion](ctx, c.ctx, "", newFields, c.ctx.longTimeout())
 }
 
 // Delete deletes the version.

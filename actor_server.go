@@ -71,7 +71,10 @@ type ActorServerRequestOptions struct {
 	// removes the client's header of that name.
 	Headers http.Header
 	// Body is the request body. A string or []byte is sent as it is, without a Content-Type
-	// unless Headers sets one. A [json.RawMessage] and any other value are sent as JSON, with
+	// unless Headers sets one. An [io.Reader] is a stream, sent the same way but only once: the
+	// request is neither compressed nor retried on 429 or 503, since a retry would send what the
+	// first attempt left of the stream, and the client closes it when the call ends, if it is an
+	// [io.Closer]. A [json.RawMessage] and any other value are sent as JSON, with
 	// Content-Type application/json unless Headers sets one.
 	Body any
 	// ParentRequestID is the X-Actor-Request-ID header of the request that the calling Server
@@ -341,16 +344,23 @@ func (c *ActorServerClient) RequestStream(ctx context.Context, path string, opti
 
 // send validates the options, resolves the server URL and sends the request.
 func (c *ActorServerClient) send(ctx context.Context, path string, options ActorServerRequestOptions, stream bool) (*serverResponse, error) {
+	bodyStream, _ := options.Body.(io.Reader)
 	method := strings.ToUpper(options.Method)
 	if method == "" {
 		method = http.MethodGet
 	}
 	if !httpMethods[method] || (options.Method != "" && options.Method != method) {
+		closeStream(bodyStream)
 		return nil, fmt.Errorf("ActorServerRequestOptions.Method: unknown HTTP method %q", options.Method)
 	}
-	body, contentType, err := encodeServerBody(options.Body)
-	if err != nil {
-		return nil, err
+	// A stream is sent as it is, so it is not encoded and its request is not retried.
+	var body []byte
+	var contentType string
+	if bodyStream == nil {
+		var err error
+		if body, contentType, err = encodeServerBody(options.Body); err != nil {
+			return nil, err
+		}
 	}
 	var compressors []requestCompressor
 	if options.Compression != nil {
@@ -359,6 +369,7 @@ func (c *ActorServerClient) send(ctx context.Context, path string, options Actor
 
 	serverURL, err := c.GetURL(ctx)
 	if err != nil {
+		closeStream(bodyStream)
 		return nil, err
 	}
 	headers := options.Headers
@@ -369,6 +380,7 @@ func (c *ActorServerClient) send(ctx context.Context, path string, options Actor
 		method:      method,
 		url:         serverRequestURL(serverURL, path, options.Params),
 		body:        body,
+		bodyStream:  bodyStream,
 		contentType: contentType,
 		headers:     headers,
 		compressors: compressors,
