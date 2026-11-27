@@ -43,7 +43,7 @@ type ActorStartOptions struct {
 	// A run that requests more memory than the account's limit is rejected with
 	// actor-memory-limit-exceeded and never starts, so WaitForResourcesIndefinitely retries it forever.
 	WaitForResources *int64
-	// Log configures the redirection of the run's log that [ActorClient.Call] and
+	// Log configures the redirection of the run's log that [ActorClient.Call],
 	// [ActorClient.CallRaw] and [ActorClient.CallStream] do while they wait (see [StreamedLog]).
 	// Nil redirects it to os.Stderr with the default prefix; set Log.Disabled to turn the
 	// redirection off. Start, StartRaw and StartStream ignore it.
@@ -157,8 +157,8 @@ func (c *ActorClient) StartRaw(ctx context.Context, input []byte, options ActorS
 //
 // The stream is sent as it is, once: the request is neither compressed nor retried, since a retry
 // would send what the first attempt left of the stream, and a redirect comes back as an error.
-// The client closes the stream after the call if it is an [io.Closer]. Hence
-// options.WaitForResources is ignored, as the start is never retried.
+// Hence options.WaitForResources is ignored, as the start is never retried. The client closes the
+// stream when the call ends, if it is an [io.Closer].
 func (c *ActorClient) StartStream(ctx context.Context, input io.Reader, options ActorStartOptions) (ActorRun, error) {
 	return c.startWithStream(ctx, input, options, c.startTimeout(options))
 }

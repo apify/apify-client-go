@@ -27,14 +27,15 @@ type noRedirectsKey struct{}
 
 // withoutRedirects returns a context that tells the HTTP backend not to follow redirects. The
 // request to an Actor's server carries the API token, which a redirect target picked by the
-// Actor's code must never receive.
+// Actor's code must never receive, and a request with a stream body cannot be replayed.
 func withoutRedirects(ctx context.Context) context.Context {
 	return context.WithValue(ctx, noRedirectsKey{}, true)
 }
 
 // FollowsRedirects reports whether the HTTP backend may follow redirects for req. It is false
 // for the requests that carry credentials meant for one host only, such as those sent by
-// [ActorServerClient]: such a request must get a redirect response back as it is. A custom
+// [ActorServerClient], and for those with a stream body, which a redirect cannot replay: such a
+// request must get a redirect response back as it is. A custom
 // [HTTPBackend] that follows redirects has to check it, and the [DefaultHTTPBackend] does.
 func FollowsRedirects(req *http.Request) bool {
 	return req.Context().Value(noRedirectsKey{}) == nil

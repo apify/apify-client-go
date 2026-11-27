@@ -2,6 +2,7 @@ package apify
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -163,5 +164,61 @@ func TestStreamCallsDoNotFollowRedirects(t *testing.T) {
 	}
 	if targetHits.Load() != 0 {
 		t.Fatalf("the redirect target was called %d times", targetHits.Load())
+	}
+}
+
+// closeRecorder is a stream that records whether it was closed.
+type closeRecorder struct {
+	io.Reader
+	closed atomic.Bool
+}
+
+func (r *closeRecorder) Close() error {
+	r.closed.Store(true)
+	return nil
+}
+
+// transportClosingBackend closes the request body once the request is done, as the HTTP transport
+// does, which the mock backend does not.
+type transportClosingBackend struct{ HTTPBackend }
+
+func (b transportClosingBackend) Do(req *http.Request) (*http.Response, error) {
+	defer func() { _ = req.Body.Close() }()
+	return b.HTTPBackend.Do(req)
+}
+
+// The client closes a stream that is an io.Closer when the call ends, also when the call fails
+// before it sends anything.
+func TestStreamCallsCloseTheStream(t *testing.T) {
+	ctx := context.Background()
+	client := streamClient(transportClosingBackend{&mockBackend{responses: constant(200, startedRun)}})
+	cases := []struct {
+		name string
+		run  func(stream io.Reader) error
+	}{
+		{"sent", func(s io.Reader) error { return client.KeyValueStore("s").SetRecordStream(ctx, "k", s, "text/plain") }},
+		{"invalid key", func(s io.Reader) error { return client.KeyValueStore("s").SetRecordStream(ctx, "..", s, "text/plain") }},
+		{"empty store ID", func(s io.Reader) error { return client.KeyValueStore("").SetRecordStream(ctx, "k", s, "text/plain") }},
+		{"empty task ID", func(s io.Reader) error {
+			_, err := client.Task("").StartStream(ctx, s, TaskStartOptions{})
+			return err
+		}},
+		{"Actor start", func(s io.Reader) error {
+			_, err := client.Actor("a").StartStream(ctx, s, ActorStartOptions{})
+			return err
+		}},
+		{"server request with an unknown method", func(s io.Reader) error {
+			_, err := client.Actor("a").Server().Request(ctx, "/", ActorServerRequestOptions{Method: "NOPE", Body: s})
+			return err
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stream := &closeRecorder{Reader: strings.NewReader("data")}
+			_ = c.run(stream)
+			if !stream.closed.Load() {
+				t.Error("the stream was not closed")
+			}
+		})
 	}
 }

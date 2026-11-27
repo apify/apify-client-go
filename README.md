@@ -248,7 +248,8 @@ The transport is replaceable. Implement `HTTPBackend` (a single `Do` method) to 
 custom client, proxy, or test double, and pass it with `WithHTTPBackend`. A backend that follows
 redirects must not follow them for a request that `apify.FollowsRedirects(req)` reports false for,
 as the requests to a [Server Actor](docs/server_actors.md) carry a token meant for one host only,
-and a redirect to another host would send it there:
+and a redirect to another host would send it there. The requests with a stream body (such as
+`SetRecordStream`) are the same, since a redirect cannot replay a stream:
 
 ```go
 package main

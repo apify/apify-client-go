@@ -118,8 +118,8 @@ func (c *TaskClient) startWithTimeout(ctx context.Context, input any, options Ta
 //
 // The stream is sent as it is, once: the request is neither compressed nor retried, since a retry
 // would send what the first attempt left of the stream, and a redirect comes back as an error.
-// The client closes the stream after the call if it is an [io.Closer]. Hence
-// options.WaitForResources is ignored, as the start is never retried.
+// Hence options.WaitForResources is ignored, as the start is never retried. The client closes the
+// stream when the call ends, if it is an [io.Closer].
 func (c *TaskClient) StartStream(ctx context.Context, input io.Reader, options TaskStartOptions) (ActorRun, error) {
 	return c.startStreamWithTimeout(ctx, input, options, extendForServerWait(c.ctx.mediumTimeout(), options.WaitForFinish))
 }

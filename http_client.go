@@ -44,7 +44,8 @@ const (
 // as a refused connection, a DNS error or a timeout.
 //
 // A backend that follows redirects must not follow them for a request that [FollowsRedirects]
-// reports false for: such a request carries credentials meant for its original host only.
+// reports false for: such a request carries credentials meant for its original host only, or a
+// stream body that a redirect cannot replay.
 type HTTPBackend interface {
 	// Do sends a single HTTP request and returns the response.
 	Do(req *http.Request) (*http.Response, error)
@@ -154,9 +155,8 @@ func (c *httpClient) callPreEncoded(ctx context.Context, method, url string, bod
 
 // callStream is [httpClient.call] for a body that is a stream. The body is sent as it is, in a
 // single attempt without the client's own compression: a retry would send what is left of a
-// stream that the failed attempt consumed, and a redirect cannot replay it, so one is returned as an
-// error. contentEncoding, when
-// not empty, says that the stream is already compressed under it.
+// stream that the failed attempt consumed, and a redirect cannot replay it, so one is returned as
+// an error. contentEncoding, when not empty, says that the stream is already compressed under it.
 func (c *httpClient) callStream(ctx context.Context, method, url string, body io.Reader, contentType, contentEncoding string, baseTimeout time.Duration) (*apiResponse, error) {
 	resp, err := c.doAttemptReader(withoutRedirects(ctx), method, url, body, contentType, contentEncoding, nil, c.attemptTimeout(baseTimeout, 1))
 	if err != nil {
@@ -268,6 +268,7 @@ func (c *httpClient) doAttemptReader(ctx context.Context, method, url string, bo
 
 	req, err := c.newRequest(attemptCtx, method, url, body, contentType, contentEncoding, "Authorization")
 	if err != nil {
+		closeStream(body)
 		// An invalid request is a caller error, so it is not retried.
 		return nil, &APIError{StatusCode: 0, Type: "invalid-request", Message: err.Error(), Attempt: 1, HTTPMethod: method, Path: extractPath(url)}
 	}
