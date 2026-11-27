@@ -44,7 +44,7 @@ const (
 // as a refused connection, a DNS error or a timeout.
 //
 // A backend must close the request body once it is done with it, also when it fails, as an
-// [http.RoundTripper] does: the client relies on that to close a stream body that it did not open.
+// [http.RoundTripper] does: the client relies on that to close the stream body of a request that was sent.
 //
 // A backend that follows redirects must not follow them for a request that [FollowsRedirects]
 // reports false for: such a request carries credentials meant for its original host only, or a

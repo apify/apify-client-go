@@ -246,8 +246,8 @@ the request.
 
 The transport is replaceable. Implement `HTTPBackend` (a single `Do` method) to integrate a
 custom client, proxy, or test double, and pass it with `WithHTTPBackend`. The backend must close
-`req.Body` once it is done with it, also on error, as an `http.RoundTripper` does: the client relies
-on that to close a stream body that it did not open. A backend that follows
+`req.Body` once it is done with it, also when it fails, as an `http.RoundTripper` does: the client
+relies on that to close the stream body of a request that was sent. A backend that follows
 redirects must not follow them for a request that `apify.FollowsRedirects(req)` reports false for,
 as the requests to a [Server Actor](docs/server_actors.md) carry a token meant for one host only,
 and a redirect to another host would send it there. The requests with a stream body (such as

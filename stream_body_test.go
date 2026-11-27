@@ -186,25 +186,35 @@ func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 	badURLClient := NewClient(WithToken("t"), WithBaseURL("http://[::1"), WithMaxRetries(0))
 	cases := []struct {
 		name string
-		run  func(stream io.Reader) error
+		run  func(t *testing.T, stream io.Reader) error
 	}{
-		{"invalid key", func(s io.Reader) error { return client.KeyValueStore("s").SetRecordStream(ctx, "..", s, "text/plain") }},
-		{"empty store ID", func(s io.Reader) error { return client.KeyValueStore("").SetRecordStream(ctx, "k", s, "text/plain") }},
-		{"empty task ID", func(s io.Reader) error {
+		{"invalid key", func(_ *testing.T, s io.Reader) error {
+			return client.KeyValueStore("s").SetRecordStream(ctx, "..", s, "text/plain")
+		}},
+		{"empty store ID", func(_ *testing.T, s io.Reader) error {
+			return client.KeyValueStore("").SetRecordStream(ctx, "k", s, "text/plain")
+		}},
+		{"empty task ID", func(_ *testing.T, s io.Reader) error {
 			_, err := client.Task("").StartStream(ctx, s, TaskStartOptions{})
 			return err
 		}},
-		{"invalid URL", func(s io.Reader) error {
+		{"invalid URL", func(_ *testing.T, s io.Reader) error {
 			_, err := badURLClient.Actor("a").StartStream(ctx, s, ActorStartOptions{})
 			return err
 		}},
-		{"server request with an unknown method", func(s io.Reader) error {
+		{"server request with an unknown method", func(_ *testing.T, s io.Reader) error {
 			_, err := client.Actor("a").Server().Request(ctx, "/", ActorServerRequestOptions{Method: "NOPE", Body: s})
 			return err
 		}},
-		{"server request of an Actor that does not exist", func(s io.Reader) error {
+		{"server request of an Actor that does not exist", func(t *testing.T, s io.Reader) error {
 			f := newServerFixture(t)
 			f.noActor()
+			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/", ActorServerRequestOptions{Method: "POST", Body: s})
+			return err
+		}},
+		{"server request to a malformed server URL", func(t *testing.T, s io.Reader) error {
+			f := newServerFixture(t)
+			f.setActor(map[string]any{"standbyUrl": "http://[::1"})
 			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/", ActorServerRequestOptions{Method: "POST", Body: s})
 			return err
 		}},
@@ -212,7 +222,7 @@ func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stream := &closeRecorder{Reader: strings.NewReader("data")}
-			if err := c.run(stream); err == nil {
+			if err := c.run(t, stream); err == nil {
 				t.Fatal("expected the call to fail")
 			}
 			if got := stream.closes.Load(); got != 1 {
@@ -222,8 +232,8 @@ func TestStreamCallsThatFailBeforeSendingCloseTheStreamOnce(t *testing.T) {
 	}
 }
 
-// A request that was sent is closed by the HTTP transport, and the client does not close the
-// stream a second time, also when the request fails.
+// The body of a request that was sent is closed by the HTTP transport, and the client does not
+// close the stream a second time, whether the request succeeds or fails.
 func TestServerRequestStreamIsClosedOnceByTheTransport(t *testing.T) {
 	f := newServerFixture(t)
 	unreachable := httptest.NewServer(http.NotFoundHandler())
@@ -238,5 +248,32 @@ func TestServerRequestStreamIsClosedOnceByTheTransport(t *testing.T) {
 	}
 	if got := stream.closes.Load(); got != 1 {
 		t.Errorf("the stream was closed %d times, want once", got)
+	}
+}
+
+// A stream that was sent successfully is closed once, by the HTTP transport of the default
+// backend.
+func TestSentStreamIsClosedOnce(t *testing.T) {
+	f := newServerFixture(t)
+	ctx := context.Background()
+	cases := map[string]func(stream io.Reader) error{
+		"record": func(s io.Reader) error {
+			return f.client().KeyValueStore("s").SetRecordStream(ctx, "k", s, "text/plain")
+		},
+		"server request": func(s io.Reader) error {
+			_, err := f.client().Actor(serverTestActorID).Server().Request(ctx, "/search", ActorServerRequestOptions{Method: "POST", Body: s})
+			return err
+		},
+	}
+	for name, run := range cases {
+		t.Run(name, func(t *testing.T) {
+			stream := &closeRecorder{Reader: strings.NewReader("data")}
+			if err := run(stream); err != nil {
+				t.Fatalf("the call failed: %v", err)
+			}
+			if got := stream.closes.Load(); got != 1 {
+				t.Errorf("the stream was closed %d times, want once", got)
+			}
+		})
 	}
 }
